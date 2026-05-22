@@ -32,7 +32,6 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import write_ros1_bag  # noqa: E402  (after sys.path setup)
 
-from bagq.cli import app  # noqa: E402
 from rosbagger_core.backend.query import query as run_query  # noqa: E402
 from rosbagger_core.output import plot_table  # noqa: E402
 from rosbagger_core.reader import RosbagsReader  # noqa: E402
