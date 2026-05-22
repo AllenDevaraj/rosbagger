@@ -60,9 +60,12 @@ class BagInfo:
         message_count: Total messages across all opened bags.
         start_time_ns: Earliest log time in ns, or ``None`` on an empty bag.
         end_time_ns: Latest log time in ns, or ``None`` on an empty bag.
-        duration_ns: ``end - start`` in ns, or ``None`` on an empty bag (the
-            empty-bag guard prevents surfacing ``AnyReader``'s large-negative
-            sentinel duration — Pitfall 1).
+        duration_ns: ``end - start`` in ns, or ``None`` when the bag is empty OR
+            the reported duration is non-positive. The empty-bag guard prevents
+            surfacing ``AnyReader``'s large-negative sentinel duration (Pitfall 1);
+            the non-positive guard handles a merged multi-bag read whose clock
+            skew yields a negative span (WR-01), so the CLI footer renders ``—``
+            instead of ``-1.00s``.
         size_bytes: On-disk size in bytes — the raw integer; human-readable
             formatting (KB/MB/GB) is the CLI's job, not the API's.
     """
@@ -100,7 +103,10 @@ def collect_bag_info(reader) -> BagInfo:
     ``start_time``/``end_time``/``duration`` — never iterates messages
     (``reader.read()``). On an empty bag (``message_count == 0``) the time bounds
     are reported as ``None`` rather than ``AnyReader``'s ``sys.maxsize`` / large
-    -negative sentinels (Pitfall 1), and every per-topic ``hz`` is ``None``.
+    -negative sentinels (Pitfall 1), and every per-topic ``hz`` is ``None``. A
+    non-positive ``duration`` (a merged multi-bag read with clock skew) is also
+    collapsed to ``None`` so the CLI never renders a negative whole-bag span
+    (WR-01).
 
     Per-topic Hz is ``count / (duration_ns / 1e9)`` using the WHOLE-bag duration;
     it is guarded to ``None`` whenever the duration is missing, zero, or negative
@@ -115,7 +121,11 @@ def collect_bag_info(reader) -> BagInfo:
     else:
         start_ns = reader.start_time
         end_ns = reader.end_time
-        duration_ns = reader.duration
+        # A merged multi-bag read with clock skew can yield a non-positive
+        # AnyReader duration; collapse it to None so the CLI footer renders "—"
+        # rather than a nonsensical "-1.00s" (WR-01). start/end keep their raw
+        # semantics; only the derived duration is guarded.
+        duration_ns = reader.duration if reader.duration > 0 else None
 
     dur_s = (duration_ns / 1e9) if (duration_ns and duration_ns > 0) else None
 
@@ -143,10 +153,21 @@ def collect_table_schemas(reader) -> list:
     """Return one Phase 3 ``TableSchema`` per single-msgtype topic (INSP-03).
 
     For each topic (in sorted topic order) this resolves the sanitized,
-    collision-resolved table name and builds the column schema via the Phase 3
-    schema layer — ``reader.typestore`` + ``build_table_schema(msgtype, typestore,
-    topic=topic)`` — so the result is a list of ``TableSchema`` whose ``columns``
-    expose ``name`` / ``arrow_type`` / ``is_heavy_blob`` for the CLI to render.
+    collision-resolved table name via a SHARED :class:`TableNameResolver` and
+    builds the column schema via the Phase 3 schema layer — ``reader.typestore``
+    + ``build_table_schema(msgtype, typestore, topic=topic)`` — so the result is a
+    list of ``TableSchema`` whose ``columns`` expose ``name`` / ``arrow_type`` /
+    ``is_heavy_blob`` for the CLI to render.
+
+    Table-name collision resolution (names.py T-03-01/T-03-02): two distinct
+    topics that sanitize to the SAME base name (e.g. ``/a/b`` and ``/a.b`` both
+    -> ``a_b``) MUST get distinct table names (``a_b``, ``a_b_2``). Because
+    ``build_table_schema`` only ``sanitize_table_name``s its ``topic`` (no
+    collision state), its ``table_name`` is overwritten here with the resolver's
+    collision-resolved name via ``dataclasses.replace``. The resolver is shared
+    across topics and called exactly once per topic in sorted order, so the
+    de-duplication is deterministic and cannot silently alias two topics to one
+    table.
 
     Reads ONLY O(1) metadata (``reader.topics``) and the declared msgtype +
     typestore; it NEVER calls ``reader.read()`` or deserializes a message body, so
@@ -165,16 +186,21 @@ def collect_table_schemas(reader) -> list:
     """
     # Lazy import (Pitfall 5): keep inspect.py's top level free of the heavy
     # schema/pyarrow stack so `import rosbagger_core` stays light.
+    from dataclasses import replace
+
     from rosbagger_core.schema import TableNameResolver, build_table_schema
 
     typestore = reader.typestore
-    resolver = TableNameResolver()
+    resolver = TableNameResolver()  # shared so collision state accumulates across topics
     schemas: list = []
     for topic, info in sorted(reader.topics.items()):
         if info.msgtype is None:  # multi-msgtype topic (Pitfall 4) — skip, never pass None
             continue
-        # Record the topic -> table-name mapping and share collision state across
-        # topics; build_table_schema sanitizes the name it stores on the schema.
-        resolver.resolve(topic)
-        schemas.append(build_table_schema(info.msgtype, typestore, topic=topic))
+        # build_table_schema only sanitizes (no collision resolution), so overwrite
+        # its table_name with the resolver's collision-resolved name (T-03-01/02):
+        # two topics sanitizing to one base get distinct names (a_b, a_b_2). Called
+        # exactly once per topic, in sorted order, for deterministic de-duplication.
+        table_name = resolver.resolve(topic)
+        schema = build_table_schema(info.msgtype, typestore, topic=topic)
+        schemas.append(replace(schema, table_name=table_name))  # TableSchema is frozen
     return schemas
