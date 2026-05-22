@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 06-01-PLAN.md (Phase 6 plan 1/2). rosbagger_core.output: rows_for_display (temporal-safe — timestamp[ns] t/stamp via to_numpy(datetime64), no ValueError), to_json (temporal->int64 raw-ns, A5), write_table (CSV+Parquet by ext via DuckDB COPY — NOT pyarrow.write_csv, which crashes on LIST; CSV LIST->bracketed string), write_csv_stream (CSV to /dev/stdout). bagq query \"<SQL>\" BAG [-o OUT] [--format table|csv|parquet|json] wired (calls Phase 5 query(), routes result; errors propagate — Phase 7 owns teaching). Offline guard extended: import rosbagger_core.output leaks no duckdb/sqlglot/pyarrow. Rule 1 fix: write_table('/dev/stdout') was impossible (ext-routed) -> added write_csv_stream sharing _copy_to COPY core (cli.py imports no duckdb). Full suite 208 passed at 97.89%; output/ 100%. Next: 06-02 (--plot, OUT-04: headless matplotlib vs t_ns; add matplotlib to dev group)."
-last_updated: "2026-05-22T16:53:30.000Z"
-last_activity: 2026-05-22 -- Completed 06-01 (output module + bagq query)
+stopped_at: "Completed 06-02-PLAN.md (Phase 6 plan 2/2 — PHASE 6 COMPLETE). Added rosbagger_core.output.plot_table(table, path): minimal headless (Agg-before-pyplot) matplotlib line chart of numeric result cols (pyarrow is_integer/is_floating; excludes topic/string/LIST/STRUCT and the t_ns x-axis) vs t_ns (fallback t); lazy/optional matplotlib import -> ImportError re-raised as teaching RuntimeError (install bagq[plot]); 0-row / no-numeric / no-t_ns -> teaching ValueError; plt.close(fig) after savefig (figure-leak DoS T-06-05). Wired bagq query ... --plot [FILE] (OUT-04): bare --plot -> plot.png in CWD (A1), --plot FILE -> that file; --plot is its own sink and takes precedence (plot+return); RuntimeError/ValueError propagate (Phase 7 owns teaching). matplotlib>=3.8 added to root [dependency-groups] dev (also the bagq[plot] extra); uv lock + uv sync; uv.lock committed. Tests guarded by pytest.importorskip('matplotlib'). DEVIATION (Rule 3): RESEARCH Pattern 4's typer.Option(is_flag=False, flag_value=...) does NOT work on pinned typer 0.25.1 (flag_value dropped in click conversion -> bare --plot errored) -> restored via a _PlotCommand(TyperCommand) cls= that rebuilds --plot as a native click.Option; app stays typer.Typer, query stays a typer command -> zero ripple to bagq.cli:app + 06-01 CliRunner tests. Offline guard intact (import rosbagger_core.output / bagq.cli leak no duckdb/sqlglot/pyarrow/matplotlib). Full suite 219 passed at 98.04%; plot.py 100%. Next: Phase 7 (CLI & Teaching Errors)."
+last_updated: "2026-05-22T17:08:24.000Z"
+last_activity: 2026-05-22 -- Completed 06-02 (--plot OUT-04); PHASE 6 COMPLETE
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 15
-  completed_plans: 14
-  percent: 63
+  completed_plans: 15
+  percent: 75
 ---
 
 # Project State
@@ -25,20 +25,20 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 ## Current Position
 
-Phase: 6
-Plan: 06-01 complete (1/2) — next: 06-02
-Status: In progress
-Last activity: 2026-05-22 -- Completed 06-01 (output module + bagq query)
+Phase: 6 complete (2/2) — next: Phase 7 (CLI & Teaching Errors)
+Plan: 06-02 complete (2/2) — PHASE 6 COMPLETE
+Status: Phase 6 complete
+Last activity: 2026-05-22 -- Completed 06-02 (--plot OUT-04); PHASE 6 COMPLETE
 
-Progress: [█████████░] 93% (Phase 6: 1/2 plans complete)
+Progress: [██████████] 100% (Phase 6: 2/2 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 18
-- Average duration: ~4 min
-- Total execution time: ~0.9 hours
+- Total plans completed: 19
+- Average duration: ~5 min
+- Total execution time: ~1.1 hours
 
 **By Phase:**
 
@@ -53,8 +53,8 @@ Progress: [█████████░] 93% (Phase 6: 1/2 plans complete)
 
 **Recent Trend:**
 
-- Last 5 plans: 5min, 7min, 7min, 5min, 10min, 7min
-- Trend: steady (~4-10 min/plan)
+- Last 5 plans: 7min, 5min, 10min, 7min, 12min
+- Trend: steady (~5-12 min/plan)
 
 *Updated after each plan completion*
 
@@ -74,6 +74,7 @@ Progress: [█████████░] 93% (Phase 6: 1/2 plans complete)
 | Phase 05 P05-01 | 5min | 2 tasks | 6 files |
 | Phase 05 P02 | 10min | 2 tasks | 7 files |
 | Phase 06 P06-01 | 7min | 3 tasks | 8 files |
+| Phase 06 P06-02 | 12min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06-01]: stdout/JSON rendering is temporal-safe — `t`/`stamp` are timestamp[ns]; naive `to_pylist()`/`str()` raises ValueError (ns exceeds datetime's µs floor, pandas absent; Pitfall 1). rows_for_display converts temporal cols via combine_chunks().to_numpy(zero_copy_only=False)->datetime64 (NaT->""); to_json casts temporal cols to int64 raw-ns (A5 — machine-parseable, lossless), not ISO strings
 - [Phase 06-01]: output module is backend-neutral + offline-safe — top levels (output/__init__, render.py, export.py) are stdlib-only; pyarrow/duckdb imported INSIDE function bodies (mirrors backend/query.py). Re-exporting __init__ binds names without firing heavy imports; `import rosbagger_core.output` leaks no duckdb/sqlglot/pyarrow (new fresh-subprocess guard). cli.py top level stays typer/rich; `bagq query` lazy-imports query()+output in the body
 - [Phase 06-01]: Rule 1 fix — the plan's "reuse write_table against /dev/stdout" for `--format csv` stdout streaming is impossible (write_table routes on file extension; /dev/stdout has none -> ValueError). Added write_csv_stream(table, path="/dev/stdout") that forces FORMAT CSV with no ext detection, sharing the single COPY core `_copy_to` (with the T-06-01 '-escape) with write_table — so the COPY/escape stays in core and cli.py imports no duckdb. `-o` picks format by ext; `--format parquet` w/o `-o` errors (binary). v1 errors propagate (Phase 7 owns teaching). Full suite 208 passed at 97.89%; output/ 100%, cli.py 98%. OUT-01/02/03 done
+- [Phase 06-02]: plot_table plots numeric result cols vs t_ns (int64), NOT t (timestamp[ns]) — t_ns sidesteps the ns->datetime crash class (06-RESEARCH Pitfall 1); t is the fallback only when t_ns is absent. Numeric y-cols via pyarrow.types.is_integer/is_floating (excludes topic/string/LIST/STRUCT AND t_ns the x-axis) — robust over string type-name matching. matplotlib.use("Agg") BEFORE importing pyplot (headless/CI); plt.close(fig) after savefig (figure-leak DoS T-06-05). 0-row / no-numeric / no-t_ns -> teaching ValueError (never a blank chart)
+- [Phase 06-02]: matplotlib stays the optional bagq[plot] runtime extra (base install lean); added to the root dev group ONLY so CI/uv-run exercise --plot. matplotlib + pyarrow imported INSIDE plot_table (offline invariant) — output/__init__ re-export of plot_table binds the name without firing the import; ImportError re-raised as a teaching RuntimeError ("install bagq[plot]"), never a bare ModuleNotFoundError. Plot tests guarded by pytest.importorskip("matplotlib") (contributor without the dev group is skipped, not errored). import rosbagger_core.output / bagq.cli leak no duckdb/sqlglot/pyarrow/matplotlib (offline guard intact)
+- [Phase 06-02]: --plot is its own output sink and takes precedence over -o/--format (plot and return); the RuntimeError (matplotlib missing) and ValueError (nothing to plot) PROPAGATE — Phase 7 owns teaching-error formatting. Bare --plot -> plot.png in CWD (A1), --plot FILE -> that file
+- [Phase 06-02]: DEVIATION (Rule 3) — RESEARCH Pattern 4's optional-value-flag idiom `typer.Option(is_flag=False, flag_value=<sentinel>, default=None)` does NOT work on the PINNED typer 0.25.1: typer.main.get_click_param silently DROPS flag_value during the typer.Option->click conversion (only forwards a computed is_flag for bool params + count), so bare --plot errored "requires an argument" + a DeprecationWarning fired. typer also REBUILDS the command group on every get_command(app) call (so post-hoc param injection can't survive), and a native-click query command would ripple into 06-01's CliRunner tests (typer.testing.CliRunner only accepts a typer.Typer) and the bagq.cli:app entry point. FIX: a small _PlotCommand(TyperCommand) registered via @app.command(cls=...) that, at construction, REPLACES --plot with a freshly-built native click.Option(is_flag=False, flag_value=_PLOT_DEFAULT, default=None) (reconstruction, not in-place mutation — click derives optional-value parsing in Option.__init__). app stays typer.Typer, query stays a typer command -> ZERO ripple (06-01's 14 CLI/guard tests still pass). The signature --plot is now a plain typer.Option (no is_flag/flag_value) so the DeprecationWarning is gone. click is already a typer dep (no new package)
+- [Phase 06-02]: PHASE 6 COMPLETE (2/2). All four output forms shipped: stdout table (OUT-01), CSV (OUT-02), Parquet (OUT-03), --plot line chart (OUT-04). Full suite 219 passed at 98.04% (>=80% gate); plot.py 100%, cli.py 98% (the 2 misses are pre-existing 06-01 lines: the >100-row footer + the /dev/stdout csv-stream branch). ruff format-check + lint clean. uv.lock carries matplotlib in the dev group
 
 ### Pending Todos
 
@@ -155,6 +161,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T16:53:30.000Z
-Stopped at: Completed 06-01-PLAN.md (Phase 6 plan 1/2). rosbagger_core.output: rows_for_display (temporal-safe — timestamp[ns] t/stamp via to_numpy(datetime64), no ValueError), to_json (temporal->int64 raw-ns, A5), write_table (CSV+Parquet by ext via DuckDB COPY — NOT pyarrow.write_csv which crashes on LIST; CSV LIST->bracketed string), write_csv_stream (CSV to /dev/stdout). bagq query "<SQL>" BAG [-o OUT] [--format table|csv|parquet|json] wired (calls Phase 5 query(), routes result; errors propagate — Phase 7 owns teaching). Offline guard extended: import rosbagger_core.output leaks no duckdb/sqlglot/pyarrow. Rule 1 fix: write_table('/dev/stdout') impossible (ext-routed) -> added write_csv_stream sharing _copy_to COPY core (cli.py imports no duckdb). Full suite 208 passed at 97.89%; output/ 100%. Next: 06-02 (--plot, OUT-04: headless matplotlib vs t_ns; add matplotlib to dev group).
+Last session: 2026-05-22T17:08:24.000Z
+Stopped at: Completed 06-02-PLAN.md (Phase 6 plan 2/2 — PHASE 6 COMPLETE). Added rosbagger_core.output.plot_table: minimal headless (Agg-before-pyplot) matplotlib line chart of numeric result cols (pyarrow is_integer/is_floating; excludes topic/string/LIST/STRUCT + the t_ns x-axis) vs t_ns (fallback t); lazy/optional matplotlib -> ImportError re-raised as teaching RuntimeError (install bagq[plot]); 0-row / no-numeric / no-t_ns -> teaching ValueError; plt.close(fig) (figure-leak T-06-05). Wired bagq query ... --plot [FILE] (OUT-04): bare --plot -> plot.png (A1), --plot FILE -> that file; --plot is its own sink + precedence; errors propagate (Phase 7 teaching). matplotlib>=3.8 in root dev group (also bagq[plot] extra); uv lock+sync; uv.lock committed; tests pytest.importorskip-guarded. DEVIATION (Rule 3): typer 0.25.1 drops flag_value -> RESEARCH Pattern 4 idiom broken -> _PlotCommand(TyperCommand) rebuilds --plot as a native click.Option (zero ripple to entry point + 06-01 tests). Offline guard intact. Full suite 219 passed at 98.04%; plot.py 100%. Next: Phase 7 (CLI & Teaching Errors).
 Resume file: None

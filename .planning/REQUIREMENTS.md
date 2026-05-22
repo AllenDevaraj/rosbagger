@@ -36,7 +36,7 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 - [x] **OUT-01**: Print query results as a formatted table to stdout by default
 - [x] **OUT-02**: Export results to CSV via `-o out.csv`
 - [x] **OUT-03**: Export results to Parquet via `-o out.parquet`
-- [ ] **OUT-04**: `--plot` produces a minimal line chart of numeric result columns vs `t`
+- [x] **OUT-04**: `--plot` produces a minimal line chart of numeric result columns vs `t`
 
 ### CLI
 
@@ -105,7 +105,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | OUT-01 | Phase 6 | Complete |
 | OUT-02 | Phase 6 | Complete |
 | OUT-03 | Phase 6 | Complete |
-| OUT-04 | Phase 6 | Pending |
+| OUT-04 | Phase 6 | Complete |
 | CLI-01 | Phase 7 | Pending |
 | CLI-02 | Phase 7 | Pending |
 | CLI-03 | Phase 7 | Pending |

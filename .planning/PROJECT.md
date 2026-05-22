@@ -60,6 +60,7 @@ Query and understand the data inside any ROS bag from one command — without wr
 | Build v1 = `core` + `bagq` first | Highest leverage; the TF debugger later reuses the same engine | — Pending |
 | Monorepo of small packages | Independent installs; isolate `rclpy` to live modules only | — Pending |
 | API-first: CLI & GUI are thin layers over module APIs | Structurally guarantees terminal↔GUI capability parity | — Pending |
+| `--plot` stays minimal; matplotlib is the optional `bagq[plot]` extra, plotting numeric cols vs `t_ns` headless (Agg) | Don't rebuild PlotJuggler/Foxglove; keep the base install lean + offline; t_ns avoids the ns→datetime crash | ✓ Phase 6 (OUT-04) |
 
 ## Evolution
 
