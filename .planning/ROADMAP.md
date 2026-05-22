@@ -20,6 +20,15 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 7: CLI & Teaching Errors** - `bagq query` end-to-end with helpful errors (completed 2026-05-22)
 - [x] **Phase 8: Packaging, Docs & Release** - pip-installable v0.1, offline imports (completed 2026-05-22)
 
+### Milestone v0.2 — Modular cockpit (TF · ergonomics · edit · live · GUI)
+
+- [ ] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`rosbagger-tf`)
+- [ ] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown
+- [ ] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar
+- [ ] **Phase 12: Live Record** - live topic discovery + select recording (rclpy)
+- [ ] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy)
+- [ ] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI)
+
 ## Phase Details
 
 ### Phase 1: Scaffold & Test Harness
@@ -204,10 +213,88 @@ Plans:
 
 - [x] 08-01-PLAN.md — Version bump 0.0.0→0.1.0 (4 sources + re-lock uv.lock) + MIT LICENSE + expanded README (verified pip recipe, per-command usage, offline guarantee) + clean-room pip-install verification (SC1/SC2) + local CI-equivalent gate + local `v0.1.0` tag; push+observe-CI documented as the sole human follow-up (SC3 split) -> SC1/SC2/SC3
 
+### Phase 9: TF Debugger
+
+**Goal**: An offline TF analyzer (`rosbagger-tf`) that loads `/tf` + `/tf_static`, builds the transform graph over time, and reports dropouts/gaps on a timeline — reusing the v1 reader, no ROS install.
+**Depends on**: Phase 2, Phase 5
+**Requirements**: TF-01
+**Success Criteria** (what must be TRUE):
+
+  1. Loads `/tf` + `/tf_static` and builds the parent→child transform graph
+  2. Detects per-edge dropouts/gaps and reports them with timestamps (e.g. "odom→base_link unpublished 800ms at t=12.4s")
+  3. Output is a timeline/table; runs on a fixture bag with no ROS install
+
+**Plans**: TBD (set at plan-phase)
+
+### Phase 10: Query Ergonomics
+
+**Goal**: Make `bagq` queries terser and faster — an alias pack for common message fields and column projection pushdown so a query loads only the columns it references.
+**Depends on**: Phase 3, Phase 5
+**Requirements**: QURY-08, QURY-09
+**Success Criteria** (what must be TRUE):
+
+  1. Alias pack resolves common shortcuts (e.g. `vx` → `"twist.twist.linear.x"`) in user SQL
+  2. Column projection pushdown loads only referenced columns (not whole topics)
+  3. Verifiable: a single-column query does not materialize unreferenced/heavy columns
+
+**Plans**: TBD (set at plan-phase)
+
+### Phase 11: Edit & Events
+
+**Goal**: Offline bag editing (trim/drop/merge/downsample/convert across ROS1↔ROS2↔MCAP via the `rosbags` writer) plus an event sidecar exposed as a queryable, time-joinable `events` table.
+**Depends on**: Phase 2, Phase 5
+**Requirements**: EDIT-01, EVNT-01
+**Success Criteria** (what must be TRUE):
+
+  1. trim/drop/merge/downsample/convert produce valid bags that re-open via `AnyReader`
+  2. An event sidecar (`<bag>.events.parquet`) is written and read back
+  3. The `events` table is queryable and JOINable against data by time
+
+**Plans**: TBD (set at plan-phase)
+
+### Phase 12: Live Record
+
+**Goal**: A live recorder (`rosbagger-record`) — discover live ROS topics and record a selected subset to a bag. Requires `rclpy` (present on host); the offline modules stay ROS-free.
+**Depends on**: Phase 2
+**Requirements**: REC-01
+**Success Criteria** (what must be TRUE):
+
+  1. Discovers currently-published live topics
+  2. Records a selected subset to a bag while a publisher is running
+  3. The recorded bag re-opens and iterates via the v1 reader
+
+**Plans**: TBD (set at plan-phase)
+
+### Phase 13: Live Replay
+
+**Goal**: A live replayer (`rosbagger-replay`) — publish a bag's messages to real ROS topics with transport controls (play/pause/step/seek/rate/loop). Requires `rclpy`.
+**Depends on**: Phase 2
+**Requirements**: REP-01
+**Success Criteria** (what must be TRUE):
+
+  1. Replays a bag, publishing real ROS topics a subscriber receives
+  2. Transport controls work: play/pause/step/seek/rate/loop
+  3. Rate scaling and seek land at the expected message/timestamp
+
+**Plans**: TBD (set at plan-phase)
+
+### Phase 14: GUI
+
+**Goal**: A thin GUI (`rosbagger-gui`, Textual TUI) with five capability-gated panels (record/inspect/query/tf/replay) over the existing module APIs — offline panels always work, live panels light up only when a ROS graph is present.
+**Depends on**: Phase 4, Phase 5, Phase 9, Phase 12, Phase 13
+**Requirements**: GUI-01
+**Success Criteria** (what must be TRUE):
+
+  1. Launches a TUI exposing the five panels over the existing module APIs (no business logic in the GUI)
+  2. Capability-gating: live panels (record/replay) disabled without a ROS graph; offline panels (inspect/query/tf) always work
+  3. The inspect/query panels drive the real `rosbagger_core` APIs against a fixture bag
+
+**Plans**: TBD (set at plan-phase)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -219,3 +306,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
+| 9. TF Debugger | 0/? | Not started | - |
+| 10. Query Ergonomics | 0/? | Not started | - |
+| 11. Edit & Events | 0/? | Not started | - |
+| 12. Live Record | 0/? | Not started | - |
+| 13. Live Replay | 0/? | Not started | - |
+| 14. GUI | 0/? | Not started | - |

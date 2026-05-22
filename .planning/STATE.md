@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.1
-milestone_name: milestone
-status: milestone_complete
-stopped_at: Milestone complete (Phase 8 was final phase)
+milestone: v0.2
+milestone_name: Modular cockpit
+status: planning
+stopped_at: v0.2 milestone roadmapped (phases 9-14); ready to plan Phase 9 (TF Debugger)
 last_updated: 2026-05-22T18:44:16.741Z
-last_activity: 2026-05-22 -- Phase 8 complete (v0.1 shipped, awaiting push)
+last_activity: 2026-05-22 -- v0.1 shipped (awaiting push); v0.2 roadmap created (TF/ergonomics/edit/live/GUI)
 progress:
-  total_phases: 8
+  total_phases: 14
   completed_phases: 8
   total_plans: 18
   completed_plans: 18
