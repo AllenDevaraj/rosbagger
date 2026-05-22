@@ -2,13 +2,15 @@
 
 Defines the typer application bound to the symbol ``app`` so the console-script
 ``bagq = "bagq.cli:app"`` resolves. Phase 1 shipped a minimal runnable surface
-(``bagq --help`` / ``bagq --version``); Phase 4 adds the first real subcommand,
-``bagq info`` (the Inspect overview).
+(``bagq --help`` / ``bagq --version``); Phase 4 adds the first real subcommands,
+``bagq info`` (the Inspect overview) and ``bagq tables`` (per-topic table name +
+column schema).
 
 Keep this module light: import only typer/rich at top level — do NOT import
-rosbagger-core's heavy stack (``rosbags``/``pyarrow``) here. The ``info`` command
-imports the core inspect API LAZILY inside its body, so ``bagq --help`` stays
-fast and pays no ``rosbags`` import cost (offline-guard discipline).
+rosbagger-core's heavy stack (``rosbags``/``pyarrow``) here. The ``info`` and
+``tables`` commands import the core inspect API LAZILY inside their bodies, so
+``bagq --help`` stays fast and pays no ``rosbags`` import cost (offline-guard
+discipline).
 
 Per design decision 1 (API-first), all computation lives in
 ``rosbagger_core.inspect``; this module only renders the returned dataclasses.
@@ -113,6 +115,56 @@ def info(
     with RosbagsReader(bags) as reader:
         bag_info = collect_bag_info(reader)
     _render_bag_info(bag_info)
+
+
+def _render_table_schemas(schemas, console: Console | None = None) -> None:
+    """Render a list of ``TableSchema`` as one rich column table per topic (INSP-03).
+
+    For each schema, prints a ``topic → table_name`` heading then a rich table
+    listing EVERY column: its dotted/standard ``name``, the rendered
+    ``str(arrow_type)`` (e.g. ``timestamp[ns]``, ``int64``, ``list<item: uint8>``),
+    and a heavy-blob marker. Heavy blobs are SHOWN and annotated ``lazy``, never
+    hidden (Assumption A2 / Pattern 4) — the user is asking "what columns exist?",
+    and the blob's bytes are never read (its name + type only; threat T-04-07).
+    Uses ``ColumnDef.is_heavy_blob`` directly, not ``column_names(include=...)``.
+
+    With no topics (e.g. an empty/zero-connection bag) prints a "no topics" line
+    rather than emitting an empty table.
+    """
+    console = console or Console()
+    if not schemas:
+        console.print("no topics")
+        return
+    for schema in schemas:
+        console.print(f"{schema.topic} → {schema.table_name}")
+        table = Table()
+        table.add_column("column")
+        table.add_column("type")
+        table.add_column("lazy")
+        for col in schema.columns:
+            marker = "lazy (blob)" if col.is_heavy_blob else ""
+            table.add_row(col.name, str(col.arrow_type), marker)
+        console.print(table)
+
+
+@app.command()
+def tables(
+    bags: Annotated[
+        list[Path],
+        typer.Argument(help="One or more bag paths (file or directory)."),
+    ],
+) -> None:
+    """Print each topic's table name and column schema (heavy blobs marked lazy)."""
+    # Import the core API lazily (inside the body) so module import stays light
+    # and `bagq --help` pays no rosbags import cost.
+    from rosbagger_core.inspect import collect_table_schemas
+    from rosbagger_core.reader import RosbagsReader
+
+    # AnyReaderError / FileNotFoundError propagate unchanged — Phase 7 owns
+    # turning them into teaching error messages.
+    with RosbagsReader(bags) as reader:
+        schemas = collect_table_schemas(reader)
+    _render_table_schemas(schemas)
 
 
 if __name__ == "__main__":  # pragma: no cover
