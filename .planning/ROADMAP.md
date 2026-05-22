@@ -188,7 +188,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Scaffold & Test Harness | 3/3 | Complete   | 2026-05-22 |
-| 2. Bag Reader Layer | 3/3 | Complete   | 2026-05-22 |
+| 2. Bag Reader Layer | 3/3 | Complete    | 2026-05-22 |
 | 3. Message→Table Schema | 0/3 | Not started | - |
 | 4. Inspect | 0/2 | Not started | - |
 | 5. Query Engine | 0/2 | Not started | - |
