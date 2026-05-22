@@ -566,7 +566,13 @@ imu = ts.types['sensor_msgs/msg/Imu'](
 | A6 | Phase 1 ships a placeholder `bagq --help` (typer app with no real commands) | phase_requirements / O-1 | LOW — explicitly open in CONTEXT; either choice satisfies "imports as installed package" |
 | A7 | The empty `reader/`, `schema/`, `backend/` seam packages are wanted in Phase 1 | Project Structure | LOW — anticipates the `QueryBackend` seam (locked decision) and Phases 2/3/5; harmless if planner prefers to defer folder creation |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All four resolved during planning (Phase 1 plans, committed `b72e917`):
+> - **O-1 — RESOLVED:** wire a minimal runnable `bagq --help` (+ `--version`) → 01-01 Task 3.
+> - **O-2 — RESOLVED:** session-scoped `tmp_path_factory` fixtures + `tools/make_fixtures.py`; no committed binaries → 01-03.
+> - **O-3 — RESOLVED:** CI matrix `["3.10", "3.12"]` + `.python-version` pinned to 3.10 → 01-02 Task 3 / 01-01 Task 2.
+> - **O-4 — RESOLVED:** include a tiny `/image` `sensor_msgs/msg/Image` blob in the fixtures now → 01-03 Task 1.
 
 1. **O-1 — Does Phase 1 wire a runnable `bagq --help`, or only a placeholder entry point?**
    - What we know: Either satisfies Success Criterion #1 (both import as installed packages). A typer app with zero commands still exposes `--help`. Verified that a console-script entry point works in the workspace.
