@@ -79,4 +79,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 after Phase 2 (Bag Reader Layer) completion — universal ROS1/ROS2/MCAP reading via `rosbags` (READ-01..05) is shipped and validated. Remaining feature requirements (inspect, SQL query, export, teaching errors) ship in Phases 3–7.*
+*Last updated: 2026-05-22 after Phase 3 (Message→Table Schema) completion — message→table flattening (QURY-01..04, 07: sanitized table names, dotted/quoted columns, LIST/STRUCT, standard time columns, lazy blobs) emits backend-neutral pyarrow, ready for the Phase 5 DuckDB query engine. Reader (Phase 2) shipped. Next user-facing capabilities: inspect (Phase 4), SQL query (Phase 5), export (Phase 6), CLI + teaching errors (Phase 7).*
