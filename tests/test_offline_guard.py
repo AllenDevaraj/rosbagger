@@ -8,9 +8,15 @@ meaningful on both a clean CI runner AND this ROS-equipped dev box.
 """
 
 import importlib
+import subprocess
 import sys
 
 import pytest
+
+# The heavy query/data stack that MUST stay out of the import graph until a
+# backend/schema function is actually called (05-01 W2 — converts the previously
+# ad-hoc "light __init__" check into a permanent regression test).
+_HEAVY_STACK = {"duckdb", "sqlglot", "pyarrow"}
 
 
 def test_core_imports_without_ros(no_ros):
@@ -29,3 +35,53 @@ def test_no_ros_leaked_into_sys_modules():
 
     leaked = [m for m in sys.modules if m.split(".")[0] in {"rclpy", "rosbag2_py"}]
     assert leaked == [], f"offline import pulled in ROS modules: {leaked}"
+
+
+def _heavy_modules_after_import(*import_targets: str) -> list[str]:
+    """Return the heavy-stack modules in sys.modules after importing ``import_targets``.
+
+    Spawned in a FRESH interpreter (with an empty PYTHONPATH to neutralize the
+    host ROS leak) so an already-imported duckdb/sqlglot/pyarrow in THIS test
+    process — the suite imports all three — cannot mask a real leak. This is the
+    same fresh-subprocess technique as test_schema_arrow.py's pyarrow/rosbags
+    check, extended to the full heavy query stack.
+    """
+    imports = "; ".join(f"import {t}" for t in import_targets)
+    heavy = sorted(_HEAVY_STACK)
+    code = (
+        "import sys; "
+        f"{imports}; "
+        f"heavy={heavy!r}; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] in heavy]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    return [m for m in result.stdout.strip().split(",") if m]
+
+
+def test_import_core_does_not_pull_heavy_query_stack():
+    """`import rosbagger_core` must NOT load duckdb/sqlglot/pyarrow (light __init__).
+
+    The heavy stack may only load when a backend/schema function is actually
+    called — never on the bare top-level import. Regression test for the 05-01
+    backend seam (W2): keeps `rosbagger_core/__init__` light forever.
+    """
+    leaked = _heavy_modules_after_import("rosbagger_core")
+    assert leaked == [], f"import rosbagger_core leaked the heavy stack: {leaked}"
+
+
+def test_import_backend_subpackage_does_not_pull_heavy_query_stack():
+    """`import rosbagger_core.backend` must NOT load duckdb/sqlglot/pyarrow either.
+
+    The backend package's ``__init__`` reserves the seam but stays light: duckdb
+    only loads via ``import rosbagger_core.backend.duckdb_backend`` (the documented
+    entry), not on the package import. Regression test for the 05-01 W2 invariant.
+    """
+    leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.backend")
+    assert leaked == [], f"import rosbagger_core.backend leaked the heavy stack: {leaked}"
