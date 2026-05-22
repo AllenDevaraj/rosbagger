@@ -202,7 +202,7 @@ Plans:
 
 Plans:
 
-- [ ] 08-01: Packaging polish, README/usage, offline-import check, v0.1
+- [ ] 08-01-PLAN.md — Version bump 0.0.0→0.1.0 (4 sources + re-lock uv.lock) + MIT LICENSE + expanded README (verified pip recipe, per-command usage, offline guarantee) + clean-room pip-install verification (SC1/SC2) + local CI-equivalent gate + local `v0.1.0` tag; push+observe-CI documented as the sole human follow-up (SC3 split) -> SC1/SC2/SC3
 
 ## Progress
 
