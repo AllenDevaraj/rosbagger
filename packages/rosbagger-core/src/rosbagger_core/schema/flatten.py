@@ -129,10 +129,25 @@ def build_table_schema(msgtype: str, typestore, *, topic: str) -> TableSchema:
         ColumnDef(name=name, arrow_type=arrow_type, ros_path=(), is_heavy_blob=False)
         for name, arrow_type in STANDARD_COLUMNS
     ]
-    columns.extend(
-        ColumnDef(name=name, arrow_type=arrow_type, ros_path=path, is_heavy_blob=heavy)
-        for name, path, arrow_type, heavy in _walk_fields(msgtype, typestore)
-    )
+    # WR-01 fix: enforce a UNIQUE-NAME invariant on the body columns. A message
+    # body field literally named `t`/`t_ns`/`stamp`/`topic` (or a body name that
+    # repeats) would otherwise produce duplicate column `name`s, which collapses
+    # build_arrow_table's name-keyed `values` dict and raises ArrowTypeError
+    # (05-RESEARCH Pitfall 1, VERIFIED). We rename the colliding BODY column
+    # (suffix `_` until unique), keeping its ros_path/arrow_type/is_heavy_blob
+    # exactly as `_walk_fields` produced them so the value still extracts. The
+    # four standard columns are NEVER renamed — `t`/`t_ns`/`stamp`/`topic` are
+    # the documented QURY-04 contract (the "namespace the standard column"
+    # alternative is rejected, RESEARCH Pitfall 1).
+    taken: set[str] = set(_STANDARD_COLUMN_NAMES)
+    for name, path, arrow_type, heavy in _walk_fields(msgtype, typestore):
+        unique_name = name
+        while unique_name in taken:
+            unique_name += "_"
+        taken.add(unique_name)
+        columns.append(
+            ColumnDef(name=unique_name, arrow_type=arrow_type, ros_path=path, is_heavy_blob=heavy)
+        )
     return TableSchema(
         table_name=sanitize_table_name(topic),
         topic=topic,
@@ -231,6 +246,11 @@ def build_arrow_table(
     # The kept columns, in declared order, are exactly the fields of arrow_schema
     # (it applies the same heavy-blob filter) — drive off it to stay in lockstep.
     kept = [col for col in schema.columns if col.name in arrow_schema.names]
+    # This name-keyed dict relies on the UNIQUE-NAME invariant build_table_schema
+    # guarantees (WR-01 fix): colliding body columns are pre-renamed there, so no
+    # two ColumnDefs share a `name` and no column collapses here (RESEARCH
+    # Pitfall 1 "Note for planner" — no code change needed here once names are
+    # unique).
     values: dict[str, list] = {col.name: [] for col in kept}
 
     for msg in messages:
