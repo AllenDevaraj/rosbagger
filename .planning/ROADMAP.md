@@ -38,7 +38,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Monorepo layout + pyproject for `rosbagger-core` and `bagq` (uv workspace, src-layout, hatchling, console script, importable packages) -> SC1
+- [x] 01-01-PLAN.md — Monorepo layout + pyproject for `rosbagger-core` and `bagq` (uv workspace, src-layout, hatchling, console script, importable packages) -> SC1
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -180,7 +180,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Scaffold & Test Harness | 0/3 | Not started | - |
+| 1. Scaffold & Test Harness | 1/3 | In Progress|  |
 | 2. Bag Reader Layer | 0/3 | Not started | - |
 | 3. Message→Table Schema | 0/3 | Not started | - |
 | 4. Inspect | 0/2 | Not started | - |
