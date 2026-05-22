@@ -4,13 +4,13 @@ milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
 stopped_at: "Completed 09-01-PLAN.md (Phase 9 plan 1/3): write_tf_bag TF fixture writer with a seeded 800ms gap (omit ticks 8..14 of 24), three formats (ROS 1 / ROS 2 sqlite3 / MCAP), v1-reader re-openable; ROS 1 registers tf2_msgs/msg/TFMessage. make_all_fixtures untouched; offline invariant held; suite 255 passed 97.82%. NO deviations. Next: 09-02 (TF analyzer core collect_tf_report over the reader stream)."
-last_updated: "2026-05-22T23:39:41.016Z"
+last_updated: "2026-05-22T23:47:10.000Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 14
   completed_phases: 8
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
   percent: 57
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 09 (tf-debugger) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -82,6 +82,7 @@ Progress: [█████████░] 90%
 | Phase 07 P02 | 6min | 3 tasks | 9 files |
 | Phase 08 P08-01 | 3min | 3 tasks | 6 files |
 | Phase 09 P01 | 3min | 1 tasks | 1 files |
+| Phase 09 P02 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -159,6 +160,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08-01]: Release verified LOCALLY — SC1: clean-room `pip install ./packages/rosbagger-core ./packages/bagq` in a FRESH throwaway venv (NOT .venv, PYTHONPATH='') -> bagq --help + info/tables/query --help all exit 0. SC2: offline `import rosbagger_core, bagq` from neutral cwd /tmp with find_spec('rclpy')/('rosbag2_py')/('tools') all None (no ROS dep + no tools/ in either wheel; T-08-03 mitigated, confirmed via the clean-room install). Local CI-equivalent gate green (PYTHONPATH='' uv sync --locked --dev / ruff check / ruff format --check / pytest = 255 passed at 97.82%, >=80% gate). Annotated `v0.1.0` tag created LOCALLY (git cat-file -t -> tag; points at 936238b). NO deviations; no new deps; no runtime code.
 - [Phase 08-01]: SC3 SPLIT honestly — autonomous half (local gate + local v0.1.0 tag) DONE here; the SOLE human follow-up is `git push origin main && git push origin v0.1.0` then observe GitHub Actions go green, BLOCKED by no gh CLI / no push credential (standing blocker). Recorded in 08-01-SUMMARY as a known gap, NOT a stalling checkpoint (plan stayed autonomous:true). Note: STATE.md's Phase-7 continuity text said "254 passed"; the actual current suite is 255 passed at 97.82% (observed during this plan's local gate) — no code change needed.
 - [Phase ?]: [Phase 09-01] write_tf_bag(dest_dir, *, ros1, storage='sqlite3') added to tools/make_fixtures.py: /tf_static (one latched map->odom) + dynamic /tf (odom->base_link with ONE seeded 800_000_000 ns gap by omitting ticks 8..14 of 24; base_link->laser clean) in all three formats. ROS 1 registers tf2_msgs/msg/TFMessage via get_types_from_msg (absent from ROS1_NOETIC, verified); ROS 2 uses the built-in type. One /tf TFMessage per tick co-bundles present edges (analyzer keys by (parent,child)). make_all_fixtures untouched; offline invariant held; suite 255 passed 97.82%. TF-01 NOT marked complete (fixture only; analyzer lands in 09-02/03).
+- [Phase 09-02]: rosbagger_core/tf.py ships the entire TF-01 domain logic: collect_tf_report(reader, *, gap_multiplier=5.0, gap_ms=None) -> frozen TfReport. Streams /tf + /tf_static off the PASSED-IN v1 reader (Decision 2 — NOT the query layer that flattens /tf to one LIST-of-STRUCT col), keys edges by (parent,child), times by m.t_ns (TFMessage has no top-level header so Message.stamp is None — Decision 3), tags static by TOPIC NAME (Decision 4). Gap = median(inter-arrival diffs) x multiplier OR absolute gap_ms; deltas <=0 dropped before median, expected<=0 short-circuits (no ZeroDivision/false gap, T-09-03). Edge cases all guarded: static skip, single/zero-sample skip, MIXED /tf+/tf_static tie-break (static in graph yet gap-checked), no synthetic boundary gaps (A4), distinct series for self-edge/multi-parent (T-09-07). NoTransformsError (stdlib-only ValueError, .available) for the empty case (Decision 7). tf.py stdlib-only top (dataclasses, statistics), NOT in __init__, imports no ROS; __init__ untouched; offline guard held both ways. Suite 255 passed 85.46% (tf.py 0% BY DESIGN — tests land in 09-03). Lint fix: zip(..., strict=False) (Rule 3, bugbear B905). TF-01 NOT marked complete (spans 09-01/02/03; CLI+test in 09-03).
 
 ### Pending Todos
 
@@ -178,7 +180,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-22T23:39:41.006Z
+Last session: 2026-05-22T23:46:27.709Z
 Stopped at: Completed 09-01-PLAN.md (Phase 9 plan 1/3): write_tf_bag TF fixture writer with a seeded 800ms gap (omit ticks 8..14 of 24), three formats (ROS 1 / ROS 2 sqlite3 / MCAP), v1-reader re-openable; ROS 1 registers tf2_msgs/msg/TFMessage. make_all_fixtures untouched; offline invariant held; suite 255 passed 97.82%. NO deviations. Next: 09-02 (TF analyzer core collect_tf_report over the reader stream).
 Resume file: None
 Next: HUMAN — push `main` + `v0.1.0` tag and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git). All planned v0.1 work is done.
