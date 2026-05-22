@@ -445,24 +445,26 @@ VERIFIED against the live `rosbags` typestore on this box:
 | A4 | Default boundary behavior: gaps only *between observed samples* (no synthetic start/end gap) | Algorithm edge cases | A late-starting / early-stopping publisher won't be flagged by default; surfaced as informational instead. |
 | A5 | `bagq tf` subcommand vs new `rosbagger-tf` package is a planner choice; both satisfy TF-01 | Stack/Open Q2 | ROADMAP names `rosbagger-tf`; if the modular package boundary is a hard requirement, Option B is wrong. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **ROS 1 TF fixture registration vs. real-bag reading.**
+> All four questions were resolved during plan-phase by the locked decisions (D1–D10) and are reflected in the Phase 9 plans (09-01/09-02/09-03). Inline resolutions below.
+
+1. **ROS 1 TF fixture registration vs. real-bag reading.** — **RESOLVED → D10:** ROS 1 fixtures register `tf2_msgs/msg/TFMessage` via `get_types_from_msg`; real ROS 1 bags use embedded defs (no extra code). Scope is fixture-based per SC3.
    - What we know: ROS 2 typestore has `TFMessage`; ROS 1 does not, but it registers + round-trips via `get_types_from_msg` (VERIFIED). Real ROS 1 bags carry embedded defs.
    - What's unclear: whether the phase needs to *read* arbitrary real ROS 1 TF bags (defs embedded → fine) or only its own fixtures (must register). The success criterion only requires a *fixture* bag.
    - Recommendation: ROS 1 fixture registers the type (Test Strategy). For real-bag robustness, the reader already passes embedded defs through; no extra code needed. Confirm scope at plan time.
 
-2. **`bagq tf` subcommand (Option B) vs new `rosbagger-tf` package (Option A).** [BLOCKING for plan structure]
+2. **`bagq tf` subcommand (Option B) vs new `rosbagger-tf` package (Option A).** — **RESOLVED → D1 (explicit user decision):** Option B — `bagq tf` subcommand with logic in `rosbagger_core/tf.py`, auto-covered by the existing `--cov=rosbagger_core` gate; no new package, no `[tool.uv.sources]`/console-script/`addopts`/`uv.lock` edits.
    - What we know: ROADMAP and the v0.2 "modular cockpit" name the deliverable `rosbagger-tf` (a package + presumably a `rosbagger-tf` console script). The coverage gate (`--cov=rosbagger_core --cov=bagq`) is hardcoded and would not see a new package without an `addopts` edit.
    - What's unclear: whether the product wants a separate installable package/CLI now, or a `bagq tf` subcommand is acceptable for v0.2.
    - Recommendation: If following the ROADMAP literally → Option A (new package), and the planner MUST (a) add it as a `packages/*` workspace member, (b) add `[tool.uv.sources]` + the `rosbagger-tf` console script, (c) extend `addopts` with `--cov=rosbagger_tf`, (d) re-lock `uv.lock`. If pragmatic simplicity is preferred → Option B (`rosbagger_core/tf.py` + `bagq tf`), auto-covered, one CLI. **Resolve before planning** — it changes the plan/wave shape.
 
-3. **Timeline clock: bag log time vs per-transform header stamp.**
+3. **Timeline clock: bag log time vs per-transform header stamp.** — **RESOLVED → D3:** bag-relative log time (`m.t_ns - start_ns`); `m.stamp` is `None` for `/tf` so header-stamp timing is not used by default.
    - What we know: `Message.stamp` is `None` for `/tf` (no top-level header); both `m.t_ns` and `tfs.header.stamp` are available.
    - What's unclear: which the user expects for "at t=12.4s".
    - Recommendation: Default to bag-relative log time (`m.t_ns - start_ns`) — robust and always present. Optionally expose header-stamp-based timing later. Document the choice.
 
-4. **TF topic-name matching.**
+4. **TF topic-name matching.** — **RESOLVED → D4:** match `/tf` + `/tf_static` by topic name; optional `--tf-topic`/`--static-topic` overrides (low priority, not required by TF-01).
    - What we know: `/tf` and `/tf_static` are the universal conventions; matching by topic name sidesteps any msgtype-spelling variance (`tf2_msgs/TFMessage` vs `tf2_msgs/msg/TFMessage`).
    - Recommendation: Match by the two standard topic names; consider a `--tf-topic` / `--static-topic` override flag for non-standard recordings (low priority; not required by TF-01).
 
