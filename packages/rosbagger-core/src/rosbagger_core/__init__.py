@@ -6,4 +6,4 @@ sqlglot, rosbags) at top level. Defer those into the functions that use them
 `bagq --help` does not pay the duckdb import cost.
 """
 
-__version__ = "0.0.0"
+__version__ = "0.1.0"
