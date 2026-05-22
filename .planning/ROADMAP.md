@@ -22,7 +22,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 
 ### Milestone v0.2 — Modular cockpit (TF · ergonomics · edit · live · GUI)
 
-- [ ] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand)
+- [x] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand) (completed 2026-05-22)
 - [ ] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown
 - [ ] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar
 - [ ] **Phase 12: Live Record** - live topic discovery + select recording (rclpy)
@@ -234,7 +234,7 @@ Plans:
 
 **Wave 2** *(blocked on 09-01 + 09-02)*
 
-- [ ] 09-03-PLAN.md — `bagq tf` subcommand (rich edge-summary + gap-timeline tables, `--gap-multiplier`/`--gap-ms`/`--format json`, `NoTransformsError` via `teaching_errors`) + fixture-backed SC1/SC2/SC3 tests across all three formats + offline-guard extension for the TF module -> TF-01
+- [x] 09-03-PLAN.md — `bagq tf` subcommand (rich edge-summary + gap-timeline tables, `--gap-multiplier`/`--gap-ms`/`--format json`, `NoTransformsError` via `teaching_errors`) + fixture-backed SC1/SC2/SC3 tests across all three formats + offline-guard extension for the TF module -> TF-01
 
 ### Phase 10: Query Ergonomics
 
@@ -316,7 +316,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
-| 9. TF Debugger | 2/3 | In Progress|  |
+| 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
 | 10. Query Ergonomics | 0/? | Not started | - |
 | 11. Edit & Events | 0/? | Not started | - |
 | 12. Live Record | 0/? | Not started | - |

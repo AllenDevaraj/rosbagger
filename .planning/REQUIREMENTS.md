@@ -63,7 +63,7 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 
 ### TF Debugger
-- **TF-01**: Offline TF dropout/timeline report from `/tf` + `/tf_static`
+- **TF-01** ✓ (Phase 9 — Complete): Offline TF dropout/timeline report from `/tf` + `/tf_static`
 
 ### Live (record/replay)
 - **REC-01**: Live topic discovery + checkbox-select recording (needs rclpy)
@@ -116,6 +116,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | CLI-02 | Phase 7 | Complete |
 | CLI-03 | Phase 7 | Complete |
 | CLI-04 | Phase 7 | Complete |
+| TF-01 | Phase 9 | Complete |
 
 **Coverage:**
 - v1 requirements: 23 total
