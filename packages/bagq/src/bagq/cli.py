@@ -25,9 +25,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
+import click
 import typer
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperCommand
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import pyarrow
@@ -39,6 +41,45 @@ app = typer.Typer(
     help="bagq — query ROS 1 / ROS 2 / MCAP bags with SQL. No ROS install required.",
     no_args_is_help=True,
 )
+
+# `bagq query --plot` is an OPTIONAL-VALUE flag (06-RESEARCH Pattern 4): omitted writes
+# nothing, bare `--plot` writes the default filename, `--plot FILE` writes that file. The
+# native click idiom is `is_flag=False, flag_value=<sentinel>, default=None`, but typer
+# 0.25.1 SILENTLY DROPS `flag_value` when it converts `typer.Option` -> click (see
+# typer.main.get_click_param: it only forwards `is_flag` for bool params and never reads
+# `flag_value`), so a bare `--plot` errors with "requires an argument". `_PlotCommand`
+# below (a `TyperCommand` subclass passed via `@app.command(cls=...)`) restores the idiom
+# by REBUILDING the `--plot` option as a native `click.Option` after typer constructs the
+# command — keeping `query` a normal typer command and `app` a normal `typer.Typer` (so
+# the `bagq.cli:app` entry point and the 06-01 CliRunner tests are untouched).
+_PLOT_DEFAULT = "\x00bagq-default-plot"  # bare --plot sentinel; resolves to _PLOT_DEFAULT_FILE
+_PLOT_DEFAULT_FILE = "plot.png"  # the default chart filename in CWD (decision A1)
+
+
+class _PlotCommand(TyperCommand):
+    """A ``TyperCommand`` that makes ``--plot`` a click optional-value flag.
+
+    typer 0.25.1 cannot express an optional-value flag (it drops ``flag_value`` during the
+    ``typer.Option`` -> click conversion), so this subclass post-processes the command's
+    params — typer rebuilds them on every ``get_command`` call, so the fix must run at
+    construction time — and REPLACES the ``--plot`` option with a freshly-built
+    ``click.Option(is_flag=False, flag_value=_PLOT_DEFAULT, default=None)``. Reconstructing
+    (rather than mutating ``is_flag``/``flag_value`` in place) is required because click
+    derives the optional-value parser behaviour in ``click.Option.__init__``. The result:
+    omitted -> ``None``; bare ``--plot`` -> ``_PLOT_DEFAULT``; ``--plot FILE`` -> ``"FILE"``.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        for i, param in enumerate(self.params):
+            if isinstance(param, click.Option) and "--plot" in param.opts:
+                self.params[i] = click.Option(
+                    list(param.opts),
+                    is_flag=False,
+                    flag_value=_PLOT_DEFAULT,
+                    default=None,
+                    help=param.help,
+                )
 
 
 def _version_callback(value: bool) -> None:
@@ -206,7 +247,7 @@ def _render_result(
         console.print(f"... {table.num_rows - max_rows} more rows ({table.num_rows} total)")
 
 
-@app.command()
+@app.command(cls=_PlotCommand)
 def query(
     sql: Annotated[
         str,
@@ -224,6 +265,17 @@ def query(
         str,
         typer.Option("--format", help="table|csv|parquet|json (default table)."),
     ] = "table",
+    plot: Annotated[
+        str | None,
+        # Declared as a plain string option; `_PlotCommand` (the `cls=` above) rebuilds it
+        # into a click optional-value flag (typer can't carry `flag_value` itself — see the
+        # `_PlotCommand` docstring). Omitted -> None; bare `--plot` -> `_PLOT_DEFAULT`
+        # sentinel; `--plot FILE` -> "FILE".
+        typer.Option(
+            "--plot",
+            help="Plot numeric columns vs t. Bare = write plot.png; --plot FILE = that file.",
+        ),
+    ] = None,
 ) -> None:
     """Run a SQL query over one or more bags and print or export the result.
 
@@ -231,11 +283,15 @@ def query(
     write a file by extension (OUT-02/03). ``--format`` selects the sink when no ``-o``
     is given: ``table`` (default), ``csv`` (streams CSV to stdout), ``parquet`` (errors
     — binary), or ``json`` (temporal-safe records). ``-o`` always wins over ``--format``.
+    ``--plot`` is its own output sink (OUT-04): a minimal headless line chart of the
+    numeric result columns vs ``t_ns``; bare ``--plot`` writes ``plot.png`` in CWD,
+    ``--plot FILE`` writes that file. When ``--plot`` is given it takes precedence over
+    table/``--format`` rendering.
     """
     # Import the core API lazily (inside the body) so module import stays light and
     # `bagq --help` pays no rosbags/duckdb/pyarrow import cost (offline-guard).
     from rosbagger_core.backend.query import query as run_query
-    from rosbagger_core.output import to_json, write_csv_stream, write_table
+    from rosbagger_core.output import plot_table, to_json, write_csv_stream, write_table
     from rosbagger_core.reader import RosbagsReader
 
     # UnknownTableError / AnyReaderError / FileNotFoundError propagate unchanged —
@@ -244,6 +300,17 @@ def query(
     # before it returns), so it outlives the reader `with` block.
     with RosbagsReader(bags) as reader:
         result = run_query(sql, reader)
+
+    # --plot is its own output sink (OUT-04) and takes precedence: when set, plot and
+    # return, ignoring table/-o/--format. The bare-flag sentinel resolves to plot.png
+    # (decision A1); --plot FILE writes that file. The RuntimeError (matplotlib missing
+    # -> teaching "install bagq[plot]") and any ValueError (nothing to plot) PROPAGATE —
+    # Phase 7 owns formatting errors; do NOT swallow them here.
+    if plot is not None:
+        target = _PLOT_DEFAULT_FILE if plot == _PLOT_DEFAULT else plot
+        plot_table(result, target)
+        typer.echo(f"Wrote {target}")
+        return
 
     # Route by precedence: an explicit -o wins and picks the format by extension.
     if out is not None:

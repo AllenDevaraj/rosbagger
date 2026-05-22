@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 pytest.importorskip("matplotlib")  # skip the whole module without the optional plot extra
 
@@ -32,9 +33,12 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import write_ros1_bag  # noqa: E402  (after sys.path setup)
 
+from bagq.cli import app  # noqa: E402
 from rosbagger_core.backend.query import query as run_query  # noqa: E402
 from rosbagger_core.output import plot_table  # noqa: E402
 from rosbagger_core.reader import RosbagsReader  # noqa: E402
+
+runner = CliRunner()
 
 
 @pytest.fixture(scope="session")
@@ -107,3 +111,46 @@ def test_plot_table_closes_figures(ros1_bag: Path, tmp_path: Path) -> None:
     for i in range(3):
         plot_table(result, tmp_path / f"loop-{i}.png")
     assert plt.get_fignums() == []
+
+
+# --- bagq query --plot [FILE] (the CLI flag, OUT-04) ------------------------------
+
+
+def test_query_plot_with_file_writes_png(ros1_bag: Path, tmp_path: Path) -> None:
+    """``--plot <tmp>.png`` exits 0 and writes that exact non-empty PNG (OUT-04)."""
+    out = tmp_path / "chart.png"
+    result = runner.invoke(
+        app, ["query", 'SELECT t_ns, "linear.x" FROM cmd_vel', str(ros1_bag), "--plot", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    assert out.exists()
+    assert os.path.getsize(out) > 0
+
+
+def test_query_bare_plot_writes_default_filename(
+    ros1_bag: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bare ``--plot`` (no value) exits 0 and writes the default ``plot.png`` in CWD (A1)."""
+    monkeypatch.chdir(tmp_path)  # so the default plot.png lands in tmp, not the repo
+    result = runner.invoke(
+        app, ["query", 'SELECT t_ns, "linear.x" FROM cmd_vel', str(ros1_bag), "--plot"]
+    )
+    assert result.exit_code == 0, result.output
+    default = tmp_path / "plot.png"
+    assert default.exists()
+    assert os.path.getsize(default) > 0
+
+
+def test_query_plot_no_numeric_columns_errors(ros1_bag: Path) -> None:
+    """``--plot`` on a no-numeric result exits non-zero (nothing-to-plot ValueError propagates)."""
+    result = runner.invoke(
+        app, ["query", "SELECT topic FROM cmd_vel", str(ros1_bag), "--plot", "x.png"]
+    )
+    assert result.exit_code != 0
+
+
+def test_help_lists_plot_option() -> None:
+    """``bagq query --help`` lists the ``--plot`` option on the query command."""
+    result = runner.invoke(app, ["query", "--help"])
+    assert result.exit_code == 0
+    assert "--plot" in result.stdout
