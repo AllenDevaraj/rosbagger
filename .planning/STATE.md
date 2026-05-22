@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 05-02-PLAN.md — PHASE 5 COMPLETE (2/2). query(sql, reader)->pyarrow.Table: sqlglot resolve (CTE-subtracted tables/columns/Star) -> topic->table inversion (shared TableNameResolver, skip msgtype-None) -> connection-filtered lazy load (read(topics={t}); only referenced topics deserialized, QURY-05) -> DuckDB register/execute (QURY-06). UnknownTableError lists available tables; SELECT * materializes blobs, projection omits them. read(topics=set()) short-circuits to empty (Rule 1). Full suite 186 passed at 97.91%; resolve.py 100%, query.py 98%, offline guard green. Next: Phase 6 (output — CSV/Parquet/plot from the result Table; use t_ns for display per Pitfall 6)."
-last_updated: "2026-05-22T10:35:02.983Z"
+status: ready_to_plan
+stopped_at: Phase 5 complete (2/2) — ready to discuss Phase 6
+last_updated: 2026-05-22T16:22:35.552Z
 last_activity: 2026-05-22 -- Completed 05-02 (query orchestrator; PHASE 5 COMPLETE 2/2)
 progress:
   total_phases: 8
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 5 — query engine
+**Current focus:** Phase 6 — output & export
 
 ## Current Position
 
-Phase: 5
-Plan: 2 of 2 complete
-Status: Phase 5 complete (2/2) — ready for Phase 6 (output)
-Last activity: 2026-05-22 -- Completed 05-02 (query orchestrator; PHASE 5 COMPLETE 2/2)
+Phase: 6
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-22
 
 Progress: [██████████] 100% (Phase 5: 2/2 plans complete)
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100% (Phase 5: 2/2 plans complete)
 
 **Velocity:**
 
-- Total plans completed: 16
+- Total plans completed: 18
 - Average duration: ~4 min
 - Total execution time: ~0.9 hours
 
@@ -49,6 +49,7 @@ Progress: [██████████] 100% (Phase 5: 2/2 plans complete)
 | 03 | 3 | 17min | ~6min |
 | 04 | 2 | 12min | 6min |
 | 4 | 2 | - | - |
+| 5 | 2 | - | - |
 
 **Recent Trend:**
 
