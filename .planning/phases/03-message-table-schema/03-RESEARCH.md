@@ -587,7 +587,9 @@ con.execute("SELECT count(*) FROM empty_topic").fetchone()  # -> (0,)
 
 > Everything else in this research was **VERIFIED** by executing `rosbags` 0.11.2 / `pyarrow` 24.0.0 / `duckdb` 1.5.3 against the project's own fixtures this session, and/or reading the installed library source. No compliance/security/retention assumptions. The five `[ASSUMED]` items above are all low-risk rare-type or design-intent confirmations — none block planning; A5 is the only one worth a one-line user confirmation in discuss-phase.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+*All three resolved and carried into the plans: Q1 (emit both t/t_ns) → 03-02 STANDARD_COLUMNS; Q2 (include-set keyed on dotted name) → 03-01/03-03; Q3 (pass typestore explicitly) → `build_table_schema(msgtype, typestore, ...)` in 03-02 + `reader._reader.typestore` downstream.*
 
 1. **What value type does Phase 5 expect for `t`/`stamp` ingestion — int-ns or a datetime?**
    - What we know: `pa.timestamp('ns')` columns map to DuckDB `TIMESTAMP_NS` and a Python-`int`-ns value materializes correctly (VERIFIED via a `1_000_000_000`-ns array → `1970-01-01 00:00:01`). `Message.t`/`t_ns`/`stamp` are ints (or `None` for `stamp`).
