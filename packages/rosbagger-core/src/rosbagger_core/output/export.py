@@ -78,25 +78,67 @@ def write_table(table: pyarrow.Table, path: str | os.PathLike[str]) -> None:
         ValueError: the extension is neither ``.csv`` nor ``.parquet``.
     """
     path_str = str(path)
-    ext = path_str.lower().rsplit(".", 1)[-1] if "." in path_str else ""
+    # WR-01: parse the extension off the BASENAME only. A whole-path
+    # ``rsplit(".", 1)`` splits on the last dot ANYWHERE — e.g.
+    # ``/home/u/v1.2/results/output`` -> ``'2/results/output'`` (a dotted parent dir
+    # misfires the lookup; 06-RESEARCH §5 / Pitfall 2). ``splitext(basename(...))``
+    # yields ``''`` for an extensionless file and ``'csv'`` for ``.../<date>.../run.csv``.
+    ext = os.path.splitext(os.path.basename(path_str))[1].lstrip(".").lower()
     opts = _FORMAT_OPTS.get(ext)
     if opts is None:
         raise ValueError(f"Unknown output extension {ext!r}; use .csv or .parquet")
     _copy_to(table, path_str, opts)
 
 
-def write_csv_stream(table: pyarrow.Table, path: str | os.PathLike[str] = "/dev/stdout") -> None:
-    """Write ``table`` as CSV to ``path`` (default ``/dev/stdout``) via DuckDB ``COPY``.
+def write_csv_to_string(table: pyarrow.Table) -> str:
+    """Return ``table`` as CSV TEXT (header + one line per row), buffered portably.
 
-    The streaming companion to :func:`write_table`: forces ``FORMAT CSV, HEADER`` with NO
-    extension detection, so an extensionless target like ``/dev/stdout`` works (it is a
-    valid DuckDB ``COPY`` target). This backs ``bagq query --format csv`` with no ``-o``
-    (decision A2 — stream CSV to stdout), keeping the ``COPY`` construction + path
-    quote-escape (T-06-01) in this core module rather than in the CLI (so ``bagq/cli.py``
-    never imports duckdb; offline invariant).
+    The OS-portable, ``sys.stdout``-friendly replacement for the old
+    ``COPY ... TO '/dev/stdout'`` path (WR-02): DuckDB ``COPY`` writes at OS fd 1, which
+    (a) CliRunner cannot capture and (b) does not exist on Windows (violates CLAUDE.md
+    "runs anywhere"). Instead this writes the CSV to a private ``tempfile.mkstemp`` file,
+    reads it back as UTF-8 text, unlinks the file in a ``finally`` (no leak), and RETURNS
+    the string — so the CLI emits it via Python (``typer.echo``), which IS captured by
+    CliRunner and works on every OS.
+
+    The actual write reuses :func:`_copy_to` (NOT a re-implemented ``COPY``), so the one
+    SQL-literal quote-escape boundary (``'`` → ``''``, threat T-06-01) stays shared. Going
+    through DuckDB ``COPY`` (NOT ``pyarrow.csv.write_csv``, which raises ``ArrowInvalid`` on
+    LIST columns — 06-RESEARCH Pitfall 2) renders a LIST column as a bracketed string
+    ``"[1.0, 2.0, ...]"``.
 
     Args:
         table: the result ``pyarrow.Table`` from ``query()``.
-        path: the CSV destination; defaults to ``/dev/stdout``.
+
+    Returns:
+        The full CSV (header + rows) as a single UTF-8 string.
+    """
+    import tempfile  # stdlib — kept inside the body alongside the lazy duckdb in _copy_to
+
+    fd, tmp = tempfile.mkstemp(suffix=".csv")
+    os.close(fd)  # we only need the path; _copy_to opens its own duckdb connection
+    try:
+        _copy_to(table, tmp, _FORMAT_OPTS["csv"])  # shared COPY core + T-06-01 escape
+        with open(tmp, encoding="utf-8") as fh:
+            return fh.read()
+    finally:
+        os.unlink(tmp)  # no temp-file leak, and never /dev/stdout (WR-02)
+
+
+def write_csv_stream(table: pyarrow.Table, path: str | os.PathLike[str] = "/dev/stdout") -> None:
+    """Write ``table`` as CSV to ``path`` (default ``/dev/stdout``) via DuckDB ``COPY``.
+
+    DEPRECATED for stdout (WR-02): the ``/dev/stdout`` default writes at OS fd 1, which
+    CliRunner cannot capture and which does not exist on Windows (CLAUDE.md "runs
+    anywhere"). ``bagq query --format csv`` now routes through
+    :func:`write_csv_to_string` + ``typer.echo`` instead. This function is RETAINED for
+    back-compat (an explicit non-stdout ``path`` still works as a forced-``FORMAT CSV``
+    write with no extension detection); the CLI no longer calls it with the
+    ``/dev/stdout`` default.
+
+    Args:
+        table: the result ``pyarrow.Table`` from ``query()``.
+        path: the CSV destination; defaults to ``/dev/stdout`` (do not use for stdout —
+            prefer :func:`write_csv_to_string`).
     """
     _copy_to(table, str(path), _FORMAT_OPTS["csv"])

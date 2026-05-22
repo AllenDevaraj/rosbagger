@@ -12,8 +12,13 @@ Phase 6 turns the fully-materialized ``pyarrow.Table`` that
 * :func:`~rosbagger_core.output.export.write_table` — CSV/Parquet export by file
   extension, BOTH via DuckDB ``COPY`` (the only writer that serializes LIST/STRUCT
   columns to CSV; 06-RESEARCH Pitfall 2 / Pattern 1).
-* :func:`~rosbagger_core.output.export.write_csv_stream` — CSV to ``/dev/stdout``
-  (no extension detection) for ``bagq query --format csv`` with no ``-o`` (A2).
+* :func:`~rosbagger_core.output.export.write_csv_to_string` — CSV buffered to a
+  private temp file and returned as TEXT (the OS-portable, CliRunner-capturable
+  replacement for the old ``/dev/stdout`` write; WR-02). Backs ``bagq query
+  --format csv`` with no ``-o`` (A2), echoed via ``typer.echo``.
+* :func:`~rosbagger_core.output.export.write_csv_stream` — RETAINED for back-compat
+  (forced ``FORMAT CSV`` to an explicit path); its ``/dev/stdout`` default is
+  superseded by ``write_csv_to_string`` (WR-02).
 * :func:`~rosbagger_core.output.plot.plot_table` — a minimal headless matplotlib
   line chart of the numeric result columns vs ``t_ns`` (OUT-04); matplotlib is the
   optional ``bagq[plot]`` extra, imported lazily with a teaching ``RuntimeError`` if
@@ -33,8 +38,15 @@ leave duckdb/sqlglot/pyarrow/matplotlib out of ``sys.modules`` (regression test 
 
 from __future__ import annotations
 
-from .export import write_csv_stream, write_table
+from .export import write_csv_stream, write_csv_to_string, write_table
 from .plot import plot_table
 from .render import rows_for_display, to_json
 
-__all__ = ["plot_table", "rows_for_display", "to_json", "write_csv_stream", "write_table"]
+__all__ = [
+    "plot_table",
+    "rows_for_display",
+    "to_json",
+    "write_csv_stream",
+    "write_csv_to_string",
+    "write_table",
+]

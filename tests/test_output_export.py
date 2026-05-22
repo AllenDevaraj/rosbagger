@@ -31,7 +31,11 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.make_fixtures import write_ros1_bag  # noqa: E402  (after sys.path setup)
 
 from rosbagger_core.backend.query import query  # noqa: E402
-from rosbagger_core.output import write_csv_stream, write_table  # noqa: E402
+from rosbagger_core.output import (  # noqa: E402
+    write_csv_stream,
+    write_csv_to_string,
+    write_table,
+)
 from rosbagger_core.reader import RosbagsReader  # noqa: E402
 
 
@@ -136,3 +140,84 @@ def test_write_csv_stream_writes_csv_to_extensionless_target(
     lines = target.read_text().splitlines()
     assert lines[0] == "t_ns,topic"
     assert len(lines) == 1 + table.num_rows
+
+
+# --- WR-02: portable buffered CSV via write_csv_to_string -------------------------------
+
+
+def test_write_csv_to_string_returns_header_and_rows(ros1_bag: Path) -> None:
+    """``write_csv_to_string`` returns CSV TEXT: a header line + one line per row.
+
+    The portable, OS-neutral replacement for the old ``/dev/stdout`` COPY (WR-02): it
+    buffers to a temp file, reads it back, and RETURNS the string (no fd-1 write), so the
+    CLI can echo it via Python and CliRunner can capture it.
+    """
+    table = _query(ros1_bag, "SELECT t_ns, topic FROM cmd_vel")
+    text = write_csv_to_string(table)
+    assert isinstance(text, str)
+    lines = text.splitlines()
+    assert lines[0] == "t_ns,topic"  # header
+    assert len(lines) == 1 + table.num_rows  # header + one line per row
+    assert "/cmd_vel" in text  # a topic value rendered
+
+
+def test_write_csv_to_string_renders_list_column_bracketed(ros1_bag: Path) -> None:
+    """A LIST column renders as a bracketed string — proving DuckDB COPY, not pyarrow.csv.
+
+    ``orientation_covariance`` is a LIST; ``pyarrow.csv.write_csv`` raises ``ArrowInvalid``
+    on it (06-RESEARCH Pitfall 2). DuckDB ``COPY`` renders it as ``"[...]"``, so a bracket
+    in the output is the signature of the correct (COPY) code path.
+    """
+    table = _query(ros1_bag, 'SELECT t_ns, topic, "orientation_covariance" FROM imu')
+    text = write_csv_to_string(table)
+    assert text.splitlines()[0] == "t_ns,topic,orientation_covariance"
+    assert "[" in text and "]" in text  # the LIST cell, not an ArrowInvalid crash
+
+
+def test_write_csv_to_string_leaves_no_temp_file(ros1_bag: Path) -> None:
+    """``write_csv_to_string`` unlinks its temp file (no leak, no ``/dev/stdout``).
+
+    Snapshots the temp dir's ``*.csv`` entries before/after a call: the count must be
+    stable (the ``mkstemp`` file is removed in a ``finally``).
+    """
+    import glob
+    import os
+    import tempfile
+
+    pattern = os.path.join(tempfile.gettempdir(), "*.csv")
+    before = set(glob.glob(pattern))
+    table = _query(ros1_bag, "SELECT t_ns, topic FROM cmd_vel")
+    text = write_csv_to_string(table)
+    after = set(glob.glob(pattern))
+    assert isinstance(text, str) and text  # it returned content
+    assert after <= before  # no NEW temp file lingers (the mkstemp file was unlinked)
+
+
+# --- WR-01: extension parsing via splitext(basename), not whole-path rsplit -------------
+
+
+def test_write_table_dotted_parent_extensionless_path_raises(ros1_bag: Path) -> None:
+    """An extensionless file under a DOTTED parent dir yields ext '' (raises), not garbage.
+
+    WR-01: the old ``path_str.rsplit('.', 1)`` returned ``'2/results/output'`` for
+    ``/home/u/v1.2/results/output``. ``splitext(basename(...))`` yields ``''`` so the
+    extension ValueError fires correctly (no misfire on the parent dir's dot).
+    """
+    table = _query(ros1_bag, "SELECT t_ns, topic FROM cmd_vel")
+    with pytest.raises(ValueError, match=r"\.csv or \.parquet"):
+        write_table(table, "/home/u/v1.2/results/output")
+
+
+def test_write_table_date_like_parent_dir_selects_csv(ros1_bag: Path, tmp_path: Path) -> None:
+    """A ``.../<date>.../run.csv`` path selects CSV by the BASENAME extension (WR-01).
+
+    A date-like parent dir (``2024.05.21``) has dots, but only the basename's ``.csv``
+    must drive the format. Written under ``tmp_path`` so it actually round-trips.
+    """
+    date_dir = tmp_path / "2024.05.21"
+    date_dir.mkdir()
+    out = date_dir / "run.csv"
+    table = _query(ros1_bag, "SELECT t_ns, topic FROM cmd_vel")
+    write_table(table, str(out))  # must NOT raise — basename ext is 'csv'
+    assert out.exists()
+    assert out.read_text().splitlines()[0] == "t_ns,topic"
