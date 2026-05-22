@@ -108,9 +108,41 @@ class TableSchema:
     def arrow_schema(self, include: set[str] | None = None) -> object:
         """Build the ``pyarrow.Schema`` for this table (the Phase 5 ingest seam).
 
-        Deferred: the Arrow build lands in plan ``03-03`` (it needs ``pyarrow``,
-        which this backend-neutral module intentionally does not import). The
-        ``include`` set will follow the same dotted-name heavy-blob contract as
-        ``column_names`` — heavy blobs omitted unless named.
+        Returns a ``pyarrow.Schema`` of ``(column_name, arrow_type)`` for every
+        column that survives the heavy-blob filter: a column is kept iff it is
+        NOT a heavy blob, OR its ``name`` is in ``include``. The default
+        (``include=None``) omits every heavy blob (the QURY-07 lazy-blob
+        default); Phase 5 passes ``include`` (e.g. ``{"data"}``) computed from
+        the columns a parsed SQL query references.
+
+        The field order matches the declared column order (the four standard
+        columns first), so it lines up with the parallel column arrays
+        ``build_arrow_table`` produces. The ``stamp`` field is explicitly
+        nullable (headerless topics like ``/cmd_vel`` yield an all-NULL
+        ``stamp``); all other fields take pyarrow's default nullability.
+
+        The ``include`` keys are the **dotted column name** (the same string as
+        ``ColumnDef.name`` and the Arrow column name — research Open Question 2),
+        matching :meth:`column_names`.
+
+        ``pyarrow`` is imported INSIDE the method on purpose: this module stays
+        importable without the heavy stack (``import rosbagger_core`` must not
+        pull ``pyarrow`` — Phase 1 decision), and the ``arrow_type`` objects the
+        columns already carry are real ``pyarrow.DataType`` instances supplied by
+        the ``schema.flatten`` / ``schema.types`` builders.
+
+        Returns:
+            A ``pyarrow.Schema`` honoring ``include`` (typed ``object`` so the
+            signature does not name ``pyarrow`` at module level).
         """
-        raise NotImplementedError("filled in 03-03")
+        import pyarrow as pa
+
+        allowed = include or set()
+        # pa.field defaults to nullable=True; `stamp` is explicitly nullable to
+        # document the headerless-topic all-NULL case (Pitfall 6 / Pattern 3).
+        fields = [
+            pa.field(col.name, col.arrow_type, nullable=True)
+            for col in self.columns
+            if not col.is_heavy_blob or col.name in allowed
+        ]
+        return pa.schema(fields)
