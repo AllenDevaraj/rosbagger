@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md (BagReader ABC + Message record seam); 02-02 (RosbagsReader) next
-last_updated: "2026-05-22T07:48:59Z"
-last_activity: 2026-05-22 -- Executed 02-01 (reader seam: BagReader ABC + Message dataclass)
+stopped_at: Completed 02-02-PLAN.md (RosbagsReader AnyReader adapter); 02-03 (reader test suite) next
+last_updated: "2026-05-22T07:57:46Z"
+last_activity: "2026-05-22 -- Executed 02-02 (RosbagsReader: AnyReader adapter + reader/__init__ re-export)"
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 2
-Plan: 02-01 complete; 02-02 next
+Plan: 02-02 complete; 02-03 next
 Status: Executing
-Last activity: 2026-05-22 -- Executed 02-01 (reader seam: BagReader ABC + Message dataclass)
+Last activity: 2026-05-22 -- Executed 02-02 (RosbagsReader: AnyReader adapter + reader/__init__ re-export)
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -45,7 +45,7 @@ Progress: [███████░░░] 67%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 3 | - | - |
-| 02 | 1 (of 3) | - | - |
+| 02 | 2 (of 3) | - | - |
 
 **Recent Trend:**
 
@@ -57,6 +57,7 @@ Progress: [███████░░░] 67%
 | Phase 01 P01-02 | 3min | 3 tasks | 6 files |
 | Phase 01 P01-03 | 6min | 2 tasks | 3 files |
 | Phase 02 P02-01 | 3min | 2 tasks | 2 files |
+| Phase 02 P02-02 | 4min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 02-01]: reader/base.py is stdlib-only (abc, dataclasses, collections.abc) — no rosbags/ROS; the abstract seam stays importable without the heavy backend, verified by a sys.modules scan (offline invariant)
 - [Phase 02-01]: BagReader.topics/connections typed loosely as Mapping[str, object]/Sequence[object] so base.py never names the rosbags TopicInfo/Connection NamedTuples (introduced in 02-02); __exit__ returns False (never swallow exceptions)
 - [Phase 02-01]: Interface-first sequencing — 02-01 defines the BagReader/Message contract, 02-02 implements RosbagsReader (adds covered code), 02-03 tests; coverage-gate dip in between is by design
+- [Phase 02-02]: RosbagsReader is a thin AnyReader adapter (~90% delegation); no format detection / merge / sort hand-rolled — AnyReader owns all of it; multi-bag = pass a Sequence[Path] straight through (READ-05)
+- [Phase 02-02]: One duck-typed _stamp_ns code path for ROS1+ROS2 (rosbags normalizes header.stamp to .sec/.nanosec); headerless msgs -> stamp None. No isinstance, no secs/nsecs branch
+- [Phase 02-02]: v1 fails closed — AnyReaderError/FileNotFoundError propagate from open(); project BagReaderError wrapper deferred to Phase 7/CLI-04 (researcher Open Q2). read()/topics/connections raise RuntimeError if used before open()
+- [Phase 02-02]: import rosbags lives ONLY in rosbags_reader.py; reader/__init__ re-exports RosbagsReader (so import rosbagger_core.reader loads rosbags — fine), but top-level import rosbagger_core stays ROS/rosbags-free (offline guard 2/2)
+- [Phase 02-02]: Fixture /imu header.stamp varies per message (sec=1+i, nanosec=i*1e8) -> stamps [1e9, 2.1e9, 3.2e9]; only the FIRST is 1e9. 02-02 plan AC/research generalized a one-message probe — flagged for 02-03 to assert the full series
 
 ### Pending Todos
 
@@ -90,7 +96,7 @@ None yet.
 
 - GSD planning agents (`gsd-project-researcher`, `gsd-research-synthesizer`, `gsd-roadmapper`) not installed — roadmap was generated inline; post-phase verifier/nyquist auditors disabled. Install via `npx get-shit-done-cc@latest --global` to enable.
 - GitHub push pending auth (no `gh`, no credential helper); `origin` set to https://github.com/AllenDevaraj/rosbagger.git.
-- [Phase 02-01] Project-wide coverage gate (`--cov-fail-under=80`) fails in CI until reader tests land in 02-03. Cause: interface-only reader/base.py (31 stmts) + reader/__init__.py (2 stmts) are added but untested by design (tests deferred to 02-03 per phase sequencing). All 13 tests pass with `--no-cov`; offline guard 2/2. NOT a code defect — self-resolves at 02-03 (02-02 adds covered impl, 02-03 adds tests). Do not weaken the Phase-1-locked 80% gate.
+- [Phase 02-01→02-02] Project-wide coverage gate (`--cov-fail-under=80`) still dips in CI until reader tests land in 02-03. 02-02 ADDED the covered implementation (rosbags_reader.py, RosbagsReader + _stamp_ns) but its tests are 02-03's job per phase sequencing, so the untested-line count grew this plan as expected. All 13 tests pass with `--no-cov`; offline guard 2/2. NOT a code defect — self-resolves at 02-03 (tests land). Do not weaken the Phase-1-locked 80% gate; verify THIS plan with `--no-cov`.
 
 ## Deferred Items
 
@@ -100,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T07:48:59Z
-Stopped at: Completed 02-01-PLAN.md (BagReader ABC + Message record seam); 02-02 (RosbagsReader) next
+Last session: 2026-05-22T07:57:46Z
+Stopped at: Completed 02-02-PLAN.md (RosbagsReader AnyReader adapter); 02-03 (reader test suite) next
 Resume file: None
