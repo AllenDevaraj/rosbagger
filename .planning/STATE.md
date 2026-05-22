@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 08-01-PLAN.md (Phase 8 plan 1/1 — PHASE 8 COMPLETE 1/1; v0.1 milestone autonomously DONE). Shipped rosbagger v0.1.0: bumped version 0.0.0->0.1.0 in all 4 source sites (2 pyproject `version` + 2 `__init__.py` `__version__`) and re-locked uv.lock (both bagq + rosbagger-core pins now 0.1.0, lines 121/1239) so `uv sync --locked --dev` stays green; `bagq --version` prints `bagq 0.1.0` and rosbagger_core.__version__ == '0.1.0'. Added an MIT LICENSE at the repo root (Copyright (c) 2026 rosbagger contributors). Expanded README.md: verified plain-pip recipe `pip install ./packages/rosbagger-core ./packages/bagq` (BOTH local packages in ONE command — pip ignores [tool.uv.sources]) + quoted bagq[plot] extra + uv dev path (uv sync --locked --dev / uv run) + per-command quickstart (info/tables/query with -o/--format/--plot) + errors-that-teach + offline/no-ROS guarantee; removed the Phase-1 'lands in a later phase' placeholder; NO PyPI/PYTHONPATH leakage. Verified the release LOCALLY: SC1 clean-room `pip install ./packages/rosbagger-core ./packages/bagq` in a FRESH throwaway venv (not .venv, PYTHONPATH='') -> bagq --help + info/tables/query --help all exit 0; SC2 offline `import rosbagger_core, bagq` from neutral cwd /tmp with find_spec('rclpy')/('rosbag2_py')/('tools') all None (no ROS dep, no tools/ in either wheel). Local CI-equivalent gate green (PYTHONPATH='' uv sync --locked --dev / ruff check / ruff format --check / pytest = 255 passed, 97.82%, >=80% gate). Created annotated git tag v0.1.0 LOCALLY (points at 936238b). SC3 SPLIT: local gate + local tag autonomous & DONE; the SOLE human follow-up is `git push origin main && git push origin v0.1.0` then observe GitHub Actions go green — BLOCKED by no gh CLI / no push credential (standing blocker; origin=https://github.com/AllenDevaraj/rosbagger.git), documented in 08-01-SUMMARY (NOT a stalling checkpoint). No deviations; no new deps; no runtime code. v0.1 MILESTONE COMPLETE except the push."
-last_updated: "2026-05-22T18:39:17.802Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 8 was final phase)
+last_updated: 2026-05-22T18:44:16.741Z
 last_activity: 2026-05-22 -- Phase 8 complete (v0.1 shipped, awaiting push)
 progress:
   total_phases: 8
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** v0.1 shipped — only the release push (main + v0.1.0 tag) + observe-CI-green remains (blocked on gh/push auth)
+**Current focus:** Milestone complete
 
 ## Current Position
 
-Phase: 8 (COMPLETE — final v0.1 phase)
-Plan: 1/1 complete
-Status: v0.1 milestone autonomously complete; awaiting human push of `main` + `v0.1.0` tag (no gh/push credential)
-Last activity: 2026-05-22 -- Phase 8 complete (v0.1.0 versioned, licensed, documented, locally verified, tagged)
+Phase: 8
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-05-22
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 24
+- Total plans completed: 25
 - Average duration: ~5 min
 - Total execution time: ~1.1 hours
 
@@ -52,7 +52,7 @@ Progress: [██████████] 100%
 | 5 | 2 | - | - |
 | 6 | 2 | - | - |
 | 7 | 2 | - | - |
-| 8 | 1 | 3min | 3min |
+| 8 | 1 | - | - |
 
 **Recent Trend:**
 

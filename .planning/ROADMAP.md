@@ -218,4 +218,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Query Engine | 2/2 | Complete    | 2026-05-22 |
 | 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
-| 8. Packaging, Docs & Release | 1/1 | Complete   | 2026-05-22 |
+| 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
