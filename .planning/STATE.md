@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 07-01-PLAN.md (Phase 7 plan 1/2). CLI-01 clean-exit MECHANISM: teaching_errors(fn) decorator in bagq/cli.py (functools.wraps) catches the KNOWN typed set (UnknownTableError) + FileNotFoundError -> typer.secho(err=True) + raise typer.Exit(1), NO traceback; applied to info/tables/query. NO bare except Exception — a monkeypatched-KeyError test proves real bugs still surface (Pitfall 4). Structured so 07-02 widens the catch in ONE import line + ONE except tuple. WR-02 fixed: rosbagger_core.output.write_csv_to_string (COPY to mkstemp temp file -> read-back UTF-8 -> unlink in finally; reuses _copy_to so the T-06-01 quote-escape stays shared; LIST cols render bracketed via DuckDB COPY, not pyarrow.csv) replaces the /dev/stdout COPY — CLI routes --format csv via typer.echo(write_csv_to_string(result), nl=False) (CliRunner-capturable + OS-portable). write_csv_stream RETAINED for back-compat. WR-01 fixed: write_table extension parse via os.path.splitext(os.path.basename(path)) (dotted-parent dirs no longer misfire). Added bagq/__main__.py so python -m bagq runs the app (PATH-independent smoke). DEVIATION (Rule 1, test-only): the unknown-table test's no-traceback assertion corrected from `exception is None` to isinstance(exception, SystemExit) + not-ValueError (a clean typer.Exit(1) surfaces to CliRunner as SystemExit, 07-RESEARCH §6). Full suite 229 passed at 97.81% (>=80% gate); export.py 100%, cli.py 99%; offline guard 5/5; ruff clean; real-shell smoke exit 0. Next: 07-02 (teaching errors content — did-you-mean / column list / UnresolvedTypeError)."
-last_updated: "2026-05-22T17:48:34.771Z"
-last_activity: 2026-05-22 -- Completed 07-01 (CLI-01 clean-exit mechanism + WR-01/WR-02 fixes)
+stopped_at: "Completed 07-02-PLAN.md (Phase 7 plan 2/2 — PHASE 7 COMPLETE 2/2). Three errors-that-teach over 07-01's teaching_errors mechanism. Stdlib-only rosbagger_core/errors.py (difflib only): UnknownTableError (canonical home moved here, re-exported from backend/query.py so the class identity holds), UnknownColumnError, UnresolvedTypeError — all ValueError subclasses CARRYING their data (.name/.available/.suggestions, .column/.columns_by_table, .detail) + building the teaching message in core (API-first; CLI only presents). CLI-02: difflib.get_close_matches(cutoff=0.6) did-you-mean on UnknownTableError (suggestion when a close table exists, else available-tables list, else no-tables note). CLI-03: query() accumulates columns_by_table during the load loop, then catches duckdb.BinderException by TYPE (duckdb_binder_exception() lazy-import helper keeps the module top offline-light), parses the column via _BINDER_COL regex (miss -> '?'), raises UnknownColumnError listing all referenced tables' columns grouped (Open Q2) — catch nested INSIDE the existing try/finally so the default backend still close()s. CLI-04: RosbagsReader.open() wraps ONLY the 'no type definitions' AnyReaderError -> UnresolvedTypeError (cause preserved); mixed-format re-raises and FileNotFoundError is never caught (Pitfall 3 verified at the reader boundary). tools.make_fixtures.write_def_less_bag (ROS2 sqlite + stdlib sqlite3 DELETE FROM message_definitions) is the fixture; surfaces via info/tables/query. teaching_errors widened in ONE import + ONE except tuple. DEVIATION (Rule 1, test-only): the CLI no-traceback assertions use isinstance(result.exception, SystemExit) + not-ValueError (a clean typer.Exit(1) is SystemExit, not None per 07-RESEARCH §6 / 07-01) — corrects the plan's 'result.exception is None' wording; production code unchanged. Offline guard extended (errors.py pulls no heavy stack AND no rosbags). Full suite 254 passed at 97.82% (>=80% gate); errors.py 100%; ruff format-check + lint clean. Next: Phase 8 (Packaging, Docs & Release — pip-installable v0.1, offline-import check, README, version tag)."
+last_updated: "2026-05-22T18:00:36.788Z"
+last_activity: 2026-05-22 -- Completed 07-02 (PHASE 7 COMPLETE — CLI-02/03/04 errors-that-teach)
 progress:
   total_phases: 8
-  completed_phases: 6
-  total_plans: 17
-  completed_plans: 16
+  completed_phases: 7
+  total_plans: 18
+  completed_plans: 17
   percent: 94
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 7 — cli & teaching errors
+**Current focus:** Phase 8 — packaging, docs & release (Phase 7 complete)
 
 ## Current Position
 
-Phase: 7
-Plan: 1 of 2 complete (07-01 done; 07-02 next)
-Status: Executing
-Last activity: 2026-05-22 -- Completed 07-01 (CLI-01 clean-exit mechanism + WR-01/WR-02 fixes)
+Phase: 7 complete (next: Phase 8)
+Plan: 2 of 2 complete (07-01 + 07-02 done — PHASE 7 COMPLETE)
+Status: Ready to execute Phase 8
+Last activity: 2026-05-22 -- Completed 07-02 (PHASE 7 COMPLETE — CLI-02/03/04 errors-that-teach)
 
 Progress: [█████████░] 94%
 
@@ -77,6 +77,7 @@ Progress: [█████████░] 94%
 | Phase 06 P06-01 | 7min | 3 tasks | 8 files |
 | Phase 06 P06-02 | 12min | 3 tasks | 6 files |
 | Phase 07 P01 | 9min | 2 tasks | 7 files |
+| Phase 07 P02 | 6min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06-02]: PHASE 6 COMPLETE (2/2). All four output forms shipped: stdout table (OUT-01), CSV (OUT-02), Parquet (OUT-03), --plot line chart (OUT-04). Full suite 219 passed at 98.04% (>=80% gate); plot.py 100%, cli.py 98% (the 2 misses are pre-existing 06-01 lines: the >100-row footer + the /dev/stdout csv-stream branch). ruff format-check + lint clean. uv.lock carries matplotlib in the dev group
 - [Phase 07-01]: CLI-01 clean-exit MECHANISM — teaching_errors(fn) decorator in bagq/cli.py (functools.wraps) catches the KNOWN typed set (UnknownTableError) + FileNotFoundError -> typer.secho(str(e), fg=RED, err=True) + raise typer.Exit(1), NO Python traceback; applied to info/tables/query (below @app.command so typer registers the wrapped callable). DELIBERATELY NO bare `except Exception` (Pitfall 4) — a monkeypatched-KeyError test proves a real bug still surfaces as a traceback, not a masked Exit(1). Structured so 07-02 widens the catch in ONE lazy-import line + ONE except tuple (UnknownColumnError/UnresolvedTypeError) with the wrapper body unchanged. Verified: a clean typer.Exit(1) surfaces to CliRunner as SystemExit (NOT None) — the no-traceback assertion is isinstance(exception, SystemExit) AND not-ValueError (the raw UnknownTableError did not escape). Added bagq/__main__.py so `python -m bagq` runs the app (PATH-independent real-shell smoke; exit 0 with /cmd_vel)
 - [Phase 07-01]: WR-02 fixed (portability) — rosbagger_core.output.write_csv_to_string(table)->str buffers DuckDB COPY to a tempfile.mkstemp(suffix='.csv') file, reads it back UTF-8, unlinks in a finally (no leak), and RETURNS the string; reuses _copy_to so the one T-06-01 `'`→`''` SQL-literal escape stays shared (NOT re-implemented). LIST cols render bracketed (DuckDB COPY, not pyarrow.csv -> ArrowInvalid). CLI routes --format csv (no -o) via typer.echo(write_csv_to_string(result), nl=False) — CliRunner-capturable + OS-portable (no /dev/stdout; CLAUDE.md "runs anywhere"). cli.py imports no duckdb (offline invariant). write_csv_stream RETAINED for back-compat (its /dev/stdout default marked superseded). WR-01 fixed (robustness) — write_table extension parse via os.path.splitext(os.path.basename(path))[1].lstrip('.').lower() (a dotted parent dir like /home/u/v1.2/results/output no longer misfires; .../2024.05.21/run.csv selects CSV). Full suite 229 passed at 97.81% (>=80% gate); export.py 100%, cli.py 99% (1 pre-existing 06-01 miss: the >100-row footer); offline guard 5/5; ruff clean. CLI-01 done; 07-02 owns the teaching CONTENT (did-you-mean / column list / UnresolvedTypeError)
+- [Phase ?]: [Phase 07-02] PHASE 7 COMPLETE (2/2). Three errors-that-teach over 07-01's teaching_errors mechanism: stdlib-only rosbagger_core/errors.py (difflib only) holds UnknownTableError (canonical home moved here, re-exported from backend/query.py so identity holds), UnknownColumnError, UnresolvedTypeError — all ValueError subclasses CARRYING their data (.name/.available/.suggestions, .column/.columns_by_table, .detail) and building the teaching message in core (API-first; CLI only presents).
+- [Phase ?]: [Phase 07-02] CLI-02 did-you-mean via difflib.get_close_matches(cutoff=0.6); CLI-03 catches duckdb.BinderException by TYPE in query() (duckdb_binder_exception() lazy-import helper keeps the module top offline-light), parses the column via _BINDER_COL regex (miss -> '?'), raises UnknownColumnError listing all referenced tables' columns grouped (Open Q2) — catch nested INSIDE the existing try/finally so the default backend still close()s. CLI-04 wraps ONLY the 'no type definitions' AnyReaderError at RosbagsReader.open() -> UnresolvedTypeError (cause preserved); mixed-format re-raises and FileNotFoundError is never caught (Pitfall 3 verified). write_def_less_bag (ROS2 sqlite + stdlib sqlite3 DELETE FROM message_definitions) is the fixture; surfaces via info/tables/query.
+- [Phase ?]: [Phase 07-02] DEVIATION (Rule 1, test-only): the CLI no-traceback assertions use isinstance(result.exception, SystemExit) + not-ValueError (a clean typer.Exit(1) is SystemExit, not None per 07-RESEARCH §6 / 07-01) — corrects the plan's 'result.exception is None' wording; production code unchanged. errors.py imports only difflib; offline guard extended (errors.py pulls no heavy stack AND no rosbags). teaching_errors widened in ONE import + ONE except tuple. Full suite 254 passed at 97.82% (>=80%); errors.py 100%; ruff clean.
 
 ### Pending Todos
 
@@ -165,6 +169,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T17:47:16.000Z
-Stopped at: Completed 07-01-PLAN.md (Phase 7 plan 1/2). CLI-01 clean-exit MECHANISM: teaching_errors(fn) decorator in bagq/cli.py catches UnknownTableError + FileNotFoundError -> typer.secho(err=True) + raise typer.Exit(1), NO traceback; applied to info/tables/query. NO bare except Exception (a monkeypatched-KeyError test proves real bugs still surface — Pitfall 4); structured so 07-02 widens the catch in one import line + one except tuple. WR-02: write_csv_to_string (COPY to mkstemp -> read-back -> unlink in finally; reuses _copy_to/T-06-01 escape; LIST cols bracketed) replaces /dev/stdout; CLI routes --format csv via typer.echo(...) (CliRunner-capturable + OS-portable). write_csv_stream retained. WR-01: write_table ext via os.path.splitext(os.path.basename(path)). Added bagq/__main__.py (python -m bagq). DEVIATION (Rule 1, test-only): no-traceback assertion corrected to isinstance(exception, SystemExit) — a clean typer.Exit(1) is SystemExit, not None (07-RESEARCH §6). Full suite 229 passed at 97.81% (>=80% gate); export.py 100%, cli.py 99%; offline guard 5/5; ruff clean; real-shell smoke exit 0. Next: 07-02 (teaching errors content — did-you-mean / column list / UnresolvedTypeError).
+Last session: 2026-05-22T17:58:47.000Z
+Stopped at: Completed 07-02-PLAN.md (Phase 7 plan 2/2 — PHASE 7 COMPLETE 2/2). Three errors-that-teach over 07-01's teaching_errors mechanism. Stdlib-only rosbagger_core/errors.py (difflib only): UnknownTableError (canonical home moved here, re-exported from backend/query.py so the class identity holds), UnknownColumnError, UnresolvedTypeError — all ValueError subclasses CARRYING their data (.name/.available/.suggestions, .column/.columns_by_table, .detail) + building the teaching message in core (API-first; CLI only presents). CLI-02: difflib.get_close_matches(cutoff=0.6) did-you-mean on UnknownTableError (suggestion when a close table exists, else available-tables list, else no-tables note). CLI-03: query() accumulates columns_by_table during the load loop, then catches duckdb.BinderException by TYPE (duckdb_binder_exception() lazy-import helper keeps the module top offline-light), parses the column via _BINDER_COL regex (miss -> '?'), raises UnknownColumnError listing all referenced tables' columns grouped (Open Q2) — catch nested INSIDE the existing try/finally so the default backend still close()s. CLI-04: RosbagsReader.open() wraps ONLY the 'no type definitions' AnyReaderError -> UnresolvedTypeError (cause preserved); mixed-format re-raises and FileNotFoundError is never caught (Pitfall 3 verified). tools.make_fixtures.write_def_less_bag (ROS2 sqlite + stdlib sqlite3 DELETE FROM message_definitions) is the fixture; surfaces via info/tables/query. teaching_errors widened in ONE import + ONE except tuple. DEVIATION (Rule 1, test-only): the CLI no-traceback assertions use isinstance(result.exception, SystemExit) + not-ValueError (a clean typer.Exit(1) is SystemExit, not None per 07-RESEARCH §6 / 07-01) — corrects the plan's 'result.exception is None' wording; production code unchanged. Offline guard extended (errors.py pulls no heavy stack AND no rosbags). Full suite 254 passed at 97.82% (>=80% gate); errors.py 100%; ruff clean. Next: Phase 8 (Packaging, Docs & Release).
 Resume file: None

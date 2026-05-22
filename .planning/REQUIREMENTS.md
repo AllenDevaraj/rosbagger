@@ -41,9 +41,9 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 ### CLI
 
 - [x] **CLI-01**: `bagq query "<SQL>" BAG...` runs a query end-to-end
-- [ ] **CLI-02**: Unknown table → error lists available topics (did-you-mean)
-- [ ] **CLI-03**: Unknown column → error shows that table's columns
-- [ ] **CLI-04**: Unresolvable custom message type → error explains how to register `.msg`/`.idl` definitions
+- [x] **CLI-02**: Unknown table → error lists available topics (did-you-mean)
+- [x] **CLI-03**: Unknown column → error shows that table's columns
+- [x] **CLI-04**: Unresolvable custom message type → error explains how to register `.msg`/`.idl` definitions
 
 ## Definition of Done (v1)
 
@@ -107,9 +107,9 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | OUT-03 | Phase 6 | Complete |
 | OUT-04 | Phase 6 | Complete |
 | CLI-01 | Phase 7 | Complete |
-| CLI-02 | Phase 7 | Pending |
-| CLI-03 | Phase 7 | Pending |
-| CLI-04 | Phase 7 | Pending |
+| CLI-02 | Phase 7 | Complete |
+| CLI-03 | Phase 7 | Complete |
+| CLI-04 | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 23 total

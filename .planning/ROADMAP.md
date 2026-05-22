@@ -17,7 +17,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 4: Inspect** - `bagq info` / `bagq tables` (completed 2026-05-22)
 - [x] **Phase 5: Query Engine** - DuckDB backend + sqlglot topic resolution (completed 2026-05-22)
 - [x] **Phase 6: Output & Export** - stdout table, CSV, Parquet, minimal plot
-- [ ] **Phase 7: CLI & Teaching Errors** - `bagq query` end-to-end with helpful errors
+- [x] **Phase 7: CLI & Teaching Errors** - `bagq query` end-to-end with helpful errors (completed 2026-05-22)
 - [ ] **Phase 8: Packaging, Docs & Release** - pip-installable v0.1, offline imports
 
 ## Phase Details
@@ -185,7 +185,7 @@ Plans:
 
 **Wave 2** *(blocked on 07-01)*
 
-- [ ] 07-02-PLAN.md — Teaching errors: stdlib-only `errors.py`; `UnknownTableError` did-you-mean (CLI-02); `UnknownColumnError` from `BinderException` listing that table's columns (CLI-03); `UnresolvedTypeError` at the reader boundary + def-less fixture (CLI-04); CLI presents all three -> CLI-02/03/04
+- [x] 07-02-PLAN.md — Teaching errors: stdlib-only `errors.py`; `UnknownTableError` did-you-mean (CLI-02); `UnknownColumnError` from `BinderException` listing that table's columns (CLI-03); `UnresolvedTypeError` at the reader boundary + def-less fixture (CLI-04); CLI presents all three -> CLI-02/03/04
 
 ### Phase 8: Packaging, Docs & Release
 
@@ -217,5 +217,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Inspect | 2/2 | Complete    | 2026-05-22 |
 | 5. Query Engine | 2/2 | Complete    | 2026-05-22 |
 | 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
-| 7. CLI & Teaching Errors | 1/2 | In Progress|  |
+| 7. CLI & Teaching Errors | 2/2 | Complete   | 2026-05-22 |
 | 8. Packaging, Docs & Release | 0/1 | Not started | - |
