@@ -59,10 +59,17 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
-- [ ] 02-01: `BagReader` interface + record dataclass
-- [ ] 02-02: `rosbags` `AnyReader` implementation
-- [ ] 02-03: Multi-bag dataset + reader tests on fixtures
+- [ ] 02-01-PLAN.md — `BagReader` ABC seam + frozen `Message` record dataclass (topic, t, t_ns, stamp, msgtype, msg); ROS-free abstract contract -> READ-04
+
+**Wave 2** *(blocked on 02-01)*
+
+- [ ] 02-02-PLAN.md — `RosbagsReader(BagReader)`: thin `AnyReader` adapter opening ROS1/ROS2-sqlite/ROS2-MCAP, lazy record-building read loop, uniform `stamp` extraction, multi-bag pass-through -> READ-01/02/03/04/05
+
+**Wave 3** *(blocked on 02-02)*
+
+- [ ] 02-03-PLAN.md — Fixture-backed reader test suite across all 3 formats + multi-bag merge (two ROS2 + two ROS1 bags), resolving the multi-ROS2 open question -> READ-01/02/03/04/05
 
 ### Phase 3: Message→Table Schema
 
