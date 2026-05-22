@@ -490,7 +490,9 @@ def to_json(table):
 **If this table is empty:** (it is not — these are genuine open choices for discuss-phase / the
 planner to confirm.)
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+*Resolved into the plans: Q1 → build the `bagq query` skeleton in Phase 6 (teaching errors layer in Phase 7); Q2 → `--format csv` w/o `-o` streams to stdout, `--format parquet` w/o `-o` errors; Q3 → default `--plot` filename `plot.png` in CWD.*
 
 1. **Where exactly does `bagq query` live — Phase 6 or Phase 7?**
    - What we know: OUT-01..04 (Phase 6) are unobservable without the command; CLI-01..04 are

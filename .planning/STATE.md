@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 5 complete (2/2) — ready to discuss Phase 6
-last_updated: 2026-05-22T16:22:35.552Z
-last_activity: 2026-05-22 -- Completed 05-02 (query orchestrator; PHASE 5 COMPLETE 2/2)
+status: executing
+stopped_at: "Completed 05-02-PLAN.md — PHASE 5 COMPLETE (2/2). query(sql, reader)->pyarrow.Table: sqlglot resolve (CTE-subtracted tables/columns/Star) -> topic->table inversion (shared TableNameResolver, skip msgtype-None) -> connection-filtered lazy load (read(topics={t}); only referenced topics deserialized, QURY-05) -> DuckDB register/execute (QURY-06). UnknownTableError lists available tables; SELECT * materializes blobs, projection omits them. read(topics=set()) short-circuits to empty (Rule 1). Full suite 186 passed at 97.91%; resolve.py 100%, query.py 98%, offline guard green. Next: Phase 6 (output — CSV/Parquet/plot from the result Table; use t_ns for display per Pitfall 6)."
+last_updated: "2026-05-22T16:44:44.337Z"
+last_activity: 2026-05-22 -- Phase 6 planning complete
 progress:
   total_phases: 8
   completed_phases: 5
-  total_plans: 13
+  total_plans: 15
   completed_plans: 13
   percent: 63
 ---
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 Phase: 6
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-05-22
+Status: Ready to execute
+Last activity: 2026-05-22 -- Phase 6 planning complete
 
 Progress: [██████████] 100% (Phase 5: 2/2 plans complete)
 
