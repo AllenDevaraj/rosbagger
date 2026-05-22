@@ -137,3 +137,40 @@ def test_import_errors_does_not_pull_rosbags():
     )
     leaked = [m for m in result.stdout.strip().split(",") if m]
     assert leaked == [], f"import rosbagger_core.errors pulled in rosbags: {leaked}"
+
+
+def test_import_tf_does_not_pull_heavy_query_stack():
+    """`import rosbagger_core.tf` must NOT load duckdb/sqlglot/pyarrow (Decision 9).
+
+    The Phase 9 TF analysis core (``tf.py``) keeps its top level stdlib-only
+    (``dataclasses``/``statistics``) and is NEVER imported by ``rosbagger_core/__init__``;
+    it consumes a PASSED-IN open reader, so it imports none of the heavy query stack
+    (the query layer is deliberately bypassed — 09-RESEARCH Pitfall 3). Regression test
+    for the TF offline invariant (09-RESEARCH Pitfall 5).
+    """
+    leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.tf")
+    assert leaked == [], f"import rosbagger_core.tf leaked the heavy stack: {leaked}"
+
+
+def test_import_tf_does_not_pull_rosbags():
+    """`import rosbagger_core.tf` must NOT pull ``rosbags`` either (no ROS, Pitfall 5).
+
+    A fresh subprocess (empty PYTHONPATH neutralizes the host ROS leak) asserts no
+    ``rosbags`` module lands in ``sys.modules`` after ``import rosbagger_core.tf`` — the
+    TF core consumes an already-open, already-deserializing reader and imports no
+    ``rosbags`` itself (mirrors the errors-module check above).
+    """
+    code = (
+        "import sys; import rosbagger_core.tf; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] == 'rosbags']; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"import rosbagger_core.tf pulled in rosbags: {leaked}"
