@@ -32,9 +32,9 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Monorepo layout + pyproject for `rosbagger-core` and `bagq`
-- [ ] 01-02: Dev tooling (ruff/format, pytest, CI workflow)
-- [ ] 01-03: Fixture-bag generator (rosbags writes ROS1/ROS2/MCAP)
+- [ ] 01-01-PLAN.md — Monorepo layout + pyproject for `rosbagger-core` and `bagq` (uv workspace, src-layout, hatchling, console script, importable packages) -> SC1
+- [ ] 01-02-PLAN.md — Dev tooling: ruff (lint+format), pytest + pytest-cov (>=80%), no-ROS GitHub Actions CI, and the sys.meta_path offline-import guard -> SC2
+- [ ] 01-03-PLAN.md — Fixture-bag generator: rosbags writes tiny ROS1/ROS2-sqlite/MCAP bags, re-openable via AnyReader, forward-looking content -> SC3
 
 ### Phase 2: Bag Reader Layer
 **Goal**: A `BagReader` interface with a `rosbags` implementation that opens ROS1/ROS2/MCAP and iterates messages uniformly.
