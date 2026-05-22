@@ -84,14 +84,20 @@ def teaching_errors(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         # Lazy import — keeps cli.py top level free of rosbagger_core (offline invariant).
-        # 07-02 adds the new typed errors to this import + the except tuple below.
-        from rosbagger_core.backend.query import UnknownTableError
+        # 07-02 widened this to the full teaching set; errors.py is stdlib-only so the
+        # import pulls no heavy stack until the wrapped command actually runs.
+        from rosbagger_core.errors import (
+            UnknownColumnError,
+            UnknownTableError,
+            UnresolvedTypeError,
+        )
 
         try:
             return fn(*args, **kwargs)
-        except UnknownTableError as e:
-            # The message already carries the available-tables list (CLI-02 content lands
-            # in 07-02); present it cleanly with no traceback.
+        except (UnknownTableError, UnknownColumnError, UnresolvedTypeError) as e:
+            # Each carries its own teaching message: did-you-mean / available tables
+            # (CLI-02), the referenced tables' columns (CLI-03), or .msg/.idl
+            # registration guidance (CLI-04). Present cleanly with no traceback.
             typer.secho(str(e), fg=typer.colors.RED, err=True)
             raise typer.Exit(1) from None
         except FileNotFoundError as e:

@@ -35,6 +35,7 @@ Run as a module to write the three bags to disk for manual ``bagq`` testing::
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -42,7 +43,7 @@ import numpy as np
 from rosbags.rosbag1 import Writer as Ros1Writer
 from rosbags.rosbag2 import StoragePlugin
 from rosbags.rosbag2 import Writer as Ros2Writer
-from rosbags.typesys import Stores, get_typestore
+from rosbags.typesys import Stores, get_types_from_msg, get_typestore
 
 # Deterministic, reproducible timestamps: 1s, 1.1s, 1.2s ... in nanoseconds.
 _T0_NS = 1_000_000_000
@@ -56,6 +57,11 @@ _TOPIC_IMAGE = "/image"
 _MSGTYPE_TWIST = "geometry_msgs/msg/Twist"
 _MSGTYPE_IMU = "sensor_msgs/msg/Imu"
 _MSGTYPE_IMAGE = "sensor_msgs/msg/Image"
+
+# A tiny custom .msg used ONLY by write_def_less_bag (the CLI-04 fixture). Its
+# definition is registered to write the bag, then stripped from the .db3 so the bag
+# re-opens with no resolvable type defs.
+_CUSTOM_MSG = "float64 widget_value\nstring widget_label\n"
 
 
 def _timestamp_ns(i: int) -> int:
@@ -176,6 +182,44 @@ def write_ros2_sqlite_bag(dest_dir: Path | str) -> Path:
 def write_ros2_mcap_bag(dest_dir: Path | str) -> Path:
     """Write a ROS 2 **MCAP** bag directory into ``dest_dir`` and return its path."""
     return _write_ros2_bag(Path(dest_dir), "ros2_mcap", StoragePlugin.MCAP)
+
+
+def write_def_less_bag(dest_dir: Path | str, *, msgtype: str = "my_pkg/msg/Widget") -> Path:
+    """Write a ROS 2 sqlite bag with a custom type, then strip its embedded definitions.
+
+    Reproduces the CLI-04 condition (07-RESEARCH §7 / Pitfall 5): a normal ROS 2 v9
+    sqlite bag is written with a custom ``my_pkg/msg/Widget`` type (registered on a
+    fresh typestore so the write succeeds), then its ``message_definitions`` rows are
+    DELETED directly from the ``.db3`` via stdlib ``sqlite3``. Re-opening the bag with
+    a plain ``AnyReader`` (no ``default_typestore``) then raises
+    ``AnyReaderError('Bag contains no type definitions...')`` at ``open()`` — the exact
+    signal :class:`~rosbagger_core.errors.UnresolvedTypeError` is wrapped around.
+
+    sqlite3 is the only ``rosbags``-writable format where defs are separable (ROS 1
+    embeds them in the bag header, normal ROS 2 v9 stores + auto-registers them), so
+    the fixture MUST be a sqlite bag. The ``DELETE`` runs on a file this function just
+    created in a throwaway dir — never an untrusted/user bag (threat T-07-06).
+
+    Returns the bag directory path.
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / "def_less_bag"
+    ts = get_typestore(Stores.ROS2_HUMBLE)
+    ts.register(get_types_from_msg(_CUSTOM_MSG, msgtype))
+    with Ros2Writer(path, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
+        conn = writer.add_connection("/widget", msgtype, typestore=ts)
+        widget_t = ts.types[msgtype]
+        raw = ts.serialize_cdr(widget_t(widget_value=1.0, widget_label="hi"), msgtype)
+        writer.write(conn, _T0_NS, raw)
+    db = next(path.glob("*.db3"))
+    conn_db = sqlite3.connect(db)
+    try:
+        conn_db.execute("DELETE FROM message_definitions")  # strip defs -> unresolvable
+        conn_db.commit()
+    finally:
+        conn_db.close()
+    return path
 
 
 def make_all_fixtures(dest_dir: Path | str) -> dict[str, Path]:

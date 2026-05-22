@@ -34,10 +34,14 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.make_fixtures import write_ros1_bag  # noqa: E402  (after sys.path setup)
+from tools.make_fixtures import (  # noqa: E402  (after sys.path setup)
+    write_def_less_bag,
+    write_ros1_bag,
+)
 
 import bagq.cli as cli  # noqa: E402
 from bagq.cli import app  # noqa: E402
+from rosbagger_core.reader import RosbagsReader  # noqa: E402
 
 runner = CliRunner()
 
@@ -46,6 +50,16 @@ runner = CliRunner()
 def ros1_bag(tmp_path_factory) -> Path:
     """A single ROS 1 fixture bag (cmd_vel/imu/image) for the error-path tests."""
     return write_ros1_bag(tmp_path_factory.mktemp("cli_errors_bag"))
+
+
+@pytest.fixture(scope="session")
+def def_less_bag(tmp_path_factory) -> Path:
+    """A ROS 2 sqlite bag with its message_definitions stripped (CLI-04 trigger).
+
+    Opening it with no ``default_typestore`` raises the "no type definitions"
+    ``AnyReaderError`` at ``open()``, which the reader wraps to ``UnresolvedTypeError``.
+    """
+    return write_def_less_bag(tmp_path_factory.mktemp("def_less"))
 
 
 def test_unknown_table_exits_one_with_clean_message(ros1_bag: Path) -> None:
@@ -117,3 +131,73 @@ def test_teaching_errors_wrapper_is_applied_to_all_three_commands() -> None:
     for name in ("info", "tables", "query"):
         fn = getattr(cli, name)
         assert hasattr(fn, "__wrapped__"), f"{name} is not wrapped by teaching_errors"
+
+
+# ---------------------------------------------------------------------------
+# 07-02 — the three teaching errors presented through the widened wrapper
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_table_did_you_mean_suggestion(ros1_bag: Path) -> None:
+    """CLI-02: a near-miss table name prints a difflib did-you-mean + exits 1.
+
+    ``cmdvel`` is one edit from the real ``cmd_vel`` table (difflib cutoff 0.6 hits), so
+    the message must suggest it rather than only listing the available tables.
+    """
+    result = runner.invoke(app, ["query", "SELECT * FROM cmdvel", str(ros1_bag)])
+    assert result.exit_code == 1
+    # A clean typer.Exit(1) surfaces to CliRunner as SystemExit (07-RESEARCH §6 / 07-01),
+    # NOT None and NOT the raw UnknownTableError — i.e. no domain-error traceback leaked.
+    assert isinstance(result.exception, SystemExit)
+    assert not isinstance(result.exception, ValueError)
+    assert "Did you mean" in result.output
+    assert "cmd_vel" in result.output
+
+
+def test_unknown_column_lists_table_columns(ros1_bag: Path) -> None:
+    """CLI-03: a bad column prints that table's columns + exits 1."""
+    result = runner.invoke(app, ["query", "SELECT nonexistent_col FROM cmd_vel", str(ros1_bag)])
+    assert result.exit_code == 1
+    # Clean Exit(1) -> SystemExit (not None, not the raw UnknownColumnError).
+    assert isinstance(result.exception, SystemExit)
+    assert not isinstance(result.exception, ValueError)
+    assert "Columns in cmd_vel" in result.output
+    assert "nonexistent_col" in result.output
+
+
+@pytest.mark.parametrize(
+    ("command", "extra"),
+    [
+        ("info", []),
+        ("tables", []),
+        ("query", ["SELECT * FROM widget"]),
+    ],
+)
+def test_def_less_bag_teaches_registration_for_all_commands(
+    def_less_bag: Path, command: str, extra: list[str]
+) -> None:
+    """CLI-04: info/tables/query each exit 1 with registration guidance, no traceback.
+
+    The error fires at ``reader.open()`` (07-RESEARCH Pitfall 5), so it surfaces
+    identically for all three commands; for ``query`` the SQL argument precedes the bag.
+    """
+    args = [command, *extra, str(def_less_bag)]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1
+    # Clean Exit(1) -> SystemExit (not None, not the raw UnresolvedTypeError).
+    assert isinstance(result.exception, SystemExit)
+    assert not isinstance(result.exception, ValueError)
+    assert "register" in result.output
+    assert "get_types_from_msg" in result.output
+
+
+def test_missing_path_still_raises_file_not_found_at_reader() -> None:
+    """Pitfall 3: a missing bag path is NOT mislabeled as a type-registration problem.
+
+    The reader wraps ONLY the "no type definitions" ``AnyReaderError``; a missing path
+    raises ``FileNotFoundError`` (never even an ``AnyReaderError``), which must propagate
+    as itself — proven at the reader boundary (the CLI separately renders it as a clean
+    ``Error: ...`` via the wrapper's ``FileNotFoundError`` branch).
+    """
+    with pytest.raises(FileNotFoundError):
+        RosbagsReader("/no/such/bag").open()

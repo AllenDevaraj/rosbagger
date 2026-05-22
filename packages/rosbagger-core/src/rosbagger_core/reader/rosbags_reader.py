@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 
-from rosbags.highlevel import AnyReader
+from rosbags.highlevel import AnyReader, AnyReaderError
 
 from .base import BagReader, Message
 
@@ -85,12 +85,31 @@ class RosbagsReader(BagReader):
     def open(self) -> None:
         """Construct and open the underlying ``AnyReader`` over the bag paths.
 
-        Construction may raise ``AnyReaderError`` (mixed formats / missing
-        embedded defs) or ``FileNotFoundError`` (missing path); both propagate
-        unchanged for v1 (fail closed — error-wrapping is deferred to Phase 7).
+        The single "bag has no resolvable type defs" choke point (CLI-04): when
+        ``AnyReader.open()`` raises the SPECIFIC ``AnyReaderError`` whose message
+        contains ``"no type definitions"`` (a bag with no embedded message defs and
+        no ``default_typestore``), it is re-raised as a typed
+        :class:`~rosbagger_core.errors.UnresolvedTypeError` carrying registration
+        guidance (preserving the original as ``__cause__``). Because ``info`` /
+        ``tables`` / ``query`` all open the reader via ``with RosbagsReader(...)``,
+        all three surface the teaching error identically.
+
+        Every OTHER failure propagates UNCHANGED so it is not mislabeled as a
+        type-registration problem (07-RESEARCH Pitfall 3): a non-no-defs
+        ``AnyReaderError`` (e.g. mixed ROS 1 / ROS 2 paths) re-raises as itself, and
+        ``FileNotFoundError`` (missing path) is never even caught here.
         """
         reader = AnyReader(self._paths, default_typestore=self._default_typestore)
-        reader.open()
+        try:
+            reader.open()
+        except AnyReaderError as e:
+            if "no type definitions" in str(e):
+                # Lazy import keeps `import rosbagger_core.reader` from eagerly binding
+                # errors (it is stdlib-only, but this matches the module's discipline).
+                from rosbagger_core.errors import UnresolvedTypeError
+
+                raise UnresolvedTypeError(str(e)) from e
+            raise  # mixed-format / other AnyReaderError propagate (Pitfall 3)
         self._reader = reader
 
     def close(self) -> None:
