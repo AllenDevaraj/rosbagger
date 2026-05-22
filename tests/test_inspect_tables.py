@@ -159,3 +159,50 @@ def test_collect_table_schemas_does_not_read_messages(fixture_bags: dict[str, Pa
         schemas = collect_table_schemas(reader)
 
     assert len(schemas) == 3  # built purely from metadata + typestore
+
+
+def test_collect_table_schemas_resolves_table_name_collisions(
+    fixture_bags: dict[str, Path],
+) -> None:
+    """Two topics sanitizing to one base name get DISTINCT table names (CR-01 / T-03-01/02).
+
+    ``/a/b`` and ``/a.b`` both sanitize to ``a_b``; ``collect_table_schemas`` must
+    feed them through a SHARED ``TableNameResolver`` so the second is de-duplicated
+    to ``a_b_2`` rather than silently aliasing onto the first's ``a_b``. Mirrors the
+    multi-msgtype stub style above: a lightweight reader exposing the REAL fixture
+    typestore (so both topics build genuine schemas) and a ``.topics`` dict whose
+    two distinct topics carry a known single msgtype (``geometry_msgs/msg/Twist``).
+    """
+    from dataclasses import dataclass
+
+    @dataclass
+    class _TopicInfo:
+        msgtype: str | None
+        msgcount: int
+
+    class _StubReader:
+        """Minimal duck-typed reader: only ``.typestore`` + ``.topics`` are read."""
+
+        def __init__(self, typestore) -> None:
+            self.typestore = typestore
+            # Two DISTINCT topics that both sanitize to the base name "a_b".
+            self.topics = {
+                "/a/b": _TopicInfo(msgtype="geometry_msgs/msg/Twist", msgcount=3),
+                "/a.b": _TopicInfo(msgtype="geometry_msgs/msg/Twist", msgcount=3),
+            }
+
+        def read(self, *args, **kwargs):  # pragma: no cover - must never be called
+            raise AssertionError("collect_table_schemas must not iterate messages")
+
+    with RosbagsReader(fixture_bags["ros1"]) as real_reader:
+        typestore = real_reader.typestore
+        schemas = collect_table_schemas(_StubReader(typestore))
+
+    table_names = [s.table_name for s in schemas]
+    # No two schemas share a table name (the data-integrity guarantee).
+    assert len(table_names) == len(set(table_names)), table_names
+    # Deterministic collision resolution in sorted topic order: "/a.b" sorts
+    # before "/a/b" (ASCII '.' < '/'), so it claims the base name "a_b" first.
+    assert set(table_names) == {"a_b", "a_b_2"}
+    by_topic = {s.topic: s.table_name for s in schemas}
+    assert by_topic == {"/a.b": "a_b", "/a/b": "a_b_2"}

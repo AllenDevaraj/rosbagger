@@ -242,3 +242,39 @@ def test_collect_bag_info_multi_msgtype_topic_yields_none_msgtype() -> None:
     assert info.topics[0].msgtype is None
     assert info.topics[0].count == 5
     assert info.topics[0].hz == pytest.approx(10.0)  # 5 / 0.5 s
+
+
+def test_collect_bag_info_negative_duration_collapses_to_none() -> None:
+    """A non-positive whole-bag duration (clock skew) collapses to None (WR-01).
+
+    A merged multi-bag read with clock skew can report a NEGATIVE ``duration`` even
+    with messages present (``message_count > 0``); the CLI footer would then render
+    a nonsensical ``-1.00s``. ``collect_bag_info`` must collapse a non-positive
+    duration to ``None`` (so the footer renders ``—``) and keep every per-topic
+    ``hz`` at ``None``. Uses a minimal duck-typed reader stub (no real bag), mirroring
+    the multi-msgtype stub above; start/end keep their raw values.
+    """
+    from collections import namedtuple
+
+    _Info = namedtuple("_Info", ["msgtype", "msgdef", "msgcount", "connections"])
+
+    class _StubReader:
+        message_count = 6
+        start_time = 2_000_000_000
+        end_time = 1_000_000_000  # end before start -> negative duration (clock skew)
+        duration = -1_000_000_000
+        paths: list = []  # empty -> size 0; size is not under test here
+
+        @property
+        def topics(self):
+            return {
+                "/imu": _Info(msgtype="sensor_msgs/msg/Imu", msgdef="", msgcount=6, connections=())
+            }
+
+    info = collect_bag_info(_StubReader())
+    assert info.message_count == 6
+    assert info.duration_ns is None  # negative span collapsed (no "-1.00s" in CLI)
+    # start/end keep their raw semantics — only the derived duration is guarded.
+    assert info.start_time_ns == 2_000_000_000
+    assert info.end_time_ns == 1_000_000_000
+    assert all(ti.hz is None for ti in info.topics)  # no negative per-topic rate
