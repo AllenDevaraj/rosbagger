@@ -42,7 +42,11 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.make_fixtures import make_all_fixtures  # noqa: E402  (after sys.path setup)
+from tools.make_fixtures import (  # noqa: E402  (after sys.path setup)
+    make_all_fixtures,
+    write_ros1_bag,
+    write_ros2_sqlite_bag,
+)
 
 from rosbagger_core.reader import Message, RosbagsReader  # noqa: E402  (3rd-party)
 
@@ -148,3 +152,79 @@ def test_read_before_open_raises(fixture_bags: dict[str, Path]) -> None:
     reader = RosbagsReader(fixture_bags["ros1"])
     with pytest.raises(RuntimeError):
         next(reader.read())
+
+
+# ---------------------------------------------------------------------------
+# Task 2 — multi-bag merge tests (READ-05)
+# ---------------------------------------------------------------------------
+
+# A single bag has 9 messages (3 per topic); two same-format bags read as one
+# logical dataset therefore yield 18 messages with each topic's count doubled.
+EXPECTED_MERGED_COUNT = EXPECTED_MESSAGE_COUNT * 2
+EXPECTED_MERGED_PER_TOPIC = 6
+
+
+@pytest.fixture(scope="session")
+def two_ros2_sqlite_bags(tmp_path_factory) -> list[Path]:
+    """Two ROS 2 sqlite bags, each in its OWN tmp dir (a split recording).
+
+    Each bag is written to a distinct ``tmp_path_factory`` directory because
+    ``write_ros2_sqlite_bag`` always names the bag dir ``ros2_sqlite`` — writing
+    both into one parent would collide (02-RESEARCH.md §3's "second copy into a
+    separate tmp dir" approach).
+    """
+    a = write_ros2_sqlite_bag(tmp_path_factory.mktemp("rec0"))
+    b = write_ros2_sqlite_bag(tmp_path_factory.mktemp("rec1"))
+    return [a, b]
+
+
+@pytest.fixture(scope="session")
+def two_ros1_bags(tmp_path_factory) -> list[Path]:
+    """Two ROS 1 ``.bag`` files, each in its own tmp dir (a split recording)."""
+    a = write_ros1_bag(tmp_path_factory.mktemp("rec0_ros1"))
+    b = write_ros1_bag(tmp_path_factory.mktemp("rec1_ros1"))
+    return [a, b]
+
+
+def test_two_ros2_bags_merge_as_one_dataset(two_ros2_sqlite_bags: list[Path]) -> None:
+    """Two same-format ROS 2 bags read as one time-ordered dataset (READ-05).
+
+    This assertion turns research Assumption A1 / Open Question 1 (does the
+    less-documented multi-ROS2 path merge?) into a verified, committed fact:
+    ``AnyReader``'s heapq merge ordering is preserved through ``RosbagsReader``.
+    """
+    with RosbagsReader(two_ros2_sqlite_bags) as reader:
+        msgs = list(reader.read())
+    assert len(msgs) == EXPECTED_MERGED_COUNT
+    t_ns_seq = [m.t_ns for m in msgs]
+    assert t_ns_seq == sorted(t_ns_seq)  # globally ascending across both bags
+
+
+def test_two_ros2_bags_topics_sum_counts(two_ros2_sqlite_bags: list[Path]) -> None:
+    """The merged ROS 2 dataset reports the three topics with summed msgcounts."""
+    with RosbagsReader(two_ros2_sqlite_bags) as reader:
+        assert set(reader.topics) == EXPECTED_TOPICS
+        # TopicInfo(msgtype, msgdef, msgcount, connections): counts add across bags.
+        for info in reader.topics.values():
+            assert info.msgcount == EXPECTED_MERGED_PER_TOPIC
+
+
+def test_two_ros1_bags_merge_as_one_dataset(two_ros1_bags: list[Path]) -> None:
+    """Two same-format ROS 1 bags read as one time-ordered dataset (READ-05)."""
+    with RosbagsReader(two_ros1_bags) as reader:
+        msgs = list(reader.read())
+    assert len(msgs) == EXPECTED_MERGED_COUNT
+    t_ns_seq = [m.t_ns for m in msgs]
+    assert t_ns_seq == sorted(t_ns_seq)
+
+
+def test_mixed_formats_raise(fixture_bags: dict[str, Path]) -> None:
+    """Mixing ROS 1 and ROS 2 paths in one reader raises (02-RESEARCH.md Pitfall 1).
+
+    ``AnyReader`` gives unified access to a list of EITHER ROS 1 or ROS 2 bags,
+    but not a mixture. v1 lets the raw ``AnyReaderError`` surface from ``open()``
+    (error-wrapping is deferred to Phase 7), so we assert only that it raises.
+    """
+    reader = RosbagsReader([fixture_bags["ros1"], fixture_bags["ros2_sqlite"]])
+    with pytest.raises(Exception):  # noqa: B017  (raw AnyReaderError surfaces in v1)
+        reader.open()
