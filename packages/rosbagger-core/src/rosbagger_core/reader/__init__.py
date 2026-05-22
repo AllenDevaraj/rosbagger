@@ -1,16 +1,17 @@
 """Reader subpackage — the swappable bag-reader seam.
 
-Re-exports the backend-agnostic public API: ``BagReader`` (the ABC seam) and
-``Message`` (the uniform per-message record). The concrete rosbags-backed reader
-(wrapping ``rosbags.highlevel.AnyReader``) lands in plan 02-02 and will extend
-``__all__`` here.
+Re-exports the public API: ``BagReader`` (the ABC seam), ``Message`` (the
+uniform per-message record), and ``RosbagsReader`` (impl #1, wrapping
+``rosbags.highlevel.AnyReader``).
 
-Note: this re-export pulls in only ``base.py`` (stdlib-only), so importing the
-subpackage stays ROS-free. The top-level ``rosbagger_core`` package does NOT
-import this subpackage, so ``import rosbagger_core`` stays light (Phase 1
-decision; offline-guard invariant).
+Note: re-exporting ``RosbagsReader`` means ``import rosbagger_core.reader`` now
+pulls in ``rosbags`` — that is expected and fine. The offline-guard invariant
+only requires that the TOP-LEVEL ``rosbagger_core`` package stays light: it does
+NOT import this subpackage, so ``import rosbagger_core`` remains ROS-free and
+``rosbags``-free (Phase 1 decision; ``tests/test_offline_guard.py``).
 """
 
 from .base import BagReader, Message
+from .rosbags_reader import RosbagsReader
 
-__all__ = ["BagReader", "Message"]
+__all__ = ["BagReader", "Message", "RosbagsReader"]
