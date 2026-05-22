@@ -15,12 +15,12 @@ Query and understand the data inside any ROS bag from one command — without wr
 <!-- Shipped and confirmed valuable. -->
 
 - [x] Read ROS1 / ROS2 / MCAP bags through one interface with no ROS install (rosbags backend) — *Validated in Phase 2 (READ-01..05): `BagReader`/`RosbagsReader`, 30 ROS-free tests*
+- [x] Inspect a bag: topics, message types, counts, duration, approx Hz, size — *Validated in Phase 4 (INSP-01..03): `bagq info` + `bagq tables`, O(1) metadata, API-first*
 
 ### Active
 
 <!-- v1 = rosbagger-core + bagq. Hypotheses until shipped. -->
 
-- [ ] Inspect a bag: topics, message types, counts, duration, approx Hz, size
 - [ ] Query bag topics with SQL via DuckDB — one table per topic, dotted/quoted columns, `t`/`t_ns`/`stamp`/`topic`
 - [ ] Resolve referenced topics from the SQL (sqlglot) and load only those
 - [ ] Export query results to CSV and Parquet; minimal `--plot`
@@ -79,4 +79,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 after Phase 3 (Message→Table Schema) completion — message→table flattening (QURY-01..04, 07: sanitized table names, dotted/quoted columns, LIST/STRUCT, standard time columns, lazy blobs) emits backend-neutral pyarrow, ready for the Phase 5 DuckDB query engine. Reader (Phase 2) shipped. Next user-facing capabilities: inspect (Phase 4), SQL query (Phase 5), export (Phase 6), CLI + teaching errors (Phase 7).*
+*Last updated: 2026-05-22 after Phase 4 (Inspect) completion — `bagq info`/`bagq tables` ship bag overview (INSP-01..03) over O(1) reader metadata + the Phase 3 schema. Reader (P2), schema flattening (P3), and inspect (P4) are validated. Next user-facing capabilities: SQL query engine (Phase 5 — note WR-01 schema-collision guard already landed in P4), export (Phase 6), CLI + teaching errors (Phase 7).*
