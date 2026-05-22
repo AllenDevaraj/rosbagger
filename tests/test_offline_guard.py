@@ -98,3 +98,42 @@ def test_import_output_subpackage_does_not_pull_heavy_query_stack():
     """
     leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.output")
     assert leaked == [], f"import rosbagger_core.output leaked the heavy stack: {leaked}"
+
+
+def test_import_errors_does_not_pull_heavy_query_stack():
+    """`import rosbagger_core.errors` must NOT load duckdb/sqlglot/pyarrow.
+
+    The Phase 7 typed errors (``UnknownTableError``/``UnknownColumnError``/
+    ``UnresolvedTypeError``) are plain ``ValueError`` subclasses importing only
+    stdlib ``difflib`` — they NEVER import the library exceptions they wrap
+    (``duckdb.BinderException``/rosbags ``AnyReaderError``), which are caught
+    where those libraries are already imported (07-RESEARCH Pitfall 6). This keeps
+    ``import rosbagger_core.errors`` light enough that the CLI could even import it
+    at top level.
+    """
+    leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.errors")
+    assert leaked == [], f"import rosbagger_core.errors leaked the heavy stack: {leaked}"
+
+
+def test_import_errors_does_not_pull_rosbags():
+    """`import rosbagger_core.errors` must NOT pull ``rosbags`` either (stdlib-only).
+
+    A fresh subprocess (empty PYTHONPATH neutralizes the host ROS leak) asserts no
+    ``rosbags`` module lands in ``sys.modules`` after importing the errors module —
+    the ``UnresolvedTypeError`` guidance is a plain string and references no rosbags
+    import (07-RESEARCH Pitfall 6 / §3).
+    """
+    code = (
+        "import sys; import rosbagger_core.errors; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] == 'rosbags']; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"import rosbagger_core.errors pulled in rosbags: {leaked}"

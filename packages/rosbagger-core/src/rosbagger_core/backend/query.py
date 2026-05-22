@@ -39,7 +39,10 @@ stdlib-only) are imported at module scope.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
+
+from rosbagger_core.errors import UnknownColumnError, UnknownTableError
 
 from .base import QueryBackend
 
@@ -48,15 +51,21 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
 
     from rosbagger_core.reader import BagReader
 
+# UnknownTableError moved to rosbagger_core.errors (the stdlib-only shared home);
+# imported above and re-exported here so the canonical class is identical and any
+# existing ``from rosbagger_core.backend.query import UnknownTableError`` still
+# resolves it. ``errors`` is stdlib-only (difflib), so this top-level import does
+# NOT break the offline invariant (test_offline_guard.py). 07-02 also imports
+# ``UnknownColumnError`` for the BinderException -> typed-error mapping in query().
+__all__ = ["UnknownColumnError", "UnknownTableError", "query"]
 
-class UnknownTableError(ValueError):
-    """A SQL table name maps to no topic in the bag.
-
-    Subclasses ``ValueError`` so existing ``except ValueError`` handlers still
-    catch it, while giving callers a typed handle. The message lists the
-    available table names; the teaching "did-you-mean" is Phase 7's job (CLI-02),
-    NOT v1's (05-RESEARCH Pattern 4 / A4).
-    """
+# DuckDB's unknown-column BinderException message embeds the offending column as
+# 'Referenced column "X" not found in FROM clause! ...'. We catch the exception by
+# TYPE (robust across locales/versions); this stdlib regex parses the message ONLY
+# to recover the column NAME for the teaching error (07-RESEARCH §2; a miss degrades
+# the name to "?" while still listing the table's columns). ``re`` is stdlib — safe
+# at module top, no offline-invariant impact.
+_BINDER_COL = re.compile(r'Referenced column "([^"]+)" not found')
 
 
 def _topic_table_maps(reader: BagReader) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
@@ -146,12 +155,9 @@ def query(
     for table in tables:
         topic = table_to_topic.get(table)
         if topic is None:
-            available = ", ".join(sorted(table_to_topic))
-            raise UnknownTableError(
-                f"Unknown table {table!r}. Available tables: {available}"
-                if available
-                else f"Unknown table {table!r}. The bag exposes no queryable tables."
-            )
+            # The constructor now owns the message + the difflib did-you-mean (CLI-02);
+            # pass it the offending name and the available table names.
+            raise UnknownTableError(table, sorted(table_to_topic))
         referenced_topics.append(topic)
 
     # Step 4 — load only the referenced topics, register, execute. The backend is
