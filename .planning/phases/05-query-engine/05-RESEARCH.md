@@ -360,7 +360,9 @@ with RosbagsReader(bag) as reader:
 | A3 | Adding a `topics=`/`connections=` parameter to `RosbagsReader.read()` is acceptable (vs. reaching into `reader._reader`) | Pattern 5 / Pitfall 2 | If the team prefers not to touch the reader seam, the orchestrator can use `reader._reader.messages(connections=...)` directly, but that leaks the `rosbags` internal. The public-seam approach is cleaner; confirm with the planner. |
 | A4 | A plain `ValueError` (listing available tables) is acceptable for an unknown table name in v1 | Pattern 4 / Code Examples | Phase 7 owns teaching-errors (CLI-02). If the planner wants a typed exception now, define it in `backend/` — low risk either way. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+*Resolved and threaded into the plans: Q1 → `query(sql, reader, *, backend=None) -> pyarrow.Table` lives in `backend/query.py`; Q2 → accepts an already-open `BagReader` (consistent with Phase 4); Q3 → one in-memory DuckDB connection per call (`with DuckDBBackend()`).*
 
 1. **Where does the orchestrating `query()` live, and what is its signature?**
    - What we know: it must lazy-import the heavy stack; it ties resolve+load+execute together; the design spec describes it as the `bagq query` topic-resolution path.
