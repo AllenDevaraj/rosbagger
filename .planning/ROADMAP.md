@@ -181,7 +181,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — CLI finalization: shared `teaching_errors` catch mechanism (clean message + `Exit(1)`, no traceback) across query/info/tables + WR-01 (splitext) and WR-02 (portable buffered CSV) fixes in `output/export.py`; real-shell smoke -> CLI-01
+- [x] 07-01-PLAN.md — CLI finalization: shared `teaching_errors` catch mechanism (clean message + `Exit(1)`, no traceback) across query/info/tables + WR-01 (splitext) and WR-02 (portable buffered CSV) fixes in `output/export.py`; real-shell smoke -> CLI-01
 
 **Wave 2** *(blocked on 07-01)*
 
@@ -217,5 +217,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Inspect | 2/2 | Complete    | 2026-05-22 |
 | 5. Query Engine | 2/2 | Complete    | 2026-05-22 |
 | 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
-| 7. CLI & Teaching Errors | 0/2 | Not started | - |
+| 7. CLI & Teaching Errors | 1/2 | In Progress|  |
 | 8. Packaging, Docs & Release | 0/1 | Not started | - |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 06-02-PLAN.md (Phase 6 plan 2/2 — PHASE 6 COMPLETE). Added rosbagger_core.output.plot_table: minimal headless (Agg-before-pyplot) matplotlib line chart of numeric result cols (pyarrow is_integer/is_floating; excludes topic/string/LIST/STRUCT + the t_ns x-axis) vs t_ns (fallback t); lazy/optional matplotlib -> ImportError re-raised as teaching RuntimeError (install bagq[plot]); 0-row / no-numeric / no-t_ns -> teaching ValueError; plt.close(fig) (figure-leak T-06-05). Wired bagq query ... --plot [FILE] (OUT-04): bare --plot -> plot.png (A1), --plot FILE -> that file; --plot is its own sink + precedence; errors propagate (Phase 7 teaching). matplotlib>=3.8 in root dev group (also bagq[plot] extra); uv lock+sync; uv.lock committed; tests pytest.importorskip-guarded. DEVIATION (Rule 3): typer 0.25.1 drops flag_value -> RESEARCH Pattern 4 idiom broken -> _PlotCommand(TyperCommand) rebuilds --plot as a native click.Option (zero ripple to entry point + 06-01 tests). Offline guard intact. Full suite 219 passed at 98.04%; plot.py 100%. Next: Phase 7 (CLI & Teaching Errors)."
-last_updated: "2026-05-22T17:40:28.814Z"
-last_activity: 2026-05-22 -- Phase 7 planning complete
+stopped_at: "Completed 07-01-PLAN.md (Phase 7 plan 1/2). CLI-01 clean-exit MECHANISM: teaching_errors(fn) decorator in bagq/cli.py (functools.wraps) catches the KNOWN typed set (UnknownTableError) + FileNotFoundError -> typer.secho(err=True) + raise typer.Exit(1), NO traceback; applied to info/tables/query. NO bare except Exception — a monkeypatched-KeyError test proves real bugs still surface (Pitfall 4). Structured so 07-02 widens the catch in ONE import line + ONE except tuple. WR-02 fixed: rosbagger_core.output.write_csv_to_string (COPY to mkstemp temp file -> read-back UTF-8 -> unlink in finally; reuses _copy_to so the T-06-01 quote-escape stays shared; LIST cols render bracketed via DuckDB COPY, not pyarrow.csv) replaces the /dev/stdout COPY — CLI routes --format csv via typer.echo(write_csv_to_string(result), nl=False) (CliRunner-capturable + OS-portable). write_csv_stream RETAINED for back-compat. WR-01 fixed: write_table extension parse via os.path.splitext(os.path.basename(path)) (dotted-parent dirs no longer misfire). Added bagq/__main__.py so python -m bagq runs the app (PATH-independent smoke). DEVIATION (Rule 1, test-only): the unknown-table test's no-traceback assertion corrected from `exception is None` to isinstance(exception, SystemExit) + not-ValueError (a clean typer.Exit(1) surfaces to CliRunner as SystemExit, 07-RESEARCH §6). Full suite 229 passed at 97.81% (>=80% gate); export.py 100%, cli.py 99%; offline guard 5/5; ruff clean; real-shell smoke exit 0. Next: 07-02 (teaching errors content — did-you-mean / column list / UnresolvedTypeError)."
+last_updated: "2026-05-22T17:48:34.771Z"
+last_activity: 2026-05-22 -- Completed 07-01 (CLI-01 clean-exit mechanism + WR-01/WR-02 fixes)
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 17
-  completed_plans: 15
-  percent: 75
+  completed_plans: 16
+  percent: 94
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 7
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-22 -- Phase 7 planning complete
+Plan: 1 of 2 complete (07-01 done; 07-02 next)
+Status: Executing
+Last activity: 2026-05-22 -- Completed 07-01 (CLI-01 clean-exit mechanism + WR-01/WR-02 fixes)
 
-Progress: [██████████] 100% (Phase 6: 2/2 plans complete)
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Progress: [██████████] 100% (Phase 6: 2/2 plans complete)
 | Phase 05 P02 | 10min | 2 tasks | 7 files |
 | Phase 06 P06-01 | 7min | 3 tasks | 8 files |
 | Phase 06 P06-02 | 12min | 3 tasks | 6 files |
+| Phase 07 P01 | 9min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06-02]: --plot is its own output sink and takes precedence over -o/--format (plot and return); the RuntimeError (matplotlib missing) and ValueError (nothing to plot) PROPAGATE — Phase 7 owns teaching-error formatting. Bare --plot -> plot.png in CWD (A1), --plot FILE -> that file
 - [Phase 06-02]: DEVIATION (Rule 3) — RESEARCH Pattern 4's optional-value-flag idiom `typer.Option(is_flag=False, flag_value=<sentinel>, default=None)` does NOT work on the PINNED typer 0.25.1: typer.main.get_click_param silently DROPS flag_value during the typer.Option->click conversion (only forwards a computed is_flag for bool params + count), so bare --plot errored "requires an argument" + a DeprecationWarning fired. typer also REBUILDS the command group on every get_command(app) call (so post-hoc param injection can't survive), and a native-click query command would ripple into 06-01's CliRunner tests (typer.testing.CliRunner only accepts a typer.Typer) and the bagq.cli:app entry point. FIX: a small _PlotCommand(TyperCommand) registered via @app.command(cls=...) that, at construction, REPLACES --plot with a freshly-built native click.Option(is_flag=False, flag_value=_PLOT_DEFAULT, default=None) (reconstruction, not in-place mutation — click derives optional-value parsing in Option.__init__). app stays typer.Typer, query stays a typer command -> ZERO ripple (06-01's 14 CLI/guard tests still pass). The signature --plot is now a plain typer.Option (no is_flag/flag_value) so the DeprecationWarning is gone. click is already a typer dep (no new package)
 - [Phase 06-02]: PHASE 6 COMPLETE (2/2). All four output forms shipped: stdout table (OUT-01), CSV (OUT-02), Parquet (OUT-03), --plot line chart (OUT-04). Full suite 219 passed at 98.04% (>=80% gate); plot.py 100%, cli.py 98% (the 2 misses are pre-existing 06-01 lines: the >100-row footer + the /dev/stdout csv-stream branch). ruff format-check + lint clean. uv.lock carries matplotlib in the dev group
+- [Phase 07-01]: CLI-01 clean-exit MECHANISM — teaching_errors(fn) decorator in bagq/cli.py (functools.wraps) catches the KNOWN typed set (UnknownTableError) + FileNotFoundError -> typer.secho(str(e), fg=RED, err=True) + raise typer.Exit(1), NO Python traceback; applied to info/tables/query (below @app.command so typer registers the wrapped callable). DELIBERATELY NO bare `except Exception` (Pitfall 4) — a monkeypatched-KeyError test proves a real bug still surfaces as a traceback, not a masked Exit(1). Structured so 07-02 widens the catch in ONE lazy-import line + ONE except tuple (UnknownColumnError/UnresolvedTypeError) with the wrapper body unchanged. Verified: a clean typer.Exit(1) surfaces to CliRunner as SystemExit (NOT None) — the no-traceback assertion is isinstance(exception, SystemExit) AND not-ValueError (the raw UnknownTableError did not escape). Added bagq/__main__.py so `python -m bagq` runs the app (PATH-independent real-shell smoke; exit 0 with /cmd_vel)
+- [Phase 07-01]: WR-02 fixed (portability) — rosbagger_core.output.write_csv_to_string(table)->str buffers DuckDB COPY to a tempfile.mkstemp(suffix='.csv') file, reads it back UTF-8, unlinks in a finally (no leak), and RETURNS the string; reuses _copy_to so the one T-06-01 `'`→`''` SQL-literal escape stays shared (NOT re-implemented). LIST cols render bracketed (DuckDB COPY, not pyarrow.csv -> ArrowInvalid). CLI routes --format csv (no -o) via typer.echo(write_csv_to_string(result), nl=False) — CliRunner-capturable + OS-portable (no /dev/stdout; CLAUDE.md "runs anywhere"). cli.py imports no duckdb (offline invariant). write_csv_stream RETAINED for back-compat (its /dev/stdout default marked superseded). WR-01 fixed (robustness) — write_table extension parse via os.path.splitext(os.path.basename(path))[1].lstrip('.').lower() (a dotted parent dir like /home/u/v1.2/results/output no longer misfires; .../2024.05.21/run.csv selects CSV). Full suite 229 passed at 97.81% (>=80% gate); export.py 100%, cli.py 99% (1 pre-existing 06-01 miss: the >100-row footer); offline guard 5/5; ruff clean. CLI-01 done; 07-02 owns the teaching CONTENT (did-you-mean / column list / UnresolvedTypeError)
 
 ### Pending Todos
 
@@ -162,6 +165,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T17:08:24.000Z
-Stopped at: Completed 06-02-PLAN.md (Phase 6 plan 2/2 — PHASE 6 COMPLETE). Added rosbagger_core.output.plot_table: minimal headless (Agg-before-pyplot) matplotlib line chart of numeric result cols (pyarrow is_integer/is_floating; excludes topic/string/LIST/STRUCT + the t_ns x-axis) vs t_ns (fallback t); lazy/optional matplotlib -> ImportError re-raised as teaching RuntimeError (install bagq[plot]); 0-row / no-numeric / no-t_ns -> teaching ValueError; plt.close(fig) (figure-leak T-06-05). Wired bagq query ... --plot [FILE] (OUT-04): bare --plot -> plot.png (A1), --plot FILE -> that file; --plot is its own sink + precedence; errors propagate (Phase 7 teaching). matplotlib>=3.8 in root dev group (also bagq[plot] extra); uv lock+sync; uv.lock committed; tests pytest.importorskip-guarded. DEVIATION (Rule 3): typer 0.25.1 drops flag_value -> RESEARCH Pattern 4 idiom broken -> _PlotCommand(TyperCommand) rebuilds --plot as a native click.Option (zero ripple to entry point + 06-01 tests). Offline guard intact. Full suite 219 passed at 98.04%; plot.py 100%. Next: Phase 7 (CLI & Teaching Errors).
+Last session: 2026-05-22T17:47:16.000Z
+Stopped at: Completed 07-01-PLAN.md (Phase 7 plan 1/2). CLI-01 clean-exit MECHANISM: teaching_errors(fn) decorator in bagq/cli.py catches UnknownTableError + FileNotFoundError -> typer.secho(err=True) + raise typer.Exit(1), NO traceback; applied to info/tables/query. NO bare except Exception (a monkeypatched-KeyError test proves real bugs still surface — Pitfall 4); structured so 07-02 widens the catch in one import line + one except tuple. WR-02: write_csv_to_string (COPY to mkstemp -> read-back -> unlink in finally; reuses _copy_to/T-06-01 escape; LIST cols bracketed) replaces /dev/stdout; CLI routes --format csv via typer.echo(...) (CliRunner-capturable + OS-portable). write_csv_stream retained. WR-01: write_table ext via os.path.splitext(os.path.basename(path)). Added bagq/__main__.py (python -m bagq). DEVIATION (Rule 1, test-only): no-traceback assertion corrected to isinstance(exception, SystemExit) — a clean typer.Exit(1) is SystemExit, not None (07-RESEARCH §6). Full suite 229 passed at 97.81% (>=80% gate); export.py 100%, cli.py 99%; offline guard 5/5; ruff clean; real-shell smoke exit 0. Next: 07-02 (teaching errors content — did-you-mean / column list / UnresolvedTypeError).
 Resume file: None
