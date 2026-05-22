@@ -27,18 +27,58 @@ override (it is a run-time prefix only, never committed code).
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pyarrow as pa
 import pytest
 from rosbags.typesys import Stores, get_typestore
 
-from rosbagger_core.schema.flatten import build_table_schema
-from rosbagger_core.schema.identifiers import quote_ident
+# `tools` is a dev-only package at the repo root (NOT an installed distribution),
+# so it is not on sys.path under pytest's default import mode. Put the repo root
+# on sys.path here — scoped to this test file (mirrors tests/test_reader.py).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.make_fixtures import make_all_fixtures  # noqa: E402  (after sys.path setup)
+
+from rosbagger_core.reader import RosbagsReader  # noqa: E402  (3rd-party stack)
+from rosbagger_core.schema.flatten import (  # noqa: E402
+    build_arrow_table,
+    build_table_schema,
+    flatten_message,
+)
+from rosbagger_core.schema.identifiers import quote_ident  # noqa: E402
+
+FORMATS = ("ros1", "ros2_sqlite", "ros2_mcap")
 
 
 @pytest.fixture(scope="session")
 def typestore():
     """The real ROS 2 Humble typestore (no bag needed for schema-only tests)."""
     return get_typestore(Stores.ROS2_HUMBLE)
+
+
+@pytest.fixture(scope="session")
+def fixture_bags(tmp_path_factory) -> dict[str, Path]:
+    """Generate all three fixture bags once into a throwaway session tmp dir."""
+    dest = tmp_path_factory.mktemp("schema_arrow_bags")
+    return make_all_fixtures(dest)
+
+
+def _read_topic(bag_path: Path, topic: str):
+    """Open ``bag_path``, return ``(messages_for_topic, typestore)``.
+
+    The typestore is reached via ``reader._reader.typestore`` after ``open()``
+    (research Open Question 3) — the schema is built from the SAME typestore the
+    messages were deserialized with.
+    """
+    with RosbagsReader(bag_path) as reader:
+        ts = reader._reader.typestore
+        msgs = [m for m in reader.read() if m.topic == topic]
+    msgs.sort(key=lambda m: m.t_ns)
+    return msgs, ts
 
 
 # ---------------------------------------------------------------------------
@@ -125,3 +165,112 @@ def test_quote_ident_neutralizes_sql_injection() -> None:
     # the embedded quote is doubled (escaped), so no SQL statement can break out.
     assert quoted.startswith('"') and quoted.endswith('"')
     assert quoted == '"x""; DROP TABLE y;--"'
+
+
+# ---------------------------------------------------------------------------
+# Task 2 — flatten_message row extractor + build_arrow_table from a Message stream
+# ---------------------------------------------------------------------------
+
+
+def test_flatten_message_extracts_dotted_scalar_values(fixture_bags) -> None:
+    """flatten_message pulls each non-standard leaf by ros_path (e.g. msg.linear.x)."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/cmd_vel")
+    schema = build_table_schema("geometry_msgs/msg/Twist", ts, topic="/cmd_vel")
+    # Fixture content: linear.x = i (0.0, 1.0, 2.0); angular.z = 0.1*i.
+    row0 = flatten_message(msgs[0].msg, schema)
+    assert row0["linear.x"] == 0.0
+    assert row0["angular.z"] == 0.0
+    row2 = flatten_message(msgs[2].msg, schema)
+    assert row2["linear.x"] == 2.0
+    assert row2["angular.z"] == pytest.approx(0.2)
+    # The standard columns are NOT part of the per-message body extraction.
+    assert "t" not in row0
+    assert "topic" not in row0
+
+
+def test_flatten_message_omits_heavy_blob_by_default(fixture_bags) -> None:
+    """flatten_message omits the heavy data blob unless its name is in include."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/image")
+    schema = build_table_schema("sensor_msgs/msg/Image", ts, topic="/image")
+    row = flatten_message(msgs[0].msg, schema)
+    assert "data" not in row
+    row_with = flatten_message(msgs[0].msg, schema, include={"data"})
+    assert "data" in row_with
+
+
+def test_build_arrow_table_schema_matches_arrow_schema(fixture_bags) -> None:
+    """build_arrow_table(...).schema == schema.arrow_schema(include=...)."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/cmd_vel")
+    schema = build_table_schema("geometry_msgs/msg/Twist", ts, topic="/cmd_vel")
+    table = build_arrow_table((m for m in msgs), schema)
+    assert isinstance(table, pa.Table)
+    assert table.schema.equals(schema.arrow_schema())
+    assert table.num_rows == len(msgs)
+
+
+def test_build_arrow_table_cmd_vel_dotted_column_values(fixture_bags) -> None:
+    """A built /cmd_vel Table's "linear.x" column equals the per-message series."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/cmd_vel")
+    schema = build_table_schema("geometry_msgs/msg/Twist", ts, topic="/cmd_vel")
+    table = build_arrow_table(msgs, schema)
+    assert table.column("linear.x").to_pylist() == [m.msg.linear.x for m in msgs]
+    # Standard columns come straight off the Message.
+    assert table.column("topic").to_pylist() == ["/cmd_vel"] * len(msgs)
+    assert table.column("t_ns").to_pylist() == [m.t_ns for m in msgs]
+
+
+def test_build_arrow_table_standard_time_columns_typed(fixture_bags) -> None:
+    """t/stamp are timestamp('ns'); a headerless topic gets an all-NULL stamp."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/cmd_vel")
+    schema = build_table_schema("geometry_msgs/msg/Twist", ts, topic="/cmd_vel")
+    table = build_arrow_table(msgs, schema)
+    assert table.schema.field("t").type == pa.timestamp("ns")
+    assert table.schema.field("stamp").type == pa.timestamp("ns")
+    # /cmd_vel is headerless -> every stamp is NULL.
+    assert table.column("stamp").to_pylist() == [None] * len(msgs)
+    # t_ns is the raw int64 series.
+    assert table.schema.field("t_ns").type == pa.int64()
+
+
+def test_build_arrow_table_imu_covariance_is_list_double(fixture_bags) -> None:
+    """A built /imu Table has orientation_covariance as a list<double> column."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/imu")
+    schema = build_table_schema("sensor_msgs/msg/Imu", ts, topic="/imu")
+    table = build_arrow_table(msgs, schema)
+    cov = table.schema.field("orientation_covariance")
+    assert cov.type == pa.list_(pa.float64())
+    # Each row is the fixture's 9-element zero covariance.
+    first = table.column("orientation_covariance").to_pylist()[0]
+    assert first == [0.0] * 9
+
+
+def test_build_arrow_table_imu_stamp_off_the_message(fixture_bags) -> None:
+    """The /imu top-level stamp/t come straight off each Message (Pitfall 6)."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/imu")
+    schema = build_table_schema("sensor_msgs/msg/Imu", ts, topic="/imu")
+    table = build_arrow_table(msgs, schema)
+    # stamp materializes from the int-ns values as TIMESTAMP_NS (non-NULL here).
+    assert table.column("stamp").null_count == 0
+    assert table.column("t_ns").to_pylist() == [m.t_ns for m in msgs]
+
+
+def test_build_arrow_table_image_blob_lazy_by_default(fixture_bags) -> None:
+    """A built /image Table omits "data" by default; include={'data'} re-adds it."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/image")
+    schema = build_table_schema("sensor_msgs/msg/Image", ts, topic="/image")
+    default_table = build_arrow_table(msgs, schema)
+    assert "data" not in default_table.schema.names
+    with_blob = build_arrow_table(msgs, schema, include={"data"})
+    assert "data" in with_blob.schema.names
+    assert with_blob.schema.field("data").type == pa.list_(pa.uint8())
+    assert with_blob.column("data").to_pylist()[0] == list(range(12))  # 2x2x3 ramp
+
+
+def test_build_arrow_table_empty_stream_yields_typed_empty_table(typestore) -> None:
+    """A zero-message stream still yields a Table with the full typed schema (RESEARCH §7)."""
+    schema = build_table_schema("geometry_msgs/msg/Twist", typestore, topic="/cmd_vel")
+    table = build_arrow_table([], schema)
+    assert isinstance(table, pa.Table)
+    assert table.num_rows == 0
+    assert table.schema.equals(schema.arrow_schema())
+    assert "linear.x" in table.schema.names
