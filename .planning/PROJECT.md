@@ -19,12 +19,13 @@ Query and understand the data inside any ROS bag from one command — without wr
 - [x] Query bag topics with SQL via DuckDB — one table per topic, dotted/quoted columns, `t`/`t_ns`/`stamp`/`topic` — *Validated in Phases 3+5 (QURY-01..06): `query(sql, reader)` over a swappable `QueryBackend`, end-to-end across all 3 formats*
 - [x] Resolve referenced topics from the SQL (sqlglot) and load only those — *Validated in Phase 5 (QURY-05): sqlglot resolver + connection-filtered `read(topics=)`*
 - [x] Export query results to CSV and Parquet; minimal `--plot` — *Validated in Phase 6 (OUT-01..04): `bagq query` stdout table + CSV/Parquet via DuckDB COPY + headless `--plot`*
+- [x] Teaching errors: unknown table/column → suggestions; unresolvable custom msg → registration guidance — *Validated in Phase 7 (CLI-01..04): `bagq` CLI + did-you-mean / column listing / msg-registration guidance, clean Exit(1)*
 
 ### Active
 
 <!-- v1 = rosbagger-core + bagq. Hypotheses until shipped. -->
 
-- [ ] Teaching errors: unknown table/column → suggestions; unresolvable custom msg → registration guidance
+- *(none — all v1 feature requirements validated; Phase 8 = packaging, docs & release)*
 
 ### Out of Scope
 
@@ -80,4 +81,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 after Phase 6 (Output & Export) completion — `bagq query "<SQL>" BAG [-o out.{csv,parquet}] [--plot]` is end-to-end: SQL over ROS1/ROS2/MCAP → stdout table / CSV / Parquet / minimal plot, no ROS install (OUT-01..04 done). Read (P2), inspect (P4), query (P3+P5), and export (P6) are all validated — the core `bagq` value prop works. Remaining: CLI polish + teaching errors (Phase 7), packaging/docs/release (Phase 8).*
+*Last updated: 2026-05-22 after Phase 7 (CLI & Teaching Errors) completion — ALL 23 v1 feature requirements (READ/INSP/QURY/OUT/CLI) are validated. `bagq` is functionally complete: read ROS1/ROS2/MCAP, inspect, SQL-query, export CSV/Parquet/plot, with errors that teach — all with no ROS install, 255 ROS-free tests. Only Phase 8 remains: packaging, docs & release.*
