@@ -229,7 +229,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 09-01-PLAN.md — `write_tf_bag` fixture writer in `tools/make_fixtures.py`: `/tf_static` map→odom + dynamic `/tf` odom→base_link (seeded ~800ms gap) + clean base_link→laser, across ROS1/ROS2-sqlite/MCAP (ROS1 registers `tf2_msgs/msg/TFMessage`) -> TF-01
+- [x] 09-01-PLAN.md — `write_tf_bag` fixture writer in `tools/make_fixtures.py`: `/tf_static` map→odom + dynamic `/tf` odom→base_link (seeded ~800ms gap) + clean base_link→laser, across ROS1/ROS2-sqlite/MCAP (ROS1 registers `tf2_msgs/msg/TFMessage`) -> TF-01
 - [ ] 09-02-PLAN.md — `rosbagger_core/tf.py` core: frozen `TfReport`/`EdgeReport`/`GapReport` + `collect_tf_report(reader)` (stream `/tf`+`/tf_static`, build parent→child graph, median×multiplier gap detection with all edge cases) + `NoTransformsError` in `errors.py` -> TF-01
 
 **Wave 2** *(blocked on 09-01 + 09-02)*
@@ -316,7 +316,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
-| 9. TF Debugger | 0/3 | Planned | - |
+| 9. TF Debugger | 1/3 | In Progress|  |
 | 10. Query Ergonomics | 0/? | Not started | - |
 | 11. Edit & Events | 0/? | Not started | - |
 | 12. Live Record | 0/? | Not started | - |
