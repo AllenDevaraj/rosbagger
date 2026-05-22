@@ -15,7 +15,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 2: Bag Reader Layer** - Universal ROS1/ROS2/MCAP reading via rosbags (completed 2026-05-22)
 - [x] **Phase 3: Message→Table Schema** - Flatten messages into DuckDB columns (completed 2026-05-22)
 - [x] **Phase 4: Inspect** - `bagq info` / `bagq tables` (completed 2026-05-22)
-- [ ] **Phase 5: Query Engine** - DuckDB backend + sqlglot topic resolution
+- [x] **Phase 5: Query Engine** - DuckDB backend + sqlglot topic resolution (completed 2026-05-22)
 - [ ] **Phase 6: Output & Export** - stdout table, CSV, Parquet, minimal plot
 - [ ] **Phase 7: CLI & Teaching Errors** - `bagq query` end-to-end with helpful errors
 - [ ] **Phase 8: Packaging, Docs & Release** - pip-installable v0.1, offline imports
@@ -141,7 +141,7 @@ Plans:
 
 **Wave 2** *(blocked on 05-01)*
 
-- [ ] 05-02-PLAN.md — sqlglot topic resolution + `query(sql, reader)` orchestrator (load only referenced topics via `read(topics=)`, register, execute) -> QURY-05/06
+- [x] 05-02-PLAN.md — sqlglot topic resolution + `query(sql, reader)` orchestrator (load only referenced topics via `read(topics=)`, register, execute) -> QURY-05/06
 
 ### Phase 6: Output & Export
 
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 2. Bag Reader Layer | 3/3 | Complete    | 2026-05-22 |
 | 3. Message→Table Schema | 3/3 | Complete    | 2026-05-22 |
 | 4. Inspect | 2/2 | Complete    | 2026-05-22 |
-| 5. Query Engine | 1/2 | In Progress|  |
+| 5. Query Engine | 2/2 | Complete   | 2026-05-22 |
 | 6. Output & Export | 0/2 | Not started | - |
 | 7. CLI & Teaching Errors | 0/2 | Not started | - |
 | 8. Packaging, Docs & Release | 0/1 | Not started | - |

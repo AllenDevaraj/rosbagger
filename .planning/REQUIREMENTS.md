@@ -27,7 +27,7 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 - [x] **QURY-02**: Flatten nested scalar fields to dotted, quoted columns (e.g. `"twist.twist.linear.x"`)
 - [x] **QURY-03**: Represent arrays as `LIST` columns; arrays of sub-messages as `LIST` of `STRUCT`
 - [x] **QURY-04**: Add always-present columns `t` (`TIMESTAMP_NS`), `t_ns` (`BIGINT`), `stamp`, `topic`
-- [ ] **QURY-05**: Resolve referenced topics from the SQL via `sqlglot` and load only those topics
+- [x] **QURY-05**: Resolve referenced topics from the SQL via `sqlglot` and load only those topics
 - [x] **QURY-06**: Execute SQL through DuckDB behind a swappable `QueryBackend` seam
 - [x] **QURY-07**: Materialize heavy byte blobs (`Image.data`, `PointCloud2.data`) only when the query references them
 
@@ -100,7 +100,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | INSP-01 | Phase 4 | Complete |
 | INSP-02 | Phase 4 | Complete |
 | INSP-03 | Phase 4 | Complete |
-| QURY-05 | Phase 5 | Pending |
+| QURY-05 | Phase 5 | Complete |
 | QURY-06 | Phase 5 | Complete |
 | OUT-01 | Phase 6 | Pending |
 | OUT-02 | Phase 6 | Pending |
