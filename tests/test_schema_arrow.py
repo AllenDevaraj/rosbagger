@@ -274,3 +274,115 @@ def test_build_arrow_table_empty_stream_yields_typed_empty_table(typestore) -> N
     assert table.num_rows == 0
     assert table.schema.equals(schema.arrow_schema())
     assert "linear.x" in table.schema.names
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — public schema/__init__ re-exports + end-to-end fixture pipeline,
+#          LIST<STRUCT>, lazy blob, and the offline-import invariant.
+# ---------------------------------------------------------------------------
+
+
+def test_schema_package_reexports_public_api() -> None:
+    """schema/__init__.py re-exports the public API and lists it in __all__."""
+    import rosbagger_core.schema as schema_pkg
+
+    expected = {
+        "ColumnDef",
+        "TableSchema",
+        "build_table_schema",
+        "build_arrow_table",
+        "flatten_message",
+        "sanitize_table_name",
+        "TableNameResolver",
+        "quote_ident",
+    }
+    assert expected <= set(schema_pkg.__all__)
+    for name in expected:
+        assert hasattr(schema_pkg, name), f"schema package missing {name}"
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_end_to_end_imu_table_across_formats(fixture_bags, fmt) -> None:
+    """reader -> schema -> Arrow Table works on /imu for all three formats.
+
+    Asserts the standard columns plus the orientation_covariance list<double>,
+    proving the full pipeline (the typestore reached via reader._reader.typestore).
+    """
+    msgs, ts = _read_topic(fixture_bags[fmt], "/imu")
+    schema = build_table_schema("sensor_msgs/msg/Imu", ts, topic="/imu")
+    table = build_arrow_table(msgs, schema)
+    assert table.num_rows == len(msgs) == 3
+    # Standard columns present and sourced off the Message.
+    assert {"t", "t_ns", "stamp", "topic"} <= set(table.schema.names)
+    assert table.column("topic").to_pylist() == ["/imu"] * 3
+    # orientation_covariance is a list<double> with the fixture's 9-zero rows.
+    assert table.schema.field("orientation_covariance").type == pa.list_(pa.float64())
+    assert table.column("orientation_covariance").to_pylist()[0] == [0.0] * 9
+    # /imu carries header.stamp -> top-level stamp is non-NULL.
+    assert table.column("stamp").null_count == 0
+
+
+def test_list_of_struct_transforms_has_short_inner_field_names(typestore) -> None:
+    """A LIST<STRUCT> `transforms` column has SHORT struct inner names (RESEARCH §4/Pitfall 4)."""
+    schema = build_table_schema("tf2_msgs/msg/TFMessage", typestore, topic="/tf")
+    by_name = {c.name: c for c in schema.columns}
+    assert "transforms" in by_name  # one LIST column, NOT dotted into
+    transforms = by_name["transforms"]
+    # list<struct<...>>
+    assert pa.types.is_list(transforms.arrow_type)
+    struct_type = transforms.arrow_type.value_type
+    assert pa.types.is_struct(struct_type)
+    inner_names = {struct_type.field(i).name for i in range(struct_type.num_fields)}
+    # Inner names are SHORT (child_frame_id), never dotted (transforms.child_frame_id).
+    assert "child_frame_id" in inner_names
+    assert "header" in inner_names
+    assert "transform" in inner_names
+    assert not any(n.startswith("transforms.") for n in inner_names)
+    # The walk did NOT emit dotted columns past the list either.
+    assert not any(n.startswith("transforms.") for n in by_name)
+
+
+def test_list_of_struct_arrow_schema_builds(typestore) -> None:
+    """A LIST<STRUCT> column survives the arrow_schema build (no inference)."""
+    schema = build_table_schema("tf2_msgs/msg/TFMessage", typestore, topic="/tf")
+    arrow = schema.arrow_schema()
+    assert pa.types.is_list(arrow.field("transforms").type)
+    assert pa.types.is_struct(arrow.field("transforms").type.value_type)
+
+
+def test_top_level_import_does_not_leak_pyarrow_or_rosbags() -> None:
+    """`import rosbagger_core` (top level) pulls in NO pyarrow/rosbags (offline graph).
+
+    Spawned in a FRESH interpreter so an already-imported pyarrow/rosbags in this
+    test process (the suite imports both) cannot mask a leak. This re-asserts the
+    offline invariant for the schema subpackage: the top-level package must not
+    import `schema` (which DOES pull pyarrow), mirroring the `reader` convention.
+    """
+    import subprocess
+
+    code = (
+        "import sys; import rosbagger_core; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] in {'pyarrow','rosbags'}]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"top-level import rosbagger_core leaked: {leaked}"
+
+
+def test_importing_schema_subpackage_is_allowed_to_pull_pyarrow() -> None:
+    """Importing rosbagger_core.schema MAY pull pyarrow (like reader/__init__).
+
+    This documents the seam: the subpackage is heavy-by-design; only the
+    top-level package stays light. We just assert the subpackage imports cleanly.
+    """
+    import importlib
+
+    mod = importlib.import_module("rosbagger_core.schema")
+    assert mod.build_arrow_table is build_arrow_table
