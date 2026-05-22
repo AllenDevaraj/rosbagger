@@ -86,9 +86,7 @@ def test_collect_table_schemas_returns_one_per_topic(
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
-def test_collect_table_schemas_sorted_by_topic(
-    fmt: str, fixture_bags: dict[str, Path]
-) -> None:
+def test_collect_table_schemas_sorted_by_topic(fmt: str, fixture_bags: dict[str, Path]) -> None:
     """The list is ordered by topic name (sorted(reader.topics))."""
     with RosbagsReader(fixture_bags[fmt]) as reader:
         schemas = collect_table_schemas(reader)
@@ -114,9 +112,7 @@ def test_image_schema_has_standard_columns_then_heavy_blob_data(
     assert str(data.arrow_type) == "list<item: uint8>"
 
 
-def test_multi_msgtype_topic_is_skipped_not_crashing(
-    fixture_bags: dict[str, Path]
-) -> None:
+def test_multi_msgtype_topic_is_skipped_not_crashing(fixture_bags: dict[str, Path]) -> None:
     """A topic with ``msgtype is None`` is omitted; build_table_schema(None,...) is never called.
 
     Uses a lightweight stub exposing ``.typestore`` (the REAL fixture typestore so
@@ -152,9 +148,7 @@ def test_multi_msgtype_topic_is_skipped_not_crashing(
     assert table_names == {"image"}  # /mixed (None msgtype) skipped, no crash
 
 
-def test_collect_table_schemas_does_not_read_messages(
-    fixture_bags: dict[str, Path]
-) -> None:
+def test_collect_table_schemas_does_not_read_messages(fixture_bags: dict[str, Path]) -> None:
     """The API reads metadata only — monkeypatching reader.read to raise proves it (T-04-05)."""
     with RosbagsReader(fixture_bags["ros1"]) as reader:
 
