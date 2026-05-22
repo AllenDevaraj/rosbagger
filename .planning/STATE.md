@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-02-PLAN.md (RosbagsReader AnyReader adapter); 02-03 (reader test suite) next
-last_updated: "2026-05-22T07:57:46Z"
-last_activity: "2026-05-22 -- Executed 02-02 (RosbagsReader: AnyReader adapter + reader/__init__ re-export)"
+stopped_at: Completed 02-03-PLAN.md (fixture-backed RosbagsReader test suite); Phase 2 complete, Phase 3 next
+last_updated: "2026-05-22T08:07:02.947Z"
+last_activity: "2026-05-22 -- Executed 02-03 (RosbagsReader test suite across 3 formats + multi-bag merge; coverage gate restored to 96.63%)"
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 2 — bag reader layer
+**Current focus:** Phase 2 complete — next up Phase 3 (Message→Table Schema)
 
 ## Current Position
 
-Phase: 2
-Plan: 02-02 complete; 02-03 next
+Phase: 2 complete (3/3 plans); Phase 3 next
+Plan: 02-03 complete — Phase 2 done
 Status: Executing
-Last activity: 2026-05-22 -- Executed 02-02 (RosbagsReader: AnyReader adapter + reader/__init__ re-export)
+Last activity: 2026-05-22 -- Executed 02-03 (RosbagsReader test suite across 3 formats + multi-bag merge; coverage gate restored to 96.63%)
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -45,7 +45,7 @@ Progress: [████████░░] 83%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 3 | - | - |
-| 02 | 2 (of 3) | - | - |
+| 02 | 3 | - | - |
 
 **Recent Trend:**
 
@@ -58,6 +58,7 @@ Progress: [████████░░] 83%
 | Phase 01 P01-03 | 6min | 2 tasks | 3 files |
 | Phase 02 P02-01 | 3min | 2 tasks | 2 files |
 | Phase 02 P02-02 | 4min | 2 tasks | 2 files |
+| Phase 02 P02-03 | 4min | 2 tasks | 1 file |
 
 ## Accumulated Context
 
@@ -87,6 +88,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 02-02]: v1 fails closed — AnyReaderError/FileNotFoundError propagate from open(); project BagReaderError wrapper deferred to Phase 7/CLI-04 (researcher Open Q2). read()/topics/connections raise RuntimeError if used before open()
 - [Phase 02-02]: import rosbags lives ONLY in rosbags_reader.py; reader/__init__ re-exports RosbagsReader (so import rosbagger_core.reader loads rosbags — fine), but top-level import rosbagger_core stays ROS/rosbags-free (offline guard 2/2)
 - [Phase 02-02]: Fixture /imu header.stamp varies per message (sec=1+i, nanosec=i*1e8) -> stamps [1e9, 2.1e9, 3.2e9]; only the FIRST is 1e9. 02-02 plan AC/research generalized a one-message probe — flagged for 02-03 to assert the full series
+- [Phase 02-03]: tests/test_reader.py is a self-contained harness (own repo-root sys.path insert + own session tmp_path_factory fixture) — deliberately NOT reusing test_fixtures.py's fixture, so the reader suite stands alone
+- [Phase 02-03]: Multi-bag merge fixtures write each same-format bag into its OWN tmp dir (write_ros2_sqlite_bag always names the dir "ros2_sqlite", so a shared parent would collide); two ROS2 + two ROS1 each -> 18 msgs, ascending t_ns
+- [Phase 02-03]: Resolved research Open Question 1 / Assumption A1 into a verified fact — two ROS2 sqlite bags DO merge as one time-ordered dataset (msgcount sums to 6/topic); committed test_two_ros2_bags_merge_as_one_dataset proves it
+- [Phase 02-03]: Coverage gate restored — full suite 30 tests green at 96.63% (>=80% gate met); the 3 uncovered rosbags_reader.py lines are defensive guards (missing-sec/nanosec branch + topics/connections before-open RuntimeError). No coverage pragmas added (per plan)
 
 ### Pending Todos
 
@@ -96,7 +101,7 @@ None yet.
 
 - GSD planning agents (`gsd-project-researcher`, `gsd-research-synthesizer`, `gsd-roadmapper`) not installed — roadmap was generated inline; post-phase verifier/nyquist auditors disabled. Install via `npx get-shit-done-cc@latest --global` to enable.
 - GitHub push pending auth (no `gh`, no credential helper); `origin` set to https://github.com/AllenDevaraj/rosbagger.git.
-- [Phase 02-01→02-02] Project-wide coverage gate (`--cov-fail-under=80`) still dips in CI until reader tests land in 02-03. 02-02 ADDED the covered implementation (rosbags_reader.py, RosbagsReader + _stamp_ns) but its tests are 02-03's job per phase sequencing, so the untested-line count grew this plan as expected. All 13 tests pass with `--no-cov`; offline guard 2/2. NOT a code defect — self-resolves at 02-03 (tests land). Do not weaken the Phase-1-locked 80% gate; verify THIS plan with `--no-cov`.
+- ~~[Phase 02-01→02-02] Project-wide coverage gate (`--cov-fail-under=80`) dips until reader tests land in 02-03.~~ RESOLVED in 02-03: tests/test_reader.py landed; full suite is 30 tests green at 96.63% with the gate enforced. Offline guard still 2/2. The gate was never weakened.
 
 ## Deferred Items
 
@@ -106,6 +111,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T07:57:46Z
-Stopped at: Completed 02-02-PLAN.md (RosbagsReader AnyReader adapter); 02-03 (reader test suite) next
+Last session: 2026-05-22T08:07:02Z
+Stopped at: Completed 02-03-PLAN.md (fixture-backed RosbagsReader test suite); Phase 2 complete (3/3), Phase 3 (Message→Table Schema) next
 Resume file: None

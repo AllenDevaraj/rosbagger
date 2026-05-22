@@ -12,7 +12,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Scaffold & Test Harness** - Monorepo, packaging, and no-ROS fixture bags (completed 2026-05-22)
-- [ ] **Phase 2: Bag Reader Layer** - Universal ROS1/ROS2/MCAP reading via rosbags
+- [x] **Phase 2: Bag Reader Layer** - Universal ROS1/ROS2/MCAP reading via rosbags (completed 2026-05-22)
 - [ ] **Phase 3: Message→Table Schema** - Flatten messages into DuckDB columns
 - [ ] **Phase 4: Inspect** - `bagq info` / `bagq tables`
 - [ ] **Phase 5: Query Engine** - DuckDB backend + sqlglot topic resolution
@@ -69,7 +69,7 @@ Plans:
 
 **Wave 3** *(blocked on 02-02)*
 
-- [ ] 02-03-PLAN.md — Fixture-backed reader test suite across all 3 formats + multi-bag merge (two ROS2 + two ROS1 bags), resolving the multi-ROS2 open question -> READ-01/02/03/04/05
+- [x] 02-03-PLAN.md — Fixture-backed reader test suite across all 3 formats + multi-bag merge (two ROS2 + two ROS1 bags), resolving the multi-ROS2 open question -> READ-01/02/03/04/05
 
 ### Phase 3: Message→Table Schema
 
@@ -188,7 +188,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Scaffold & Test Harness | 3/3 | Complete   | 2026-05-22 |
-| 2. Bag Reader Layer | 2/3 | In Progress|  |
+| 2. Bag Reader Layer | 3/3 | Complete   | 2026-05-22 |
 | 3. Message→Table Schema | 0/3 | Not started | - |
 | 4. Inspect | 0/2 | Not started | - |
 | 5. Query Engine | 0/2 | Not started | - |
