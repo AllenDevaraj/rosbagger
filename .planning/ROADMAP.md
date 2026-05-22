@@ -112,9 +112,13 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
+**Wave 1**
 
-- [ ] 04-01: `bagq info` (topics/types/counts/duration/Hz/size)
-- [ ] 04-02: `bagq tables` (table names + column schema)
+- [ ] 04-01-PLAN.md — `bagq info`: `rosbagger_core/inspect.py` (`BagInfo`/`TopicInfo` + `collect_bag_info`) over O(1) AnyReader metadata + additive reader properties; thin `bagq info` rich command -> INSP-01/02
+
+**Wave 2** *(blocked on 04-01)*
+
+- [ ] 04-02-PLAN.md — `bagq tables`: `collect_table_schemas` (TableNameResolver + build_table_schema per topic, multi-msgtype skip); thin `bagq tables` rich command -> INSP-03
 
 ### Phase 5: Query Engine
 
