@@ -86,6 +86,22 @@ def test_query_format_json_prints_records(ros1_bag: Path) -> None:
     assert "t_ns" in payload[0]
 
 
+def test_query_format_csv_prints_capturable_csv(ros1_bag: Path) -> None:
+    """``--format csv`` (no ``-o``) prints CSV that CliRunner CAPTURES (WR-02 fix).
+
+    Previously impossible: the old ``write_csv_stream`` wrote to ``/dev/stdout`` at OS
+    fd 1, so ``result.output`` was empty (and the path broke on Windows). Routed through
+    ``write_csv_to_string`` + ``typer.echo``, the CSV now appears in ``result.output``.
+    """
+    result = runner.invoke(
+        app, ["query", "SELECT t_ns, topic FROM cmd_vel", str(ros1_bag), "--format", "csv"]
+    )
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[0] == "t_ns,topic"  # the CSV header is now captured
+    assert "/cmd_vel" in result.stdout  # a topic value rendered
+
+
 def test_query_empty_result_prints_zero_rows(ros1_bag: Path) -> None:
     """A ``WHERE 1=0`` query with the default format exits 0 and prints ``(0 rows)``."""
     result = runner.invoke(

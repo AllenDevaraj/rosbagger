@@ -22,6 +22,7 @@ which is deliberately a CLI concern (the API keeps ``size_bytes`` raw).
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -54,6 +55,51 @@ app = typer.Typer(
 # the `bagq.cli:app` entry point and the 06-01 CliRunner tests are untouched).
 _PLOT_DEFAULT = "\x00bagq-default-plot"  # bare --plot sentinel; resolves to _PLOT_DEFAULT_FILE
 _PLOT_DEFAULT_FILE = "plot.png"  # the default chart filename in CWD (decision A1)
+
+
+def teaching_errors(fn):
+    """Wrap a command body: turn the KNOWN typed errors into a clean message + ``Exit(1)``.
+
+    The shared CLI-01 error-exit MECHANISM (07-RESEARCH Pattern 4): a command that raises
+    one of the expected, data-carrying errors should print a single teaching line to
+    stderr and exit non-zero — NEVER dump a Python traceback (the difference between a
+    tool and a script). ``info``/``tables``/``query`` all wear this decorator.
+
+    Catches ONLY the known set (07-RESEARCH Pitfall 4): ``UnknownTableError`` (a SQL table
+    that maps to no topic — its message already lists the available tables) and
+    ``FileNotFoundError`` (a missing bag path). A bare ``except Exception`` is deliberately
+    NOT used: a genuine programming bug (``KeyError``/``AttributeError``/…) must still
+    surface as a traceback so it can be diagnosed.
+
+    07-02 WIDENS the teaching CONTENT by adding new typed errors (``UnknownColumnError`` /
+    ``UnresolvedTypeError``) to the import below and to the ``except (...)`` tuple — a
+    one-line change at each, with the wrapper structure unchanged.
+
+    The errors are imported LAZILY inside the wrapper so ``cli.py``'s top level stays
+    typer/rich-only (offline-guard discipline); ``rosbagger_core.backend.query`` is
+    stdlib-light at module scope, so this import pulls no heavy stack until the wrapped
+    command is actually invoked.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        # Lazy import — keeps cli.py top level free of rosbagger_core (offline invariant).
+        # 07-02 adds the new typed errors to this import + the except tuple below.
+        from rosbagger_core.backend.query import UnknownTableError
+
+        try:
+            return fn(*args, **kwargs)
+        except UnknownTableError as e:
+            # The message already carries the available-tables list (CLI-02 content lands
+            # in 07-02); present it cleanly with no traceback.
+            typer.secho(str(e), fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from None
+        except FileNotFoundError as e:
+            typer.secho(f"Error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from None
+        # NOTE (Pitfall 4): NO `except Exception` — real bugs must still traceback.
+
+    return wrapper
 
 
 class _PlotCommand(TyperCommand):
@@ -144,6 +190,7 @@ def _render_bag_info(info, console: Console | None = None) -> None:
 
 
 @app.command()
+@teaching_errors
 def info(
     bags: Annotated[
         list[Path],
@@ -156,8 +203,8 @@ def info(
     from rosbagger_core.inspect import collect_bag_info
     from rosbagger_core.reader import RosbagsReader
 
-    # AnyReaderError / FileNotFoundError propagate unchanged — Phase 7 owns
-    # turning them into teaching error messages.
+    # FileNotFoundError (missing bag) is caught by @teaching_errors -> clean Exit(1).
+    # Other AnyReaderError cases still propagate (07-02 adds UnresolvedTypeError).
     with RosbagsReader(bags) as reader:
         bag_info = collect_bag_info(reader)
     _render_bag_info(bag_info)
@@ -194,6 +241,7 @@ def _render_table_schemas(schemas, console: Console | None = None) -> None:
 
 
 @app.command()
+@teaching_errors
 def tables(
     bags: Annotated[
         list[Path],
@@ -206,8 +254,8 @@ def tables(
     from rosbagger_core.inspect import collect_table_schemas
     from rosbagger_core.reader import RosbagsReader
 
-    # AnyReaderError / FileNotFoundError propagate unchanged — Phase 7 owns
-    # turning them into teaching error messages.
+    # FileNotFoundError (missing bag) is caught by @teaching_errors -> clean Exit(1).
+    # Other AnyReaderError cases still propagate (07-02 adds UnresolvedTypeError).
     with RosbagsReader(bags) as reader:
         schemas = collect_table_schemas(reader)
     _render_table_schemas(schemas)
@@ -248,6 +296,7 @@ def _render_result(
 
 
 @app.command(cls=_PlotCommand)
+@teaching_errors
 def query(
     sql: Annotated[
         str,
@@ -291,11 +340,11 @@ def query(
     # Import the core API lazily (inside the body) so module import stays light and
     # `bagq --help` pays no rosbags/duckdb/pyarrow import cost (offline-guard).
     from rosbagger_core.backend.query import query as run_query
-    from rosbagger_core.output import plot_table, to_json, write_csv_stream, write_table
+    from rosbagger_core.output import plot_table, to_json, write_csv_to_string, write_table
     from rosbagger_core.reader import RosbagsReader
 
-    # UnknownTableError / AnyReaderError / FileNotFoundError propagate unchanged —
-    # Phase 7 owns turning them into teaching error messages (no did-you-mean here).
+    # UnknownTableError (unknown table) and FileNotFoundError (missing bag) are caught by
+    # the @teaching_errors wrapper -> a clean one-line message + Exit(1), no traceback.
     # The result Arrow table is fully materialized inside query() (the backend closes
     # before it returns), so it outlives the reader `with` block.
     with RosbagsReader(bags) as reader:
@@ -322,11 +371,12 @@ def query(
     if fmt == "table":
         _render_result(result)
     elif fmt == "csv":
-        # --format csv with no -o streams CSV to stdout (decision A2). write_csv_stream
-        # forces FORMAT CSV (no extension detection) to the valid /dev/stdout COPY
-        # target, keeping the COPY/escape logic in the core module (cli.py imports no
-        # duckdb; offline invariant).
-        write_csv_stream(result)
+        # --format csv with no -o prints CSV to stdout (decision A2). write_csv_to_string
+        # buffers the COPY to a temp file in core and RETURNS the text; the CLI echoes it
+        # via Python (typer.echo) — CliRunner-capturable and OS-portable (WR-02; no
+        # /dev/stdout). nl=False because the CSV already ends in its own newline. The
+        # COPY/escape stays in core, so cli.py imports no duckdb (offline invariant).
+        typer.echo(write_csv_to_string(result), nl=False)
     elif fmt == "parquet":
         raise typer.BadParameter("Parquet is binary; specify -o out.parquet")
     elif fmt == "json":
