@@ -179,9 +179,13 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
+**Wave 1**
 
-- [ ] 07-01: `bagq` CLI wiring (typer) for query/info/tables
-- [ ] 07-02: Teaching errors (unknown table/column/custom-msg)
+- [ ] 07-01-PLAN.md — CLI finalization: shared `teaching_errors` catch mechanism (clean message + `Exit(1)`, no traceback) across query/info/tables + WR-01 (splitext) and WR-02 (portable buffered CSV) fixes in `output/export.py`; real-shell smoke -> CLI-01
+
+**Wave 2** *(blocked on 07-01)*
+
+- [ ] 07-02-PLAN.md — Teaching errors: stdlib-only `errors.py`; `UnknownTableError` did-you-mean (CLI-02); `UnknownColumnError` from `BinderException` listing that table's columns (CLI-03); `UnresolvedTypeError` at the reader boundary + def-less fixture (CLI-04); CLI presents all three -> CLI-02/03/04
 
 ### Phase 8: Packaging, Docs & Release
 
