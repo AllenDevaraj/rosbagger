@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: executing
-stopped_at: Completed 03-03-PLAN.md (row extraction + pyarrow Table build + lazy heavy-blob include seam + sqlglot quote_ident + public schema/ API); Phase 3 COMPLETE (3/3); Phase 4 (Inspect) next
-last_updated: "2026-05-22T09:01:44Z"
+status: ready_to_plan
+stopped_at: Phase 3 complete (3/3) — ready to discuss Phase 4
+last_updated: 2026-05-22T09:12:22.835Z
 last_activity: 2026-05-22 -- Completed 03-03 (flatten_message + build_arrow_table + arrow_schema + quote_ident + public schema API); Phase 3 done
 progress:
   total_phases: 8
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 4 — Inspect (`bagq info` / `bagq tables`)
+**Current focus:** Phase 4 — inspect
 
 ## Current Position
 
-Phase: 3 COMPLETE (3/3) → Phase 4 next
-Plan: 04-01 (next)
-Status: Phase 3 done — 03-01 + 03-02 + 03-03 complete (3/3 plans this phase); ready for Phase 4
-Last activity: 2026-05-22 -- Completed 03-03 (flatten_message + build_arrow_table + arrow_schema + quote_ident + public schema API)
+Phase: 4
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-22
 
 Progress: [████░░░░░░] 38% (3/8 phases)
 
@@ -36,7 +36,7 @@ Progress: [████░░░░░░] 38% (3/8 phases)
 
 **Velocity:**
 
-- Total plans completed: 9
+- Total plans completed: 12
 - Average duration: ~4 min
 - Total execution time: ~0.7 hours
 
@@ -47,6 +47,7 @@ Progress: [████░░░░░░] 38% (3/8 phases)
 | 01 | 3 | 12min | 4min |
 | 02 | 3 | 11min | ~4min |
 | 03 | 3 | 17min | ~6min |
+| 3 | 3 | - | - |
 
 **Recent Trend:**
 
