@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: executing
-stopped_at: Completed 01-01-PLAN.md (workspace scaffold); ready for 01-02
-last_updated: "2026-05-22T06:31:18.471Z"
+status: verifying
+stopped_at: Completed 01-03-PLAN.md (fixture-bag generator + round-trip tests); phase 01 ready for verification
+last_updated: "2026-05-22T06:39:16.969Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 13
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 ## Current Position
 
-Phase: 01 (scaffold-test-harness) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
+Phase: 01 (scaffold-test-harness) — COMPLETE (all 3 plans)
+Plan: 3 of 3 (complete)
+Status: Phase complete — ready for verification
 Last activity: 2026-05-22
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [███████░░░] 67%
 *Updated after each plan completion*
 | Phase 01 P01-01 | 3min | 3 tasks | 12 files |
 | Phase 01 P01-02 | 3min | 3 tasks | 6 files |
+| Phase 01 P01-03 | 6min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 01]: Offline-import guard uses a sys.meta_path blocker (not the naive try/except) so it is meaningful on both clean CI and the ROS-equipped dev host
 - [Phase 01]: Coverage gate (>=80%) lives in pyproject pytest addopts so local and CI runs are identical; CI runs uv sync --locked for reproducible installs
 - [Phase 01]: Local test runs require PYTHONPATH empty to neutralize the host ROS-on-PYTHONPATH leak; CI is ROS-free so it is moot there
+- [Phase 01]: Fixture-bag generator lives in tools/ (dev artifact, not in rosbagger_core/bagq runtime path); generates per-test into tmp_path_factory — no committed binary bags
+- [Phase 01]: rosbags 0.11.2 fixtures use per-format headers (ROS1 Header has seq, ROS2 omits it); ROS2 Writer uses required version=9 + module-level StoragePlugin; ROS1 uses the separate rosbags.rosbag1.Writer
+- [Phase 01]: Fixtures carry forward-looking content now (Twist nested scalars, Imu header.stamp + float64[9] covariance, Image uint8[] blob) so Phases 2-3 (QURY-02/03/04/07) need no fixture change
 
 ### Pending Todos
 
@@ -90,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T06:30:55.746Z
-Stopped at: Completed 01-01-PLAN.md (workspace scaffold); ready for 01-02
+Last session: 2026-05-22T06:39:00.694Z
+Stopped at: Completed 01-03-PLAN.md (fixture-bag generator + round-trip tests); phase 01 ready for verification
 Resume file: None

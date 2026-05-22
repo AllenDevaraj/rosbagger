@@ -11,7 +11,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Scaffold & Test Harness** - Monorepo, packaging, and no-ROS fixture bags
+- [x] **Phase 1: Scaffold & Test Harness** - Monorepo, packaging, and no-ROS fixture bags (completed 2026-05-22)
 - [ ] **Phase 2: Bag Reader Layer** - Universal ROS1/ROS2/MCAP reading via rosbags
 - [ ] **Phase 3: Message→Table Schema** - Flatten messages into DuckDB columns
 - [ ] **Phase 4: Inspect** - `bagq info` / `bagq tables`
@@ -43,7 +43,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 01-02-PLAN.md — Dev tooling: ruff (lint+format), pytest + pytest-cov (>=80%), no-ROS GitHub Actions CI, and the sys.meta_path offline-import guard -> SC2
-- [ ] 01-03-PLAN.md — Fixture-bag generator: rosbags writes tiny ROS1/ROS2-sqlite/MCAP bags, re-openable via AnyReader, forward-looking content -> SC3
+- [x] 01-03-PLAN.md — Fixture-bag generator: rosbags writes tiny ROS1/ROS2-sqlite/MCAP bags, re-openable via AnyReader, forward-looking content -> SC3
 
 ### Phase 2: Bag Reader Layer
 
@@ -180,7 +180,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Scaffold & Test Harness | 2/3 | In Progress|  |
+| 1. Scaffold & Test Harness | 3/3 | Complete   | 2026-05-22 |
 | 2. Bag Reader Layer | 0/3 | Not started | - |
 | 3. Message→Table Schema | 0/3 | Not started | - |
 | 4. Inspect | 0/2 | Not started | - |
