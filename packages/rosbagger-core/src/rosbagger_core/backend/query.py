@@ -166,9 +166,15 @@ def query(
     typestore = reader.typestore
     own_backend = backend is None
     backend = backend if backend is not None else _default_backend()
+    # Accumulate each referenced table's columns (keyed by the SANITIZED table name
+    # the SQL uses) as we build the per-topic schemas, so an unknown-column error can
+    # list them WITHOUT rebuilding (07-RESEARCH §2 / Open Q2 — all referenced tables'
+    # columns, grouped; the single-FROM case collapses to one entry).
+    columns_by_table: dict[str, list[str]] = {}
     try:
         for topic in referenced_topics:
             schema = build_table_schema(topic_to_msgtype[topic], typestore, topic=topic)
+            columns_by_table[topic_to_table[topic]] = [c.name for c in schema.columns]
             # Heavy-blob include set: the referenced columns that are heavy blobs,
             # OR ALL of this topic's heavy blobs when the SQL is a SELECT *
             # (05-RESEARCH Pitfall 3 / A1 — a star materializes blobs).
@@ -178,11 +184,22 @@ def query(
             arrow = build_arrow_table(msgs, schema, include=include)
             # Register under the SANITIZED table name — the name the SQL references.
             backend.register_table(topic_to_table[topic], arrow)
-        # Step 5 — forward the user's SQL as-is (trusted interface; T-05-04).
-        return backend.execute(sql)
+        # Step 5 — forward the user's SQL as-is (trusted interface; T-05-04). A bad
+        # column surfaces as duckdb.BinderException; catch it by TYPE (robust) and
+        # re-raise the typed UnknownColumnError carrying the referenced tables'
+        # columns (CLI-03). duckdb is imported LAZILY here — it is already pulled in
+        # via _default_backend(), but the explicit import keeps the catch local and
+        # the module top stdlib-light (offline invariant; 07-RESEARCH §2 / Pitfall 6).
+        try:
+            return backend.execute(sql)
+        except duckdb_binder_exception() as e:
+            m = _BINDER_COL.search(str(e))
+            column = m.group(1) if m else "?"  # graceful: list columns even on a regex miss
+            raise UnknownColumnError(column, columns_by_table) from e
     finally:
         # Own the lifecycle only for the default backend; a caller-supplied
-        # backend is the caller's to close (it may be reused across queries).
+        # backend is the caller's to close (it may be reused across queries). This
+        # finally still runs on the BinderException -> UnknownColumnError path.
         if own_backend:
             backend.close()
 
@@ -197,3 +214,17 @@ def _default_backend() -> QueryBackend:
     from rosbagger_core.backend.duckdb_backend import DuckDBBackend
 
     return DuckDBBackend()
+
+
+def duckdb_binder_exception() -> type[Exception]:
+    """Return ``duckdb.BinderException`` (the unknown-column signal), imported lazily.
+
+    Isolated like ``_default_backend`` so ``import duckdb`` never happens at this
+    module's top level (offline invariant — ``import rosbagger_core.backend`` /
+    ``rosbagger_core.errors`` must not pull duckdb; 07-RESEARCH Pitfall 6). Called
+    only in the ``except`` clause around ``backend.execute`` in :func:`query`, where
+    duckdb is already loaded via the default backend.
+    """
+    import duckdb
+
+    return duckdb.BinderException
