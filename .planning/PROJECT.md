@@ -81,4 +81,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 after Phase 7 (CLI & Teaching Errors) completion — ALL 23 v1 feature requirements (READ/INSP/QURY/OUT/CLI) are validated. `bagq` is functionally complete: read ROS1/ROS2/MCAP, inspect, SQL-query, export CSV/Parquet/plot, with errors that teach — all with no ROS install, 255 ROS-free tests. Only Phase 8 remains: packaging, docs & release.*
+*Last updated: 2026-05-22 — **v0.1 MILESTONE COMPLETE** (all 8 phases). `bagq` v0.1.0 ships: read ROS1/ROS2/MCAP → inspect → SQL-query via DuckDB → export CSV/Parquet/plot, with errors that teach — all with no ROS install. 255 ROS-free tests at ~98% coverage; pip-installable; MIT-licensed; `v0.1.0` tagged locally. Sole remaining maintainer step: `git push origin main && git push origin v0.1.0` + confirm CI green (no push credential in the build environment). Next milestones (deferred): TF debugger, live record/replay, GUI.*
