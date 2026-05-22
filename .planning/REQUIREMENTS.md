@@ -47,10 +47,16 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 
 ## Definition of Done (v1)
 
-- All v1 requirements implemented and covered by tests
-- Test suite runs with **no ROS install** using `rosbags`-written fixture bags (ROS1 + ROS2 + MCAP)
-- `bagq` installs via `pip` and exposes `info` / `tables` / `query`
-- Offline packages import without `rclpy`
+- [x] All v1 requirements implemented and covered by tests (255 passed, 97.82% coverage; >=80% gate) — Phase 8
+- [x] Test suite runs with **no ROS install** using `rosbags`-written fixture bags (ROS1 + ROS2 + MCAP)
+- [x] `bagq` installs via `pip` and exposes `info` / `tables` / `query` — clean-room `pip install ./packages/rosbagger-core ./packages/bagq` verified, all subcommand `--help` exit 0 (Phase 8 SC1)
+- [x] Offline packages import without `rclpy` — neutral-cwd import with `rclpy`/`rosbag2_py`/`tools` all unresolvable (Phase 8 SC2)
+
+> v0.1 tagged `v0.1.0` (annotated, local). The only remaining ship step is the
+> human-gated push (`git push origin main && git push origin v0.1.0`) + observing
+> GitHub Actions green — blocked on the standing `gh`/push-credential blocker. The
+> local CI-equivalent gate is green (the strongest available proxy). See
+> `.planning/phases/08-packaging-docs-release/08-01-SUMMARY.md`.
 
 ## v2 Requirements
 

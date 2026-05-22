@@ -18,7 +18,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 5: Query Engine** - DuckDB backend + sqlglot topic resolution (completed 2026-05-22)
 - [x] **Phase 6: Output & Export** - stdout table, CSV, Parquet, minimal plot
 - [x] **Phase 7: CLI & Teaching Errors** - `bagq query` end-to-end with helpful errors (completed 2026-05-22)
-- [ ] **Phase 8: Packaging, Docs & Release** - pip-installable v0.1, offline imports
+- [x] **Phase 8: Packaging, Docs & Release** - pip-installable v0.1, offline imports (completed 2026-05-22)
 
 ## Phase Details
 
@@ -202,7 +202,7 @@ Plans:
 
 Plans:
 
-- [ ] 08-01-PLAN.md — Version bump 0.0.0→0.1.0 (4 sources + re-lock uv.lock) + MIT LICENSE + expanded README (verified pip recipe, per-command usage, offline guarantee) + clean-room pip-install verification (SC1/SC2) + local CI-equivalent gate + local `v0.1.0` tag; push+observe-CI documented as the sole human follow-up (SC3 split) -> SC1/SC2/SC3
+- [x] 08-01-PLAN.md — Version bump 0.0.0→0.1.0 (4 sources + re-lock uv.lock) + MIT LICENSE + expanded README (verified pip recipe, per-command usage, offline guarantee) + clean-room pip-install verification (SC1/SC2) + local CI-equivalent gate + local `v0.1.0` tag; push+observe-CI documented as the sole human follow-up (SC3 split) -> SC1/SC2/SC3
 
 ## Progress
 
@@ -218,4 +218,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Query Engine | 2/2 | Complete    | 2026-05-22 |
 | 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
-| 8. Packaging, Docs & Release | 0/1 | Not started | - |
+| 8. Packaging, Docs & Release | 1/1 | Complete   | 2026-05-22 |

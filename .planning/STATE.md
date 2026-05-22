@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 07-02-PLAN.md (Phase 7 plan 2/2 — PHASE 7 COMPLETE 2/2). Three errors-that-teach over 07-01's teaching_errors mechanism. Stdlib-only rosbagger_core/errors.py (difflib only): UnknownTableError (canonical home moved here, re-exported from backend/query.py so the class identity holds), UnknownColumnError, UnresolvedTypeError — all ValueError subclasses CARRYING their data (.name/.available/.suggestions, .column/.columns_by_table, .detail) + building the teaching message in core (API-first; CLI only presents). CLI-02: difflib.get_close_matches(cutoff=0.6) did-you-mean on UnknownTableError (suggestion when a close table exists, else available-tables list, else no-tables note). CLI-03: query() accumulates columns_by_table during the load loop, then catches duckdb.BinderException by TYPE (duckdb_binder_exception() lazy-import helper keeps the module top offline-light), parses the column via _BINDER_COL regex (miss -> '?'), raises UnknownColumnError listing all referenced tables' columns grouped (Open Q2) — catch nested INSIDE the existing try/finally so the default backend still close()s. CLI-04: RosbagsReader.open() wraps ONLY the 'no type definitions' AnyReaderError -> UnresolvedTypeError (cause preserved); mixed-format re-raises and FileNotFoundError is never caught (Pitfall 3 verified). tools.make_fixtures.write_def_less_bag (ROS2 sqlite + stdlib sqlite3 DELETE FROM message_definitions) is the fixture; surfaces via info/tables/query. teaching_errors widened in ONE import + ONE except tuple. DEVIATION (Rule 1, test-only): the CLI no-traceback assertions use isinstance(result.exception, SystemExit) + not-ValueError (a clean typer.Exit(1) is SystemExit, not None per 07-RESEARCH §6 / 07-01) — corrects the plan's 'result.exception is None' wording; production code unchanged. Offline guard extended (errors.py pulls no heavy stack AND no rosbags). Full suite 254 passed at 97.82% (>=80% gate); errors.py 100%; ruff clean. Next: Phase 8 (Packaging, Docs & Release)."
-last_updated: "2026-05-22T18:33:16.462Z"
-last_activity: 2026-05-22 -- Phase 8 planning complete
+stopped_at: "Completed 08-01-PLAN.md (Phase 8 plan 1/1 — PHASE 8 COMPLETE 1/1; v0.1 milestone autonomously DONE). Shipped rosbagger v0.1.0: bumped version 0.0.0->0.1.0 in all 4 source sites (2 pyproject `version` + 2 `__init__.py` `__version__`) and re-locked uv.lock (both bagq + rosbagger-core pins now 0.1.0, lines 121/1239) so `uv sync --locked --dev` stays green; `bagq --version` prints `bagq 0.1.0` and rosbagger_core.__version__ == '0.1.0'. Added an MIT LICENSE at the repo root (Copyright (c) 2026 rosbagger contributors). Expanded README.md: verified plain-pip recipe `pip install ./packages/rosbagger-core ./packages/bagq` (BOTH local packages in ONE command — pip ignores [tool.uv.sources]) + quoted bagq[plot] extra + uv dev path (uv sync --locked --dev / uv run) + per-command quickstart (info/tables/query with -o/--format/--plot) + errors-that-teach + offline/no-ROS guarantee; removed the Phase-1 'lands in a later phase' placeholder; NO PyPI/PYTHONPATH leakage. Verified the release LOCALLY: SC1 clean-room `pip install ./packages/rosbagger-core ./packages/bagq` in a FRESH throwaway venv (not .venv, PYTHONPATH='') -> bagq --help + info/tables/query --help all exit 0; SC2 offline `import rosbagger_core, bagq` from neutral cwd /tmp with find_spec('rclpy')/('rosbag2_py')/('tools') all None (no ROS dep, no tools/ in either wheel). Local CI-equivalent gate green (PYTHONPATH='' uv sync --locked --dev / ruff check / ruff format --check / pytest = 255 passed, 97.82%, >=80% gate). Created annotated git tag v0.1.0 LOCALLY (points at 936238b). SC3 SPLIT: local gate + local tag autonomous & DONE; the SOLE human follow-up is `git push origin main && git push origin v0.1.0` then observe GitHub Actions go green — BLOCKED by no gh CLI / no push credential (standing blocker; origin=https://github.com/AllenDevaraj/rosbagger.git), documented in 08-01-SUMMARY (NOT a stalling checkpoint). No deviations; no new deps; no runtime code. v0.1 MILESTONE COMPLETE except the push."
+last_updated: "2026-05-22T18:39:17.802Z"
+last_activity: 2026-05-22 -- Phase 8 complete (v0.1 shipped, awaiting push)
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 18
-  completed_plans: 17
-  percent: 88
+  completed_plans: 18
+  percent: 100
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 8 — packaging, docs & release
+**Current focus:** v0.1 shipped — only the release push (main + v0.1.0 tag) + observe-CI-green remains (blocked on gh/push auth)
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-22 -- Phase 8 planning complete
+Phase: 8 (COMPLETE — final v0.1 phase)
+Plan: 1/1 complete
+Status: v0.1 milestone autonomously complete; awaiting human push of `main` + `v0.1.0` tag (no gh/push credential)
+Last activity: 2026-05-22 -- Phase 8 complete (v0.1.0 versioned, licensed, documented, locally verified, tagged)
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 23
+- Total plans completed: 24
 - Average duration: ~5 min
 - Total execution time: ~1.1 hours
 
@@ -52,11 +52,12 @@ Progress: [█████████░] 94%
 | 5 | 2 | - | - |
 | 6 | 2 | - | - |
 | 7 | 2 | - | - |
+| 8 | 1 | 3min | 3min |
 
 **Recent Trend:**
 
-- Last 5 plans: 7min, 5min, 10min, 7min, 12min
-- Trend: steady (~5-12 min/plan)
+- Last 5 plans: 5min, 10min, 7min, 12min, 3min
+- Trend: steady (~3-12 min/plan)
 
 *Updated after each plan completion*
 
@@ -79,6 +80,7 @@ Progress: [█████████░] 94%
 | Phase 06 P06-02 | 12min | 3 tasks | 6 files |
 | Phase 07 P01 | 9min | 2 tasks | 7 files |
 | Phase 07 P02 | 6min | 3 tasks | 9 files |
+| Phase 08 P08-01 | 3min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -151,15 +153,19 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 07-02] PHASE 7 COMPLETE (2/2). Three errors-that-teach over 07-01's teaching_errors mechanism: stdlib-only rosbagger_core/errors.py (difflib only) holds UnknownTableError (canonical home moved here, re-exported from backend/query.py so identity holds), UnknownColumnError, UnresolvedTypeError — all ValueError subclasses CARRYING their data (.name/.available/.suggestions, .column/.columns_by_table, .detail) and building the teaching message in core (API-first; CLI only presents).
 - [Phase ?]: [Phase 07-02] CLI-02 did-you-mean via difflib.get_close_matches(cutoff=0.6); CLI-03 catches duckdb.BinderException by TYPE in query() (duckdb_binder_exception() lazy-import helper keeps the module top offline-light), parses the column via _BINDER_COL regex (miss -> '?'), raises UnknownColumnError listing all referenced tables' columns grouped (Open Q2) — catch nested INSIDE the existing try/finally so the default backend still close()s. CLI-04 wraps ONLY the 'no type definitions' AnyReaderError at RosbagsReader.open() -> UnresolvedTypeError (cause preserved); mixed-format re-raises and FileNotFoundError is never caught (Pitfall 3 verified). write_def_less_bag (ROS2 sqlite + stdlib sqlite3 DELETE FROM message_definitions) is the fixture; surfaces via info/tables/query.
 - [Phase ?]: [Phase 07-02] DEVIATION (Rule 1, test-only): the CLI no-traceback assertions use isinstance(result.exception, SystemExit) + not-ValueError (a clean typer.Exit(1) is SystemExit, not None per 07-RESEARCH §6 / 07-01) — corrects the plan's 'result.exception is None' wording; production code unchanged. errors.py imports only difflib; offline guard extended (errors.py pulls no heavy stack AND no rosbags). teaching_errors widened in ONE import + ONE except tuple. Full suite 254 passed at 97.82% (>=80%); errors.py 100%; ruff clean.
+- [Phase 08-01]: PHASE 8 COMPLETE (1/1) — FINAL v0.1 phase. Shipped rosbagger v0.1.0: version 0.0.0->0.1.0 in all 4 sources (2 pyproject `version` + 2 `__init__.py` `__version__`) + re-locked uv.lock (both pins 0.1.0, lines 121/1239) so `uv sync --locked --dev` stays green; `bagq --version` -> `bagq 0.1.0`. Decision: hand-bumped 4 lines + re-locked rather than adopt hatchling dynamic version (lowest-risk one-shot bump, no [build-system]/config surface). MIT LICENSE at repo root, holder "rosbagger contributors" (generic, no individual).
+- [Phase 08-01]: README expanded with the VERIFIED plain-pip recipe `pip install ./packages/rosbagger-core ./packages/bagq` (BOTH local packages in ONE command — pip IGNORES [tool.uv.sources], so bagq-alone fails to resolve rosbagger-core) + quoted bagq[plot] extra + uv dev path + per-command quickstart (info/tables/query with -o/--format/--plot) + errors-that-teach + offline/no-ROS guarantee. End-user recipe is non-editable plain pip; -e documented only as the uv dev path. Did NOT promise `pip install bagq` from PyPI (unpublished); kept PYTHONPATH="" dev-host hazard OUT of user docs (CONTRIBUTING note). Removed the Phase-1 "lands in a later phase" placeholder.
+- [Phase 08-01]: Release verified LOCALLY — SC1: clean-room `pip install ./packages/rosbagger-core ./packages/bagq` in a FRESH throwaway venv (NOT .venv, PYTHONPATH='') -> bagq --help + info/tables/query --help all exit 0. SC2: offline `import rosbagger_core, bagq` from neutral cwd /tmp with find_spec('rclpy')/('rosbag2_py')/('tools') all None (no ROS dep + no tools/ in either wheel; T-08-03 mitigated, confirmed via the clean-room install). Local CI-equivalent gate green (PYTHONPATH='' uv sync --locked --dev / ruff check / ruff format --check / pytest = 255 passed at 97.82%, >=80% gate). Annotated `v0.1.0` tag created LOCALLY (git cat-file -t -> tag; points at 936238b). NO deviations; no new deps; no runtime code.
+- [Phase 08-01]: SC3 SPLIT honestly — autonomous half (local gate + local v0.1.0 tag) DONE here; the SOLE human follow-up is `git push origin main && git push origin v0.1.0` then observe GitHub Actions go green, BLOCKED by no gh CLI / no push credential (standing blocker). Recorded in 08-01-SUMMARY as a known gap, NOT a stalling checkpoint (plan stayed autonomous:true). Note: STATE.md's Phase-7 continuity text said "254 passed"; the actual current suite is 255 passed at 97.82% (observed during this plan's local gate) — no code change needed.
 
 ### Pending Todos
 
-None yet.
+- [v0.1 release] Push the release (HUMAN — blocked on gh/push auth): `git push origin main && git push origin v0.1.0`, then confirm the GitHub Actions "ci" run is green. This is the ONLY remaining step to fully ship v0.1. See 08-01-SUMMARY.md "Awaits push".
 
 ### Blockers/Concerns
 
 - GSD planning agents (`gsd-project-researcher`, `gsd-research-synthesizer`, `gsd-roadmapper`) not installed — roadmap was generated inline; post-phase verifier/nyquist auditors disabled. Install via `npx get-shit-done-cc@latest --global` to enable.
-- GitHub push pending auth (no `gh`, no credential helper); `origin` set to https://github.com/AllenDevaraj/rosbagger.git.
+- **[ACTIVE — gates v0.1 ship] GitHub push pending auth** (no `gh`, no credential helper); `origin` set to https://github.com/AllenDevaraj/rosbagger.git. The v0.1.0 release is fully built, locally verified, and tagged; the SOLE remaining step is `git push origin main && git push origin v0.1.0` + observe CI green (08-01 SC3 remote half). The local CI-equivalent gate is green (255 passed, 97.82%) — the strongest available proxy that the pushed run will pass.
 - ~~[Phase 02-01→02-02] Project-wide coverage gate (`--cov-fail-under=80`) dips until reader tests land in 02-03.~~ RESOLVED in 02-03: tests/test_reader.py landed; full suite is 30 tests green at 96.63% with the gate enforced. Offline guard still 2/2. The gate was never weakened.
 
 ## Deferred Items
@@ -170,6 +176,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T17:58:47.000Z
-Stopped at: Completed 07-02-PLAN.md (Phase 7 plan 2/2 — PHASE 7 COMPLETE 2/2). Three errors-that-teach over 07-01's teaching_errors mechanism. Stdlib-only rosbagger_core/errors.py (difflib only): UnknownTableError (canonical home moved here, re-exported from backend/query.py so the class identity holds), UnknownColumnError, UnresolvedTypeError — all ValueError subclasses CARRYING their data (.name/.available/.suggestions, .column/.columns_by_table, .detail) + building the teaching message in core (API-first; CLI only presents). CLI-02: difflib.get_close_matches(cutoff=0.6) did-you-mean on UnknownTableError (suggestion when a close table exists, else available-tables list, else no-tables note). CLI-03: query() accumulates columns_by_table during the load loop, then catches duckdb.BinderException by TYPE (duckdb_binder_exception() lazy-import helper keeps the module top offline-light), parses the column via _BINDER_COL regex (miss -> '?'), raises UnknownColumnError listing all referenced tables' columns grouped (Open Q2) — catch nested INSIDE the existing try/finally so the default backend still close()s. CLI-04: RosbagsReader.open() wraps ONLY the 'no type definitions' AnyReaderError -> UnresolvedTypeError (cause preserved); mixed-format re-raises and FileNotFoundError is never caught (Pitfall 3 verified). tools.make_fixtures.write_def_less_bag (ROS2 sqlite + stdlib sqlite3 DELETE FROM message_definitions) is the fixture; surfaces via info/tables/query. teaching_errors widened in ONE import + ONE except tuple. DEVIATION (Rule 1, test-only): the CLI no-traceback assertions use isinstance(result.exception, SystemExit) + not-ValueError (a clean typer.Exit(1) is SystemExit, not None per 07-RESEARCH §6 / 07-01) — corrects the plan's 'result.exception is None' wording; production code unchanged. Offline guard extended (errors.py pulls no heavy stack AND no rosbags). Full suite 254 passed at 97.82% (>=80% gate); errors.py 100%; ruff clean. Next: Phase 8 (Packaging, Docs & Release).
+Last session: 2026-05-22T18:39:17.611Z
+Stopped at: Completed 08-01-PLAN.md (Phase 8 plan 1/1 — PHASE 8 COMPLETE; FINAL v0.1 phase; milestone autonomously DONE). Shipped rosbagger v0.1.0: bumped version 0.0.0->0.1.0 in all 4 sources (2 pyproject `version` + 2 `__init__.py` `__version__`) + re-locked uv.lock (both bagq + rosbagger-core pins 0.1.0) so `uv sync --locked --dev` stays green; `bagq --version` -> `bagq 0.1.0`. Added MIT LICENSE at repo root. Expanded README: verified plain-pip recipe `pip install ./packages/rosbagger-core ./packages/bagq` (both packages, one command — pip ignores [tool.uv.sources]) + quoted bagq[plot] extra + uv dev path + per-command quickstart (info/tables/query with -o/--format/--plot) + errors-that-teach + offline/no-ROS guarantee; removed the "lands in a later phase" placeholder; no PyPI/PYTHONPATH leakage. Verified LOCALLY: SC1 clean-room pip install in a fresh throwaway venv (not .venv, PYTHONPATH='') -> bagq --help + subcommand --help all exit 0; SC2 offline import from neutral cwd /tmp with find_spec('rclpy')/('rosbag2_py')/('tools') all None (no ROS dep, no tools/ in either wheel). Local CI-equivalent gate green (uv sync --locked --dev / ruff check / ruff format --check / pytest = 255 passed, 97.82%). Annotated v0.1.0 tag created LOCALLY (points at 936238b). NO deviations. SC3 SPLIT: local gate + local tag DONE; the SOLE human follow-up is `git push origin main && git push origin v0.1.0` + observe CI green — BLOCKED by no gh CLI / no push credential (standing blocker), documented in 08-01-SUMMARY (not a stalling checkpoint). v0.1 MILESTONE COMPLETE except the push.
 Resume file: None
+Next: HUMAN — push `main` + `v0.1.0` tag and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git). All planned v0.1 work is done.
