@@ -1,10 +1,10 @@
 # rosbagger — workspace ROOT (virtual workspace; intentionally NO [project] table).
 # A [project] table here would make uv try to build the root as a package and
 # complicate `uv add` (see 01-RESEARCH.md Anti-Patterns). Keep the root virtual:
-# only [tool.uv.*] + [dependency-groups].
+# only [tool.uv.*] + [dependency-groups] + centralized tooling config.
 #
 # Lint/format config ([tool.ruff]) and test config ([tool.pytest.ini_options])
-# are intentionally deferred to plan 01-02 to keep file ownership clean.
+# are owned by plan 01-02 (file-ownership split from 01-01).
 
 [tool.uv.workspace]
 members = ["packages/*"]
@@ -14,3 +14,24 @@ rosbagger-core = { workspace = true }
 
 [dependency-groups]
 dev = ["ruff>=0.15,<0.16", "pytest>=8,<10", "pytest-cov>=6", "rosbags>=0.11,<0.12"]
+
+# --- Lint + format (ruff): one tool for lint, isort, and format ---
+# `src` includes tools and tests so ruff also lints the fixture generator
+# (plan 01-03) and the test suite, not just the two packages.
+[tool.ruff]
+line-length = 100
+src = ["packages/rosbagger-core/src", "packages/bagq/src", "tools", "tests"]
+
+[tool.ruff.lint]
+# E/pycodestyle, F/pyflakes, I/isort, UP/pyupgrade, B/bugbear, SIM/simplify
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# --- Tests + coverage (pytest + pytest-cov): >=80% gate enforced here ---
+# CI runs `uv run pytest` with no extra flags; the coverage gate lives in
+# addopts so local and CI runs are identical.
+[tool.pytest.ini_options]
+addopts = "--cov=rosbagger_core --cov=bagq --cov-report=term-missing --cov-fail-under=80"
+testpaths = ["tests"]
