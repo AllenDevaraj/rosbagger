@@ -184,18 +184,25 @@ def query(
             arrow = build_arrow_table(msgs, schema, include=include)
             # Register under the SANITIZED table name — the name the SQL references.
             backend.register_table(topic_to_table[topic], arrow)
-        # Step 5 — forward the user's SQL as-is (trusted interface; T-05-04). A bad
-        # column surfaces as duckdb.BinderException; catch it by TYPE (robust) and
-        # re-raise the typed UnknownColumnError carrying the referenced tables'
-        # columns (CLI-03). duckdb is imported LAZILY here — it is already pulled in
-        # via _default_backend(), but the explicit import keeps the catch local and
-        # the module top stdlib-light (offline invariant; 07-RESEARCH §2 / Pitfall 6).
+        # Step 5 — forward the user's SQL as-is (trusted interface; T-05-04). An
+        # unknown column surfaces as duckdb.BinderException; catch it by TYPE (robust),
+        # then NARROW to the unknown-column case by message before re-mapping (CR-01).
+        # duckdb.BinderException is NOT specific to unknown columns — DuckDB raises the
+        # SAME type for GROUP BY / HAVING / other binder-stage errors. Only when the
+        # `_BINDER_COL` regex matches ('Referenced column "X" not found') is it truly an
+        # unknown column: raise the typed UnknownColumnError carrying the referenced
+        # tables' columns (CLI-03). On a NON-match (GROUP BY/HAVING/other), re-raise the
+        # ORIGINAL BinderException unchanged so the real DuckDB error surfaces verbatim
+        # instead of a misleading "Unknown column '?'". duckdb is imported LAZILY here —
+        # it is already pulled in via _default_backend(), but the explicit import keeps
+        # the catch local and the module top stdlib-light (offline; 07-RESEARCH §2 / Pitfall 6).
         try:
             return backend.execute(sql)
         except duckdb_binder_exception() as e:
             m = _BINDER_COL.search(str(e))
-            column = m.group(1) if m else "?"  # graceful: list columns even on a regex miss
-            raise UnknownColumnError(column, columns_by_table) from e
+            if m is None:
+                raise  # not an unknown-column error (e.g. GROUP BY/HAVING) — surface as-is
+            raise UnknownColumnError(m.group(1), columns_by_table) from e
     finally:
         # Own the lifecycle only for the default backend; a caller-supplied
         # backend is the caller's to close (it may be reused across queries). This
