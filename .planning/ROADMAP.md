@@ -157,9 +157,13 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
+**Wave 1**
 
-- [ ] 06-01: stdout table + CSV/Parquet export
-- [ ] 06-02: minimal `--plot`
+- [ ] 06-01-PLAN.md — `rosbagger_core.output` (temporal-safe rich render + CSV/Parquet via DuckDB `COPY`) + thin `bagq query "<SQL>" BAG [-o OUT] [--format table|csv|parquet|json]` command -> OUT-01/02/03
+
+**Wave 2** *(blocked on 06-01)*
+
+- [ ] 06-02-PLAN.md — minimal `--plot [FILE]`: headless (Agg) matplotlib line chart of numeric cols vs `t_ns`; matplotlib added to the dev group + `pytest.importorskip`; graceful `ImportError` → install `bagq[plot]` -> OUT-04
 
 ### Phase 7: CLI & Teaching Errors
 
