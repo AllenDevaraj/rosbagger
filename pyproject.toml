@@ -13,7 +13,16 @@ members = ["packages/*"]
 rosbagger-core = { workspace = true }
 
 [dependency-groups]
-dev = ["ruff>=0.15,<0.16", "pytest>=8,<10", "pytest-cov>=6", "rosbags>=0.11,<0.12"]
+# matplotlib (>=3.8) is also the `bagq[plot]` extra (packages/bagq/pyproject.toml) — the
+# base install stays lean behind that extra, but it lives in the dev group too so CI/tests
+# can exercise `bagq query --plot` (06-RESEARCH Installation note; Package Legitimacy: Approved).
+dev = [
+    "ruff>=0.15,<0.16",
+    "pytest>=8,<10",
+    "pytest-cov>=6",
+    "rosbags>=0.11,<0.12",
+    "matplotlib>=3.8",
+]
 
 # --- Lint + format (ruff): one tool for lint, isort, and format ---
 # `src` includes tools and tests so ruff also lints the fixture generator
