@@ -401,14 +401,14 @@ with AnyReader([Path("ros2_sqlite")]) as reader:
 
 > Only one assumption. Everything else in this research was VERIFIED by running `rosbags` 0.11.2 against the project's fixtures and/or reading the installed source, and CITED against official docs. No compliance/security/retention assumptions exist for this phase.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does multi-ROS2 hold for MCAP and for 3+ bags / overlapping time ranges?**
+1. **Does multi-ROS2 hold for MCAP and for 3+ bags / overlapping time ranges?** — **RESOLVED:** covered by plan 02-03 Task 2's fixture-backed two-ROS2-bag merge test (asserts merged message count + ascending timestamps).
    - What we know: VERIFIED that two ROS2 **sqlite** directories open together and yield a correctly merged 18-message stream. Official docs say `AnyReader` accepts "a list of … ROS2 bag files."
    - What's unclear: I did not exhaustively test two **MCAP** dirs together, a mixed sqlite+MCAP ROS2 set, or 3+ bags with overlapping timestamps.
    - Recommendation: Plan 02-03 should include a fixture-backed test that opens **two ROS2 bags** (at minimum two sqlite, ideally also two MCAP) and asserts merged count + ascending timestamps — turning A1 into a verified fact. `make_all_fixtures` already produces the needed bags; the test can generate a second copy into a separate tmp dir (as the probes did).
 
-2. **Should the reader re-wrap `AnyReaderError` in a project-specific exception?**
+2. **Should the reader re-wrap `AnyReaderError` in a project-specific exception?** — **RESOLVED:** deferred by discretion to Phase 7 / CLI-04; v1 lets `AnyReaderError` propagate (not required by any Phase-2 success criterion).
    - What we know: `AnyReader` raises `AnyReaderError` (mixed formats, missing defs) and `FileNotFoundError` (missing paths).
    - What's unclear: whether v1 wants a stable `rosbagger_core` exception type for callers/CLI to catch.
    - Recommendation: Claude's discretion. A thin `BagReaderError` wrapper aids Phase 7 teaching-errors (CLI-04 catches the "no type definitions" case), but is not required for any Phase-2 success criterion. If added, preserve the original message.
