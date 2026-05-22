@@ -12,6 +12,8 @@ Phase 6 turns the fully-materialized ``pyarrow.Table`` that
 * :func:`~rosbagger_core.output.export.write_table` — CSV/Parquet export by file
   extension, BOTH via DuckDB ``COPY`` (the only writer that serializes LIST/STRUCT
   columns to CSV; 06-RESEARCH Pitfall 2 / Pattern 1).
+* :func:`~rosbagger_core.output.export.write_csv_stream` — CSV to ``/dev/stdout``
+  (no extension detection) for ``bagq query --format csv`` with no ``-o`` (A2).
 
 OFFLINE INVARIANT (06-RESEARCH Pitfall 6): this package's top level — and the
 ``.render``/``.export`` module top levels it re-exports from — import ONLY the
@@ -26,7 +28,7 @@ from ``rosbagger_core/__init__``, so ``import rosbagger_core`` stays light; even
 
 from __future__ import annotations
 
-from .export import write_table
+from .export import write_csv_stream, write_table
 from .render import rows_for_display, to_json
 
-__all__ = ["rows_for_display", "to_json", "write_table"]
+__all__ = ["rows_for_display", "to_json", "write_csv_stream", "write_table"]

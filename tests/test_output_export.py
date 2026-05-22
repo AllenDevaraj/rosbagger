@@ -31,7 +31,7 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.make_fixtures import write_ros1_bag  # noqa: E402  (after sys.path setup)
 
 from rosbagger_core.backend.query import query  # noqa: E402
-from rosbagger_core.output import write_table  # noqa: E402
+from rosbagger_core.output import write_csv_stream, write_table  # noqa: E402
 from rosbagger_core.reader import RosbagsReader  # noqa: E402
 
 
@@ -119,3 +119,20 @@ def test_write_csv_escapes_single_quote_in_path(ros1_bag: Path, tmp_path: Path) 
     write_table(table, str(out))
     assert out.exists()
     assert out.read_text().splitlines()[0] == "t_ns,topic"
+
+
+def test_write_csv_stream_writes_csv_to_extensionless_target(
+    ros1_bag: Path, tmp_path: Path
+) -> None:
+    """``write_csv_stream`` writes CSV to an extensionless target (backs --format csv).
+
+    Unlike ``write_table`` (which routes on extension and would reject an extensionless
+    path), ``write_csv_stream`` forces ``FORMAT CSV`` — so ``/dev/stdout`` (or any
+    extensionless path) works. Asserted against a temp file to capture the bytes.
+    """
+    table = _query(ros1_bag, "SELECT t_ns, topic FROM cmd_vel")
+    target = tmp_path / "stream_out"  # NO extension — write_table would raise here
+    write_csv_stream(table, str(target))
+    lines = target.read_text().splitlines()
+    assert lines[0] == "t_ns,topic"
+    assert len(lines) == 1 + table.num_rows

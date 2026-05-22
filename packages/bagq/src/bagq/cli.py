@@ -2,15 +2,17 @@
 
 Defines the typer application bound to the symbol ``app`` so the console-script
 ``bagq = "bagq.cli:app"`` resolves. Phase 1 shipped a minimal runnable surface
-(``bagq --help`` / ``bagq --version``); Phase 4 adds the first real subcommands,
+(``bagq --help`` / ``bagq --version``); Phase 4 added the first real subcommands,
 ``bagq info`` (the Inspect overview) and ``bagq tables`` (per-topic table name +
-column schema).
+column schema). Phase 6 adds ``bagq query`` — run SQL over a bag and route the
+result to a rich stdout table (default), a CSV/Parquet file (``-o``), or
+``--format csv|parquet|json``.
 
 Keep this module light: import only typer/rich at top level — do NOT import
-rosbagger-core's heavy stack (``rosbags``/``pyarrow``) here. The ``info`` and
-``tables`` commands import the core inspect API LAZILY inside their bodies, so
-``bagq --help`` stays fast and pays no ``rosbags`` import cost (offline-guard
-discipline).
+rosbagger-core's heavy stack (``rosbags``/``pyarrow``/``duckdb``) here. The
+``info``/``tables``/``query`` commands import the core API LAZILY inside their
+bodies, so ``bagq --help`` stays fast and pays no ``rosbags`` import cost
+(offline-guard discipline; ``tests/test_offline_guard.py``).
 
 Per design decision 1 (API-first), all computation lives in
 ``rosbagger_core.inspect``; this module only renders the returned dataclasses.
@@ -21,11 +23,14 @@ which is deliberately a CLI concern (the API keeps ``size_bytes`` raw).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.console import Console
 from rich.table import Table
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
+    import pyarrow
 
 from bagq import __version__
 
@@ -165,6 +170,102 @@ def tables(
     with RosbagsReader(bags) as reader:
         schemas = collect_table_schemas(reader)
     _render_table_schemas(schemas)
+
+
+def _render_result(
+    table: pyarrow.Table,
+    console: Console | None = None,
+    max_rows: int = 100,
+) -> None:
+    """Render a result ``pyarrow.Table`` as a rich stdout table (OUT-01).
+
+    A 0-row result prints ``(0 rows)`` followed by the comma-joined column names, so
+    the user still sees the result shape rather than a blank table (06-RESEARCH
+    Pitfall 3). Otherwise builds a ``rich.table.Table`` from the temporal-safe
+    coercion in :func:`rosbagger_core.output.rows_for_display` (the renderer does NOT
+    re-implement coercion — ``timestamp[ns]`` ``t``/``stamp`` would crash a naive
+    ``str()``; Pitfall 1), capped at ``max_rows`` rows with a ``... N more rows``
+    footer when the result is larger.
+    """
+    from rosbagger_core.output import rows_for_display
+
+    console = console or Console()
+    if table.num_rows == 0:
+        console.print("(0 rows)")
+        # Still show the columns so the user sees the result shape (Pitfall 3).
+        console.print(", ".join(table.column_names))
+        return
+    names, rows = rows_for_display(table, max_rows=max_rows)
+    rt = Table()
+    for name in names:
+        rt.add_column(name)
+    for row in rows:
+        rt.add_row(*row)
+    console.print(rt)
+    if table.num_rows > max_rows:
+        console.print(f"... {table.num_rows - max_rows} more rows ({table.num_rows} total)")
+
+
+@app.command()
+def query(
+    sql: Annotated[
+        str,
+        typer.Argument(help='SQL to run, e.g. "SELECT t, t_ns FROM cmd_vel".'),
+    ],
+    bags: Annotated[
+        list[Path],
+        typer.Argument(help="One or more bag paths (file or directory)."),
+    ],
+    out: Annotated[
+        Path | None,
+        typer.Option("-o", "--output", help="Write CSV/Parquet by extension (.csv/.parquet)."),
+    ] = None,
+    fmt: Annotated[
+        str,
+        typer.Option("--format", help="table|csv|parquet|json (default table)."),
+    ] = "table",
+) -> None:
+    """Run a SQL query over one or more bags and print or export the result.
+
+    Default prints a rich table to stdout (OUT-01). ``-o out.csv`` / ``-o out.parquet``
+    write a file by extension (OUT-02/03). ``--format`` selects the sink when no ``-o``
+    is given: ``table`` (default), ``csv`` (streams CSV to stdout), ``parquet`` (errors
+    — binary), or ``json`` (temporal-safe records). ``-o`` always wins over ``--format``.
+    """
+    # Import the core API lazily (inside the body) so module import stays light and
+    # `bagq --help` pays no rosbags/duckdb/pyarrow import cost (offline-guard).
+    from rosbagger_core.backend.query import query as run_query
+    from rosbagger_core.output import to_json, write_csv_stream, write_table
+    from rosbagger_core.reader import RosbagsReader
+
+    # UnknownTableError / AnyReaderError / FileNotFoundError propagate unchanged —
+    # Phase 7 owns turning them into teaching error messages (no did-you-mean here).
+    # The result Arrow table is fully materialized inside query() (the backend closes
+    # before it returns), so it outlives the reader `with` block.
+    with RosbagsReader(bags) as reader:
+        result = run_query(sql, reader)
+
+    # Route by precedence: an explicit -o wins and picks the format by extension.
+    if out is not None:
+        write_table(result, str(out))
+        typer.echo(f"Wrote {out} ({result.num_rows} rows)")
+        return
+
+    # No -o: dispatch on --format.
+    if fmt == "table":
+        _render_result(result)
+    elif fmt == "csv":
+        # --format csv with no -o streams CSV to stdout (decision A2). write_csv_stream
+        # forces FORMAT CSV (no extension detection) to the valid /dev/stdout COPY
+        # target, keeping the COPY/escape logic in the core module (cli.py imports no
+        # duckdb; offline invariant).
+        write_csv_stream(result)
+    elif fmt == "parquet":
+        raise typer.BadParameter("Parquet is binary; specify -o out.parquet")
+    elif fmt == "json":
+        typer.echo(to_json(result))
+    else:
+        raise typer.BadParameter(f"Unknown format {fmt!r}; use table|csv|parquet|json")
 
 
 if __name__ == "__main__":  # pragma: no cover

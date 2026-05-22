@@ -40,6 +40,26 @@ _FORMAT_OPTS = {
 }
 
 
+def _copy_to(table: pyarrow.Table, path_str: str, opts: str) -> None:
+    """Run a single DuckDB ``COPY result TO '<path>' (<opts>)`` for ``table``.
+
+    The shared export core: open a short-lived ``duckdb.connect()``, register ``table``
+    as ``result``, ``COPY`` it out, and always close the connection. SECURITY (threat
+    T-06-01): the path literal is single-quote-escaped (``'`` → ``''``) before
+    interpolation — the ONE place this phase builds SQL. ``opts`` is supplied by the
+    caller from the closed ``_FORMAT_OPTS`` map, never from user text.
+    """
+    import duckdb  # lazy — heavy, offline invariant (mirror backend/query.py)
+
+    safe = path_str.replace("'", "''")
+    con = duckdb.connect()
+    try:
+        con.register("result", table)
+        con.execute(f"COPY result TO '{safe}' ({opts})")
+    finally:
+        con.close()
+
+
 def write_table(table: pyarrow.Table, path: str | os.PathLike[str]) -> None:
     """Write ``table`` to CSV or Parquet, format chosen by ``path``'s extension.
 
@@ -57,21 +77,26 @@ def write_table(table: pyarrow.Table, path: str | os.PathLike[str]) -> None:
     Raises:
         ValueError: the extension is neither ``.csv`` nor ``.parquet``.
     """
-    import duckdb  # lazy — heavy, offline invariant (mirror backend/query.py)
-
     path_str = str(path)
     ext = path_str.lower().rsplit(".", 1)[-1] if "." in path_str else ""
     opts = _FORMAT_OPTS.get(ext)
     if opts is None:
         raise ValueError(f"Unknown output extension {ext!r}; use .csv or .parquet")
+    _copy_to(table, path_str, opts)
 
-    # SECURITY (T-06-01): escape the single quote in the path literal before
-    # interpolating into COPY ... TO '<path>'. This is the only SQL this phase builds.
-    safe = path_str.replace("'", "''")
 
-    con = duckdb.connect()
-    try:
-        con.register("result", table)
-        con.execute(f"COPY result TO '{safe}' ({opts})")
-    finally:
-        con.close()
+def write_csv_stream(table: pyarrow.Table, path: str | os.PathLike[str] = "/dev/stdout") -> None:
+    """Write ``table`` as CSV to ``path`` (default ``/dev/stdout``) via DuckDB ``COPY``.
+
+    The streaming companion to :func:`write_table`: forces ``FORMAT CSV, HEADER`` with NO
+    extension detection, so an extensionless target like ``/dev/stdout`` works (it is a
+    valid DuckDB ``COPY`` target). This backs ``bagq query --format csv`` with no ``-o``
+    (decision A2 — stream CSV to stdout), keeping the ``COPY`` construction + path
+    quote-escape (T-06-01) in this core module rather than in the CLI (so ``bagq/cli.py``
+    never imports duckdb; offline invariant).
+
+    Args:
+        table: the result ``pyarrow.Table`` from ``query()``.
+        path: the CSV destination; defaults to ``/dev/stdout``.
+    """
+    _copy_to(table, str(path), _FORMAT_OPTS["csv"])
