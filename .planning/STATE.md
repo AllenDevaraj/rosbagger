@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04-01-PLAN.md (rosbagger_core.inspect BagInfo/TopicInfo + collect_bag_info, O(1) metadata only; six additive RosbagsReader properties + ABC; thin `bagq info` rich renderer). INSP-01/02 done. Phase 4 plan 2 of 2 (`bagq tables`, INSP-03) next.
-last_updated: "2026-05-22T09:36:24.533Z"
-last_activity: 2026-05-22 -- Completed 04-01 (bagq info)
+status: verifying
+stopped_at: Completed 04-02-PLAN.md (rosbagger_core.inspect.collect_table_schemas — per-topic sanitized table name + columns via Phase 3 build_table_schema/TableNameResolver from O(1) metadata + typestore, multi-msgtype topics skipped, never reader.read(); thin `bagq tables` rich renderer showing every column with heavy blobs marked lazy). INSP-03 done; full suite 126 passed at 97.84%; cli.py + inspect.py at 100%. PHASE 4 COMPLETE (2/2) — ready for verification.
+last_updated: "2026-05-22T09:44:22.951Z"
+last_activity: 2026-05-22 -- Completed 04-02 (bagq tables, INSP-03)
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 11
-  completed_plans: 10
-  percent: 91
+  completed_plans: 11
+  percent: 100
 ---
 
 # Project State
@@ -26,19 +26,19 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 4
-Plan: 04-01 complete (1 of 2)
-Status: Executing — 04-02 (bagq tables, INSP-03) next
-Last activity: 2026-05-22 -- Completed 04-01 (bagq info)
+Plan: 04-02 complete (2 of 2) — Phase 4 done
+Status: Phase complete — ready for verification
+Last activity: 2026-05-22 -- Completed 04-02 (bagq tables, INSP-03)
 
-Progress: [█████████░] 91%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 12
+- Total plans completed: 13
 - Average duration: ~4 min
-- Total execution time: ~0.7 hours
+- Total execution time: ~0.8 hours
 
 **By Phase:**
 
@@ -47,11 +47,11 @@ Progress: [█████████░] 91%
 | 01 | 3 | 12min | 4min |
 | 02 | 3 | 11min | ~4min |
 | 03 | 3 | 17min | ~6min |
-| 04 | 1 (of 2) | 7min | 7min |
+| 04 | 2 | 12min | 6min |
 
 **Recent Trend:**
 
-- Last 5 plans: 4min, 5min, 5min, 7min, 7min
+- Last 5 plans: 5min, 5min, 7min, 7min, 5min
 - Trend: steady (~4-7 min/plan)
 
 *Updated after each plan completion*
@@ -68,6 +68,7 @@ Progress: [█████████░] 91%
 | Phase 03 P03-02 | 5min | 3 tasks | 3 files |
 | Phase 03 P03-03 | 7min | 3 tasks | 6 files |
 | Phase 04 P04-01 | 7min | 3 tasks | 6 files |
+| Phase 04 P04-02 | 5min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 04-01]: Verified single-fixture duration is 200_000_001 ns (end 1_200_000_001 - start 1_000_000_000), NOT the round 200_000_000 the plan/RESEARCH interfaces block stated (the RESEARCH Code Example already showed 200000001). Tests assert the runtime value; per-topic Hz via pytest.approx(15.0) since 3/0.200000001s != exactly 15.0 (Rule 1 fix, test-only)
 - [Phase 04-01]: Empty-bag guard (message_count==0 -> None start/end/duration, None Hz) so AnyReader's sys.maxsize/large-negative sentinel never surfaces (Pitfall 1); rendered as em dash. Format-aware size: ROS1 file stat().st_size, ROS2 dir summed rglob file sizes (not the ~4KB inode), summed across paths (READ-05). size_bytes stays raw int in the API; byte->human (B/KB/MB/GB) is CLI-only (Open Q2)
 - [Phase 04-01]: Six additive RosbagsReader properties (message_count/duration/start_time/end_time/typestore/paths) mirror the topics before-open RuntimeError guard; paths is the exception (reads no _reader, callable before open, returns a copy). All six also declared on the BagReader ABC (loosely typed int/object/list) so a future rosbag2_py backend satisfies the contract. Phase 2 read/open/close/topics/connections untouched. typer Argument via typing.Annotated (ruff B008-clean). Full suite 110 passed at 97.63%; cli.py + inspect.py at 100%
+- [Phase 04-02]: collect_table_schemas returns Phase 3 TableSchema objects directly (no new dataclass) — per topic it resolves the sanitized name (TableNameResolver) and builds columns via build_table_schema(msgtype, reader.typestore, topic=topic) from O(1) metadata; the CLI reads col.name/str(col.arrow_type)/col.is_heavy_blob and renders. The schema API is imported LAZILY inside the function (mirrors 04-01) so inspect.py top-level stays stdlib-only and import rosbagger_core never pulls schema/pyarrow (offline guard 2/2 held)
+- [Phase 04-02]: Multi-msgtype topic (TopicInfo.msgtype is None) is SKIPPED in collect_table_schemas — never passed to build_table_schema, which raises KeyError: None (Pitfall 4 / T-04-08, chose skip over per-connection fallback per A3); proven via a duck-typed reader stub since no fixture triggers it. collect_table_schemas never calls reader.read() (T-04-05), proven by a monkeypatched-read test
+- [Phase 04-02]: bagq tables shows ALL columns including heavy blobs, marked "lazy (blob)" via ColumnDef.is_heavy_blob directly (A2 / Pattern 4, NOT column_names(include=...)); the blob's bytes are never read (T-04-07). Verified: /image data -> list<item: uint8> marked lazy, while Imu orientation_covariance (ARRAY float64[9] -> list<item: double>) is correctly NOT marked — heavy-blob detection is structural, not a name blocklist. Full suite 126 passed at 97.84%; cli.py + inspect.py at 100%. INSP-03 done. PHASE 4 COMPLETE (2/2)
 
 ### Pending Todos
 
@@ -137,6 +141,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T09:36:24Z
-Stopped at: Completed 04-01-PLAN.md (rosbagger_core.inspect BagInfo/TopicInfo + collect_bag_info, O(1) metadata only; six additive RosbagsReader properties + ABC declarations; thin `bagq info` rich table + duration/count/size footer). INSP-01/02 done; full suite 110 passed at 97.63%. Phase 4 plan 2 of 2 (`bagq tables`, INSP-03) next.
+Last session: 2026-05-22T09:43:02Z
+Stopped at: Completed 04-02-PLAN.md (rosbagger_core.inspect.collect_table_schemas — per-topic sanitized table name + columns via Phase 3 build_table_schema/TableNameResolver from O(1) metadata + typestore, multi-msgtype topics skipped, never reader.read(); thin `bagq tables` rich renderer showing every column with heavy blobs marked lazy). INSP-03 done; full suite 126 passed at 97.84%; cli.py + inspect.py at 100%. PHASE 4 COMPLETE (2/2) — ready for verification.
 Resume file: None
