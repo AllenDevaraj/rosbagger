@@ -29,7 +29,12 @@ import pytest
 from rosbags.interfaces import Nodetype
 from rosbags.typesys import Stores, get_typestore
 
-from rosbagger_core.schema.types import (  # noqa: E402  (3rd-party stack)
+from rosbagger_core.schema.flatten import (  # noqa: E402  (3rd-party stack)
+    STANDARD_COLUMNS,
+    build_table_schema,
+)
+from rosbagger_core.schema.model import TableSchema  # noqa: E402
+from rosbagger_core.schema.types import (  # noqa: E402
     ROS_BASE_TO_ARROW,
     arrow_type_of,
     is_heavy_blob,
@@ -117,3 +122,87 @@ def test_heavy_blob_false_for_covariance_and_string(typestore) -> None:
     assert is_heavy_blob(cov) is False  # ARRAY of float64 is NOT heavy (Pitfall 3)
     string_data = _field(typestore, "std_msgs/msg/String", "data")
     assert is_heavy_blob(string_data) is False  # BASE string is NOT heavy
+
+
+# ---------------------------------------------------------------------------
+# Task 2 — build_table_schema: dotted-name walk + the four standard columns
+# ---------------------------------------------------------------------------
+
+
+def test_build_table_schema_returns_table_schema_with_sanitized_name(typestore) -> None:
+    """build_table_schema -> a TableSchema carrying topic, msgtype, sanitized name."""
+    schema = build_table_schema("geometry_msgs/msg/Twist", typestore, topic="/cmd_vel")
+    assert isinstance(schema, TableSchema)
+    assert schema.table_name == "cmd_vel"  # sanitize_table_name("/cmd_vel")
+    assert schema.topic == "/cmd_vel"
+    assert schema.msgtype == "geometry_msgs/msg/Twist"
+
+
+def test_twist_flattens_to_six_dotted_double_columns(typestore) -> None:
+    """Twist -> the six dotted Vector3 columns after the 4 std cols, all float64."""
+    schema = build_table_schema("geometry_msgs/msg/Twist", typestore, topic="/cmd_vel")
+    names = [c.name for c in schema.columns]
+    assert names[4:] == [
+        "linear.x",
+        "linear.y",
+        "linear.z",
+        "angular.x",
+        "angular.y",
+        "angular.z",
+    ]
+    for col in schema.columns[4:]:
+        assert col.arrow_type == pa.float64()
+        assert col.is_heavy_blob is False
+    # ros_path is the attribute chain to pull the value (research Pattern 4).
+    by_name = {c.name: c for c in schema.columns}
+    assert by_name["linear.x"].ros_path == ("linear", "x")
+    assert by_name["angular.z"].ros_path == ("angular", "z")
+
+
+def test_first_four_columns_are_the_standard_columns(typestore) -> None:
+    """Every schema starts with t, t_ns, stamp, topic with the verified types."""
+    schema = build_table_schema("geometry_msgs/msg/Twist", typestore, topic="/cmd_vel")
+    assert [c.name for c in schema.columns][:4] == ["t", "t_ns", "stamp", "topic"]
+    std = schema.columns[:4]
+    assert std[0].arrow_type == pa.timestamp("ns")  # t        -> TIMESTAMP_NS
+    assert std[1].arrow_type == pa.int64()  # t_ns     -> BIGINT
+    assert std[2].arrow_type == pa.timestamp("ns")  # stamp    -> TIMESTAMP_NS (nullable)
+    assert std[3].arrow_type == pa.string()  # topic    -> VARCHAR
+    for col in std:
+        assert col.ros_path == ()
+        assert col.is_heavy_blob is False
+
+
+def test_standard_columns_constant_matches_spec() -> None:
+    """STANDARD_COLUMNS is the fixed [t, t_ns, stamp, topic] spec (QURY-04)."""
+    assert [
+        ("t", pa.timestamp("ns")),
+        ("t_ns", pa.int64()),
+        ("stamp", pa.timestamp("ns")),
+        ("topic", pa.string()),
+    ] == STANDARD_COLUMNS
+
+
+def test_imu_has_top_level_stamp_and_nested_header_columns(typestore) -> None:
+    """Imu: top-level std `stamp` AND nested header.stamp.* both exist (Pitfall 6)."""
+    schema = build_table_schema("sensor_msgs/msg/Imu", typestore, topic="/imu")
+    names = [c.name for c in schema.columns]
+    assert "stamp" in names  # the prepended standard column
+    assert "header.stamp.sec" in names  # the faithful nested field
+    assert "header.stamp.nanosec" in names
+    assert "header.frame_id" in names  # header descends into its scalar leaves
+
+
+def test_imu_covariance_is_a_single_list_double_leaf(typestore) -> None:
+    """Imu.orientation_covariance is ONE list<double> leaf (recursion stops at ARRAY)."""
+    schema = build_table_schema("sensor_msgs/msg/Imu", typestore, topic="/imu")
+    by_name = {c.name: c for c in schema.columns}
+    assert "orientation_covariance" in by_name  # not dotted into
+    cov = by_name["orientation_covariance"]
+    assert cov.arrow_type == pa.list_(pa.float64())
+    assert cov.is_heavy_blob is False
+    # The walk descends into the orientation sub-message (dotted scalar leaves)...
+    assert "orientation.x" in by_name
+    assert by_name["orientation.x"].arrow_type == pa.float64()
+    # ...but does NOT produce a dotted column inside the covariance array.
+    assert not any(n.startswith("orientation_covariance.") for n in by_name)
