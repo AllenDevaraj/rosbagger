@@ -14,13 +14,12 @@ Query and understand the data inside any ROS bag from one command — without wr
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+- [x] Read ROS1 / ROS2 / MCAP bags through one interface with no ROS install (rosbags backend) — *Validated in Phase 2 (READ-01..05): `BagReader`/`RosbagsReader`, 30 ROS-free tests*
 
 ### Active
 
 <!-- v1 = rosbagger-core + bagq. Hypotheses until shipped. -->
 
-- [ ] Read ROS1 / ROS2 / MCAP bags through one interface with no ROS install (rosbags backend)
 - [ ] Inspect a bag: topics, message types, counts, duration, approx Hz, size
 - [ ] Query bag topics with SQL via DuckDB — one table per topic, dotted/quoted columns, `t`/`t_ns`/`stamp`/`topic`
 - [ ] Resolve referenced topics from the SQL (sqlglot) and load only those
@@ -80,4 +79,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 after Phase 1 (Scaffold & Test Harness) completion — monorepo, packaging, offline guard, no-ROS CI, and the fixture-bag generator are in place. Feature requirements remain Active (ship in Phases 2–7).*
+*Last updated: 2026-05-22 after Phase 2 (Bag Reader Layer) completion — universal ROS1/ROS2/MCAP reading via `rosbags` (READ-01..05) is shipped and validated. Remaining feature requirements (inspect, SQL query, export, teaching errors) ship in Phases 3–7.*
