@@ -1,33 +1,44 @@
-"""``build_table_schema`` — the recursive flattening walk (QURY-02, QURY-04).
+"""The flattening walk + the row-extract / Arrow-build half of Phase 3.
 
-The project-glue half of Phase 3: given a message-type string and the ``rosbags``
-typestore, it walks the declared field-AST (``get_msgdef(msgtype).fields``) into a
-backend-neutral :class:`~rosbagger_core.schema.model.TableSchema` — nested scalars
-flattened to dotted column names (``linear.x``, ``header.stamp.sec``; QURY-02),
-arrays/sub-message-arrays kept as single ``LIST`` / ``LIST``-of-``STRUCT`` leaf
-columns (the type side is done in :mod:`~rosbagger_core.schema.types`; QURY-03),
-and the four always-present columns ``t``/``t_ns``/``stamp``/``topic`` prepended in
-that fixed order (QURY-04).
+The project-glue of Phase 3, in two cooperating halves:
 
-It introspects the **declared** type via the typestore AST — never a single
-message's runtime values — so the schema is stable across every message on a
-topic (including empty arrays and headerless messages; research Pitfall 1).
+* **Schema build** (``03-02``): given a message-type string and the ``rosbags``
+  typestore, ``build_table_schema`` walks the declared field-AST
+  (``get_msgdef(msgtype).fields``) into a backend-neutral
+  :class:`~rosbagger_core.schema.model.TableSchema` — nested scalars flattened to
+  dotted column names (``linear.x``, ``header.stamp.sec``; QURY-02),
+  arrays/sub-message-arrays kept as single ``LIST`` / ``LIST``-of-``STRUCT`` leaf
+  columns (the type side lives in :mod:`~rosbagger_core.schema.types`; QURY-03),
+  and the four always-present columns ``t``/``t_ns``/``stamp``/``topic``
+  prepended in that fixed order (QURY-04). It introspects the **declared** type —
+  never a single message's runtime values — so the schema is stable across every
+  message on a topic (including empty arrays and headerless messages; Pitfall 1).
 
-Row-VALUE extraction and the live ``pyarrow.Table`` build are NOT here — they land
-in plan ``03-03`` (this module produces the ``TableSchema``/columns only). Each
-:class:`ColumnDef` carries its ``ros_path`` (the attribute chain to follow on a
-deserialized message), so ``03-03``'s extractor walks it without re-deriving the
-shape.
+* **Row extract + Arrow build** (``03-03``): ``flatten_message`` pulls each
+  non-standard leaf's value off a deserialized message by following its
+  ``ros_path`` (``reduce(getattr, path, msg)``), and ``build_arrow_table`` turns a
+  stream of Phase 2 :class:`~rosbagger_core.reader.Message` records into a typed
+  ``pyarrow.Table`` whose schema is exactly ``schema.arrow_schema(include=...)``.
+  Each column array is built with its explicit ``ColumnDef.arrow_type`` (never
+  inferred — Pitfall 1), ndarray array-values are passed straight through
+  (Pitfall 2), the standard columns come off the ``Message`` record, and heavy
+  byte blobs are skipped unless named in ``include`` (the QURY-07 lazy seam Phase
+  5 drives). An empty stream still yields a typed empty Table (RESEARCH §7).
+
+Each :class:`ColumnDef` carries its ``ros_path`` (the attribute chain to follow on
+a deserialized message); the standard columns have an empty ``ros_path`` and take
+their values straight off the ``Message``.
 
 Offline note: importing ``pyarrow`` + ``rosbags.interfaces.Nodetype`` here is SAFE
 (neither is a forbidden ROS module); ``rosbagger_core/__init__`` does not import
 this subpackage at top level, so ``import rosbagger_core`` stays light. No
-``import duckdb`` (Phase 5).
+``import duckdb``, no SQL execution (Phase 5).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from functools import reduce
 
 import pyarrow as pa
 from rosbags.interfaces import Nodetype
@@ -128,3 +139,107 @@ def build_table_schema(msgtype: str, typestore, *, topic: str) -> TableSchema:
         msgtype=msgtype,
         columns=columns,
     )
+
+
+# The standard-column names (those with an empty ros_path); their values come off
+# the Phase 2 Message record, NOT the message body. `t` and `stamp` are int-ns
+# values materialized as pa.timestamp("ns") (Pattern 3 / Pitfall 6).
+_STANDARD_COLUMN_NAMES = frozenset(name for name, _ in STANDARD_COLUMNS)
+
+
+def _is_data_column(col: ColumnDef) -> bool:
+    """True for a flattened message-body column (a non-empty ``ros_path``).
+
+    The four standard columns carry an empty ``ros_path`` and are sourced from
+    the ``Message`` record, so they are NOT data columns.
+    """
+    return bool(col.ros_path)
+
+
+def flatten_message(msg, schema: TableSchema, *, include: set[str] | None = None) -> dict:
+    """Extract ``{dotted_col_name: value}`` for a message's body columns.
+
+    Walks the schema's **data** columns (those with a non-empty ``ros_path`` —
+    i.e. everything except the four standard columns) and pulls each value off
+    the deserialized ``msg`` via ``reduce(getattr, col.ros_path, msg)`` (research
+    Pattern 4): e.g. ``("linear", "x")`` -> ``msg.linear.x``. Scalar leaves come
+    back as native ``int``/``float``/``str``/``bool``; array leaves come back as a
+    ``numpy.ndarray`` and are passed through unchanged (NOT ``.tolist()``'d —
+    Pitfall 2) for ``pyarrow`` to ingest directly.
+
+    Heavy byte blobs (``is_heavy_blob``) are omitted unless their dotted ``name``
+    is in ``include`` (the QURY-07 lazy seam, keyed on the dotted column name —
+    research Open Question 2). The standard columns are never part of the body
+    extraction; ``build_arrow_table`` sources them from the ``Message`` record.
+
+    Args:
+        msg: a deserialized ``rosbags`` message object (the ``Message.msg`` body).
+        schema: the :class:`TableSchema` for this topic (its columns drive the walk).
+        include: dotted column names of heavy blobs to re-include (default: none).
+
+    Returns:
+        A dict mapping each extracted column's dotted name to its raw value.
+    """
+    allowed = include or set()
+    return {
+        col.name: reduce(getattr, col.ros_path, msg)
+        for col in schema.columns
+        if _is_data_column(col) and (not col.is_heavy_blob or col.name in allowed)
+    }
+
+
+def build_arrow_table(
+    messages: Iterable,
+    schema: TableSchema,
+    *,
+    include: set[str] | None = None,
+) -> pa.Table:
+    """Build a typed ``pyarrow.Table`` for one topic from a stream of Messages.
+
+    Consumes ``messages`` (an iterable of Phase 2
+    :class:`~rosbagger_core.reader.Message`) **once**, accumulating parallel
+    per-column value lists, then builds each column array with its explicit
+    ``ColumnDef.arrow_type`` (``pa.array(values, type=...)`` — never inferred, so
+    an empty ``SEQUENCE`` cannot destabilize the type; Pitfall 1) and assembles a
+    ``pyarrow.Table`` whose schema is exactly ``schema.arrow_schema(include=include)``.
+
+    Column sourcing:
+
+    * Standard columns come off each ``Message``: ``t`` and ``stamp`` from the
+      int-ns values typed ``pa.timestamp("ns")`` (a ``None`` ``stamp`` -> NULL,
+      e.g. headerless ``/cmd_vel``), ``t_ns`` as ``pa.int64()``, ``topic`` as
+      ``pa.string()`` (Pattern 3 / Pitfall 6).
+    * Data columns come from :func:`flatten_message` (ndarrays passed straight
+      through — Pitfall 2).
+
+    Heavy byte blobs are skipped unless named in ``include`` (the QURY-07 lazy
+    seam Phase 5 drives from parsed SQL). A zero-message stream still returns a
+    Table carrying the full typed schema (RESEARCH §7).
+
+    Does NOT ``import duckdb`` or run SQL — it emits backend-neutral Arrow that
+    Phase 5 registers zero-copy.
+
+    Args:
+        messages: an iterable of ``Message`` records (consumed once).
+        schema: the :class:`TableSchema` for this topic.
+        include: dotted column names of heavy blobs to materialize (default: none).
+
+    Returns:
+        A ``pyarrow.Table`` matching ``schema.arrow_schema(include=include)``.
+    """
+    arrow_schema = schema.arrow_schema(include=include)
+    # The kept columns, in declared order, are exactly the fields of arrow_schema
+    # (it applies the same heavy-blob filter) — drive off it to stay in lockstep.
+    kept = [col for col in schema.columns if col.name in arrow_schema.names]
+    values: dict[str, list] = {col.name: [] for col in kept}
+
+    for msg in messages:
+        body = flatten_message(msg.msg, schema, include=include)
+        for col in kept:
+            # Data columns come from the message body; the standard columns
+            # (empty ros_path) come off the Message record by the same name.
+            value = body[col.name] if _is_data_column(col) else getattr(msg, col.name)
+            values[col.name].append(value)
+
+    arrays = [pa.array(values[field.name], type=field.type) for field in arrow_schema]
+    return pa.table(arrays, schema=arrow_schema)
