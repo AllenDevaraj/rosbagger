@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 06-02-PLAN.md (Phase 6 plan 2/2 — PHASE 6 COMPLETE). Added rosbagger_core.output.plot_table(table, path): minimal headless (Agg-before-pyplot) matplotlib line chart of numeric result cols (pyarrow is_integer/is_floating; excludes topic/string/LIST/STRUCT and the t_ns x-axis) vs t_ns (fallback t); lazy/optional matplotlib import -> ImportError re-raised as teaching RuntimeError (install bagq[plot]); 0-row / no-numeric / no-t_ns -> teaching ValueError; plt.close(fig) after savefig (figure-leak DoS T-06-05). Wired bagq query ... --plot [FILE] (OUT-04): bare --plot -> plot.png in CWD (A1), --plot FILE -> that file; --plot is its own sink and takes precedence (plot+return); RuntimeError/ValueError propagate (Phase 7 owns teaching). matplotlib>=3.8 added to root [dependency-groups] dev (also the bagq[plot] extra); uv lock + uv sync; uv.lock committed. Tests guarded by pytest.importorskip('matplotlib'). DEVIATION (Rule 3): RESEARCH Pattern 4's typer.Option(is_flag=False, flag_value=...) does NOT work on pinned typer 0.25.1 (flag_value dropped in click conversion -> bare --plot errored) -> restored via a _PlotCommand(TyperCommand) cls= that rebuilds --plot as a native click.Option; app stays typer.Typer, query stays a typer command -> zero ripple to bagq.cli:app + 06-01 CliRunner tests. Offline guard intact (import rosbagger_core.output / bagq.cli leak no duckdb/sqlglot/pyarrow/matplotlib). Full suite 219 passed at 98.04%; plot.py 100%. Next: Phase 7 (CLI & Teaching Errors)."
-last_updated: "2026-05-22T17:08:24.000Z"
+status: ready_to_plan
+stopped_at: Phase 6 complete (2/2) — ready to discuss Phase 7
+last_updated: 2026-05-22T17:20:22.694Z
 last_activity: 2026-05-22 -- Completed 06-02 (--plot OUT-04); PHASE 6 COMPLETE
 progress:
   total_phases: 8
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 6 — output & export
+**Current focus:** Phase 7 — cli & teaching errors
 
 ## Current Position
 
-Phase: 6 complete (2/2) — next: Phase 7 (CLI & Teaching Errors)
-Plan: 06-02 complete (2/2) — PHASE 6 COMPLETE
-Status: Phase 6 complete
-Last activity: 2026-05-22 -- Completed 06-02 (--plot OUT-04); PHASE 6 COMPLETE
+Phase: 7
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-22
 
 Progress: [██████████] 100% (Phase 6: 2/2 plans complete)
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100% (Phase 6: 2/2 plans complete)
 
 **Velocity:**
 
-- Total plans completed: 19
+- Total plans completed: 21
 - Average duration: ~5 min
 - Total execution time: ~1.1 hours
 
@@ -50,6 +50,7 @@ Progress: [██████████] 100% (Phase 6: 2/2 plans complete)
 | 04 | 2 | 12min | 6min |
 | 4 | 2 | - | - |
 | 5 | 2 | - | - |
+| 6 | 2 | - | - |
 
 **Recent Trend:**
 
