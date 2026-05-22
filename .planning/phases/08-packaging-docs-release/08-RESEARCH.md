@@ -338,7 +338,9 @@ git tag                          # v0.1.0 listed locally
 
 **Note:** All factual packaging claims (the install recipe, version locations, lock pinning, wheel contents, suite/lint status, tools exclusion, plot extra) are `[VERIFIED]` — not assumed.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+*Resolved into 08-01: Q1 → add an MIT LICENSE at the repo root (v0.1 locked choice); Q2 → bump the version in all 4 sites + `uv lock` (no hatchling dynamic version for v0.1); Q3 → defer enriching pyproject metadata (description/readme/license) to a later polish.*
 
 1. **LICENSE — which, and is it in scope?**
    - What we know: No LICENSE file exists anywhere in the repo (verified). The repo has a public `origin`. The DoD does not list a LICENSE.
