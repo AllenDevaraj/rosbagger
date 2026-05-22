@@ -137,3 +137,44 @@ def collect_bag_info(reader) -> BagInfo:
         duration_ns=duration_ns,
         size_bytes=_bag_size_bytes(reader),
     )
+
+
+def collect_table_schemas(reader) -> list:
+    """Return one Phase 3 ``TableSchema`` per single-msgtype topic (INSP-03).
+
+    For each topic (in sorted topic order) this resolves the sanitized,
+    collision-resolved table name and builds the column schema via the Phase 3
+    schema layer — ``reader.typestore`` + ``build_table_schema(msgtype, typestore,
+    topic=topic)`` — so the result is a list of ``TableSchema`` whose ``columns``
+    expose ``name`` / ``arrow_type`` / ``is_heavy_blob`` for the CLI to render.
+
+    Reads ONLY O(1) metadata (``reader.topics``) and the declared msgtype +
+    typestore; it NEVER calls ``reader.read()`` or deserializes a message body, so
+    a multi-GB bag yields its schema in constant time (threat T-04-05 — schema,
+    not rows).
+
+    Multi-msgtype guard (Pitfall 4 / threat T-04-08): a topic whose
+    ``TopicInfo.msgtype is None`` (``rosbags`` collapses a heterogeneous topic to
+    ``None``) is SKIPPED — passing ``None`` to ``build_table_schema`` would raise
+    ``KeyError: None``, so a heterogeneous-type recording cannot crash
+    ``bagq tables``.
+
+    The schema API is imported LAZILY inside this function (not at module top)
+    so ``inspect.py``'s top level stays free of the heavy ``schema`` / ``pyarrow``
+    import — preserving the offline invariant (Pitfall 5).
+    """
+    # Lazy import (Pitfall 5): keep inspect.py's top level free of the heavy
+    # schema/pyarrow stack so `import rosbagger_core` stays light.
+    from rosbagger_core.schema import TableNameResolver, build_table_schema
+
+    typestore = reader.typestore
+    resolver = TableNameResolver()
+    schemas: list = []
+    for topic, info in sorted(reader.topics.items()):
+        if info.msgtype is None:  # multi-msgtype topic (Pitfall 4) — skip, never pass None
+            continue
+        # Record the topic -> table-name mapping and share collision state across
+        # topics; build_table_schema sanitizes the name it stores on the schema.
+        resolver.resolve(topic)
+        schemas.append(build_table_schema(info.msgtype, typestore, topic=topic))
+    return schemas
