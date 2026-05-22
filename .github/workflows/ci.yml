@@ -1,0 +1,35 @@
+# No-ROS CI: runs lint + format + tests on a runner that has NO ROS installed.
+# This is the load-bearing proof of the project's "universal / no-ROS" promise.
+# The coverage gate (>=80%) is enforced via the pytest `addopts` in the root
+# pyproject.toml, so `uv run pytest` needs no extra flags here.
+#
+# Security (threat T-01-CI / T-01-DRIFT):
+#   - least-privilege `permissions: contents: read`; no secrets are referenced
+#     (none exist in this phase)
+#   - pinned action versions (actions/checkout@v4, astral-sh/setup-uv@v8)
+#   - `uv sync --locked` installs from the committed uv.lock for reproducible,
+#     tamper-evident builds
+name: ci
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest # NO ROS installed here — that is the point
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+      - run: uv python pin ${{ matrix.python-version }}
+      - run: uv sync --locked --dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest # --cov-fail-under=80 enforced via pyproject addopts
