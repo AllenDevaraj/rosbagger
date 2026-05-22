@@ -4,14 +4,14 @@ milestone: v0.1
 milestone_name: milestone
 status: executing
 stopped_at: Completed 01-01-PLAN.md (workspace scaffold); ready for 01-02
-last_updated: "2026-05-22T06:23:46.833Z"
+last_updated: "2026-05-22T06:31:18.471Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 0
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 01 (scaffold-test-harness) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [███░░░░░░░] 33%
 
 *Updated after each plan completion*
 | Phase 01 P01-01 | 3min | 3 tasks | 12 files |
+| Phase 01 P01-02 | 3min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 01]: rich is the single table-output dependency (ships via typer); tabulate dropped
 - [Phase 01]: Dev interpreter pinned to 3.10 (the floor) via .python-version
 - [Phase 01]: uv.lock commit deferred to plan 01-02 (file-ownership split); 01-01 owns manifests + sources only
+- [Phase 01]: Offline-import guard uses a sys.meta_path blocker (not the naive try/except) so it is meaningful on both clean CI and the ROS-equipped dev host
+- [Phase 01]: Coverage gate (>=80%) lives in pyproject pytest addopts so local and CI runs are identical; CI runs uv sync --locked for reproducible installs
+- [Phase 01]: Local test runs require PYTHONPATH empty to neutralize the host ROS-on-PYTHONPATH leak; CI is ROS-free so it is moot there
 
 ### Pending Todos
 
@@ -86,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T06:23:46.821Z
+Last session: 2026-05-22T06:30:55.746Z
 Stopped at: Completed 01-01-PLAN.md (workspace scaffold); ready for 01-02
 Resume file: None

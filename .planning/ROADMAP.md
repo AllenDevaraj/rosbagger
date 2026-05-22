@@ -42,7 +42,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Dev tooling: ruff (lint+format), pytest + pytest-cov (>=80%), no-ROS GitHub Actions CI, and the sys.meta_path offline-import guard -> SC2
+- [x] 01-02-PLAN.md — Dev tooling: ruff (lint+format), pytest + pytest-cov (>=80%), no-ROS GitHub Actions CI, and the sys.meta_path offline-import guard -> SC2
 - [ ] 01-03-PLAN.md — Fixture-bag generator: rosbags writes tiny ROS1/ROS2-sqlite/MCAP bags, re-openable via AnyReader, forward-looking content -> SC3
 
 ### Phase 2: Bag Reader Layer
@@ -180,7 +180,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Scaffold & Test Harness | 1/3 | In Progress|  |
+| 1. Scaffold & Test Harness | 2/3 | In Progress|  |
 | 2. Bag Reader Layer | 0/3 | Not started | - |
 | 3. Message→Table Schema | 0/3 | Not started | - |
 | 4. Inspect | 0/2 | Not started | - |
