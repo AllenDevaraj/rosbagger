@@ -85,3 +85,16 @@ def test_import_backend_subpackage_does_not_pull_heavy_query_stack():
     """
     leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.backend")
     assert leaked == [], f"import rosbagger_core.backend leaked the heavy stack: {leaked}"
+
+
+def test_import_output_subpackage_does_not_pull_heavy_query_stack():
+    """`import rosbagger_core.output` must NOT load duckdb/sqlglot/pyarrow either.
+
+    The Phase 6 output module (``render.py``/``export.py``) and its re-exporting
+    ``__init__`` keep their top levels stdlib-only: pyarrow/duckdb are imported
+    INSIDE the function bodies (``rows_for_display``/``to_json``/``write_table``),
+    so binding the re-exported names on package import pulls in no heavy stack.
+    Regression test for the 06-01 output seam (06-RESEARCH Pitfall 6).
+    """
+    leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.output")
+    assert leaked == [], f"import rosbagger_core.output leaked the heavy stack: {leaked}"
