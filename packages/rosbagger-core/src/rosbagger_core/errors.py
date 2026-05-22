@@ -105,3 +105,31 @@ class UnresolvedTypeError(ValueError):
             "(use get_types_from_idl for .idl). Then pass it as the reader's default_typestore."
         )
         super().__init__(guidance if not detail else f"{guidance}\n({detail})")
+
+
+class NoTransformsError(ValueError):
+    """A bag carries neither ``/tf`` nor ``/tf_static`` — nothing to analyze (TF-01).
+
+    Raised by :func:`rosbagger_core.tf.collect_tf_report` when the open reader's
+    ``topics`` contain neither standard TF topic, so there is no transform graph to
+    build (the empty-input teaching case). Like its siblings here it subclasses
+    ``ValueError`` (so existing ``except ValueError`` handlers keep working), CARRIES
+    the structured data the user needs to recover — the bag's available topics on
+    ``.available`` — and builds the plain-text teaching message in core. The CLI
+    mechanism (Plan 03) widens ``bagq``'s ``teaching_errors`` wrapper by one import +
+    one ``except`` entry to present this message with no traceback.
+
+    Stays stdlib-only: it names no other class and adds no import (the module's lone
+    ``difflib`` import is untouched), so ``import rosbagger_core.errors`` keeps pulling
+    none of the heavy stack / no ``rosbags`` (the offline invariant in the module
+    docstring).
+    """
+
+    def __init__(self, available_topics: list[str]) -> None:
+        self.available = available_topics
+        hint = (
+            f" Available topics: {', '.join(sorted(available_topics))}."
+            if available_topics
+            else " The bag has no topics."
+        )
+        super().__init__(f"Bag has no /tf or /tf_static topics.{hint}")
