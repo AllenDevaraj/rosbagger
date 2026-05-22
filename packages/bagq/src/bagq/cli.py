@@ -6,7 +6,9 @@ Defines the typer application bound to the symbol ``app`` so the console-script
 ``bagq info`` (the Inspect overview) and ``bagq tables`` (per-topic table name +
 column schema). Phase 6 adds ``bagq query`` — run SQL over a bag and route the
 result to a rich stdout table (default), a CSV/Parquet file (``-o``), or
-``--format csv|parquet|json``.
+``--format csv|parquet|json``. Phase 9 adds ``bagq tf`` — analyze a bag's
+``/tf`` + ``/tf_static`` transform graph and print a per-edge summary table plus
+a publish-gap (dropout) timeline (``--format table|json``).
 
 Keep this module light: import only typer/rich at top level — do NOT import
 rosbagger-core's heavy stack (``rosbags``/``pyarrow``/``duckdb``) here. The
@@ -73,7 +75,9 @@ def teaching_errors(fn):
 
     07-02 WIDENS the teaching CONTENT by adding new typed errors (``UnknownColumnError`` /
     ``UnresolvedTypeError``) to the import below and to the ``except (...)`` tuple — a
-    one-line change at each, with the wrapper structure unchanged.
+    one-line change at each, with the wrapper structure unchanged. 09-03 widens it once
+    more for ``NoTransformsError`` (``bagq tf`` on a bag with no ``/tf``/``/tf_static``),
+    the same one-import + one-``except``-entry recipe.
 
     The errors are imported LAZILY inside the wrapper so ``cli.py``'s top level stays
     typer/rich-only (offline-guard discipline); ``rosbagger_core.backend.query`` is
@@ -87,6 +91,7 @@ def teaching_errors(fn):
         # 07-02 widened this to the full teaching set; errors.py is stdlib-only so the
         # import pulls no heavy stack until the wrapped command actually runs.
         from rosbagger_core.errors import (
+            NoTransformsError,
             UnknownColumnError,
             UnknownTableError,
             UnresolvedTypeError,
@@ -94,7 +99,12 @@ def teaching_errors(fn):
 
         try:
             return fn(*args, **kwargs)
-        except (UnknownTableError, UnknownColumnError, UnresolvedTypeError) as e:
+        except (
+            UnknownTableError,
+            UnknownColumnError,
+            UnresolvedTypeError,
+            NoTransformsError,
+        ) as e:
             # Each carries its own teaching message: did-you-mean / available tables
             # (CLI-02), the referenced tables' columns (CLI-03), or .msg/.idl
             # registration guidance (CLI-04). Present cleanly with no traceback.
@@ -168,6 +178,22 @@ def _human_size(num_bytes: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024.0
     return f"{size:.1f} TB"  # pragma: no cover - unreachable (GB branch returns first)
+
+
+def _human_dur(ns: int) -> str:
+    """Format a nanosecond duration human-readably (the TF gap/interval analog of ``_human_size``).
+
+    Presentation-only — the ``rosbagger_core.tf`` API keeps every duration as raw
+    integer nanoseconds (``gap_ns``/``max_gap_ns``/``expected_ns``); this renderer
+    formats them for ``bagq tf``. Sub-second values print as milliseconds (a whole
+    number of ms drops the decimal, e.g. ``800ms``; a fractional ms keeps one, e.g.
+    ``1.5ms``); a second or more prints seconds with two decimals (e.g. ``12.40s``).
+    The 09-01 seeded ``800_000_000`` ns dropout therefore renders exactly as ``800ms``.
+    """
+    ms = ns / 1e6
+    if ms < 1000.0:
+        return f"{int(ms)}ms" if ms == int(ms) else f"{ms:.1f}ms"
+    return f"{ns / 1e9:.2f}s"
 
 
 def _render_bag_info(info, console: Console | None = None) -> None:
@@ -389,6 +415,137 @@ def query(
         typer.echo(to_json(result))
     else:
         raise typer.BadParameter(f"Unknown format {fmt!r}; use table|csv|parquet|json")
+
+
+def _render_tf_report(report, console: Console | None = None) -> None:
+    """Render a ``TfReport`` (rosbagger_core.tf) as the two-table ``bagq tf`` view.
+
+    Decision 8 / 09-RESEARCH "Output / Table Format Proposal": a header line, then a
+    per-edge summary table ("TF edges"), then the publish-gap timeline ("TF gaps" —
+    the TF-01 deliverable). House style mirrors ``_render_bag_info``: titled
+    ``rich.table.Table``, right-justified numerics, em-dash ``—`` for every missing
+    value (static / single-sample edges have no rate / no max-gap; the gaps table is
+    replaced by a "no gaps detected" line when the report has none).
+
+    All values are strings (frame ids) or ints (ns) sourced from the analyzer; the
+    renderer only formats them (``_human_dur`` for durations) — there is no
+    eval/format-injection surface (threat T-09-09).
+    """
+    console = console or Console()
+
+    n_static = sum(1 for e in report.edges if e.static)
+    n_dynamic = len(report.edges) - n_static
+    # Whole-bag span for the header + per-edge rate; guard a None/zero span to "—".
+    span_s = None
+    if report.start_ns is not None and report.end_ns is not None:
+        span_s = (report.end_ns - report.start_ns) / 1e9
+    span_clause = f" · span 0.00s–{span_s:.2f}s" if span_s is not None else " · span —"
+    console.print(
+        f"TF graph: {len(report.frames)} frames, "
+        f"{n_dynamic} dynamic edges, {n_static} static edges{span_clause}"
+    )
+
+    edges_table = Table(title="TF edges")
+    edges_table.add_column("parent")
+    edges_table.add_column("child")
+    edges_table.add_column("kind")
+    edges_table.add_column("count", justify="right")
+    edges_table.add_column("rate(Hz)", justify="right")
+    edges_table.add_column("max gap", justify="right")
+    edges_table.add_column("gaps", justify="right")
+    for e in report.edges:
+        kind = "static" if e.static else "dynamic"
+        # Rate is meaningful only for a multi-sample dynamic edge over a positive span.
+        if e.static or e.samples < 2 or not span_s or span_s <= 0:
+            rate = "—"
+        else:
+            rate = f"{e.samples / span_s:.1f}"
+        max_gap = _human_dur(e.max_gap_ns) if e.max_gap_ns is not None else "—"
+        edges_table.add_row(
+            e.parent, e.child, kind, str(e.samples), rate, max_gap, str(e.gap_count)
+        )
+    console.print(edges_table)
+
+    if not report.gaps:
+        # No empty table — the clean-bag case is a single informational line.
+        console.print("no gaps detected")
+        return
+    gaps_table = Table(title="TF gaps")
+    gaps_table.add_column("parent → child")
+    gaps_table.add_column("gap", justify="right")
+    gaps_table.add_column("at (bag t)", justify="right")
+    gaps_table.add_column("at (abs ns)", justify="right")
+    for g in report.gaps:
+        gaps_table.add_row(
+            f"{g.parent} → {g.child}",
+            _human_dur(g.gap_ns),
+            f"t={g.at_rel_ns / 1e9:.2f}s",
+            str(g.at_ns),
+        )
+    console.print(gaps_table)
+
+
+@app.command()
+@teaching_errors
+def tf(
+    bags: Annotated[
+        list[Path],
+        typer.Argument(help="One or more bag paths (file or directory)."),
+    ],
+    gap_multiplier: Annotated[
+        float,
+        typer.Option(
+            "--gap-multiplier",
+            help="Flag a delta as a gap when it exceeds this × the edge's median interval.",
+        ),
+    ] = 5.0,
+    gap_ms: Annotated[
+        float | None,
+        typer.Option(
+            "--gap-ms",
+            help="Absolute gap threshold in milliseconds (overrides the multiplier).",
+        ),
+    ] = None,
+    fmt: Annotated[
+        str,
+        typer.Option("--format", help="table|json (default table)."),
+    ] = "table",
+) -> None:
+    """Analyze a bag's TF graph and report per-edge publish gaps (dropouts).
+
+    Loads ``/tf`` + ``/tf_static`` from one or more bags, builds the parent→child
+    transform graph, and detects per-edge dropouts via a median-inter-arrival ×
+    ``--gap-multiplier`` threshold (default 5.0), or an absolute ``--gap-ms`` override.
+    Default prints a per-edge summary table plus a gap timeline to stdout (TF-01);
+    ``--format json`` emits the machine-readable report. A bag with neither ``/tf`` nor
+    ``/tf_static`` surfaces a clean ``NoTransformsError`` via @teaching_errors (Exit 1,
+    no traceback).
+    """
+    # Import the core API lazily (inside the body) so module import stays light and
+    # `bagq --help` pays no rosbags import cost (offline-guard discipline).
+    import dataclasses
+    import json
+
+    from rosbagger_core.reader import RosbagsReader
+    from rosbagger_core.tf import collect_tf_report
+
+    # NoTransformsError (no /tf or /tf_static) and FileNotFoundError (missing bag) are
+    # caught by @teaching_errors -> a clean one-line message + Exit(1), no traceback.
+    # The frozen TfReport is fully built inside collect_tf_report, so it outlives the
+    # reader `with` block.
+    with RosbagsReader(bags) as reader:
+        report = collect_tf_report(reader, gap_multiplier=gap_multiplier, gap_ms=gap_ms)
+
+    if fmt == "json":
+        # dataclasses.asdict recurses the frozen report; the only non-JSON field is the
+        # frames frozenset -> a sorted list (consistent with `bagq query --format json`).
+        payload = dataclasses.asdict(report)
+        payload["frames"] = sorted(report.frames)
+        typer.echo(json.dumps(payload))
+    elif fmt == "table":
+        _render_tf_report(report)
+    else:
+        raise typer.BadParameter(f"Unknown format {fmt!r}; use table|json")
 
 
 if __name__ == "__main__":  # pragma: no cover
