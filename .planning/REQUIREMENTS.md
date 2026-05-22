@@ -85,16 +85,38 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 
 ## Traceability
 
-Populated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (all v1 REQ-IDs) | TBD | Pending |
+| READ-01 | Phase 2 | Pending |
+| READ-02 | Phase 2 | Pending |
+| READ-03 | Phase 2 | Pending |
+| READ-04 | Phase 2 | Pending |
+| READ-05 | Phase 2 | Pending |
+| QURY-01 | Phase 3 | Pending |
+| QURY-02 | Phase 3 | Pending |
+| QURY-03 | Phase 3 | Pending |
+| QURY-04 | Phase 3 | Pending |
+| QURY-07 | Phase 3 | Pending |
+| INSP-01 | Phase 4 | Pending |
+| INSP-02 | Phase 4 | Pending |
+| INSP-03 | Phase 4 | Pending |
+| QURY-05 | Phase 5 | Pending |
+| QURY-06 | Phase 5 | Pending |
+| OUT-01 | Phase 6 | Pending |
+| OUT-02 | Phase 6 | Pending |
+| OUT-03 | Phase 6 | Pending |
+| OUT-04 | Phase 6 | Pending |
+| CLI-01 | Phase 7 | Pending |
+| CLI-02 | Phase 7 | Pending |
+| CLI-03 | Phase 7 | Pending |
+| CLI-04 | Phase 7 | Pending |
 
 **Coverage:**
-- v1 requirements: 21 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 21 ⚠️
+- v1 requirements: 23 total
+- Mapped to phases: 23
+- Unmapped: 0 ✓
+
+> Phases 1 (Scaffold & Test Harness) and 8 (Packaging, Docs & Release) are infrastructure phases that carry the Definition of Done rather than specific REQ-IDs.
 
 ---
 *Requirements defined: 2026-05-21*
