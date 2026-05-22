@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: planning
-stopped_at: v0.2 milestone roadmapped (phases 9-14); ready to plan Phase 9 (TF Debugger)
-last_updated: 2026-05-22T18:44:16.741Z
-last_activity: 2026-05-22 -- v0.1 shipped (awaiting push); v0.2 roadmap created (TF/ergonomics/edit/live/GUI)
+status: executing
+stopped_at: "Completed 08-01-PLAN.md (Phase 8 plan 1/1 — PHASE 8 COMPLETE; FINAL v0.1 phase; milestone autonomously DONE). Shipped rosbagger v0.1.0: bumped version 0.0.0->0.1.0 in all 4 sources (2 pyproject `version` + 2 `__init__.py` `__version__`) + re-locked uv.lock (both bagq + rosbagger-core pins 0.1.0) so `uv sync --locked --dev` stays green; `bagq --version` -> `bagq 0.1.0`. Added MIT LICENSE at repo root. Expanded README: verified plain-pip recipe `pip install ./packages/rosbagger-core ./packages/bagq` (both packages, one command — pip ignores [tool.uv.sources]) + quoted bagq[plot] extra + uv dev path + per-command quickstart (info/tables/query with -o/--format/--plot) + errors-that-teach + offline/no-ROS guarantee; removed the "lands in a later phase" placeholder; no PyPI/PYTHONPATH leakage. Verified LOCALLY: SC1 clean-room pip install in a fresh throwaway venv (not .venv, PYTHONPATH='') -> bagq --help + subcommand --help all exit 0; SC2 offline import from neutral cwd /tmp with find_spec('rclpy')/('rosbag2_py')/('tools') all None (no ROS dep, no tools/ in either wheel). Local CI-equivalent gate green (uv sync --locked --dev / ruff check / ruff format --check / pytest = 255 passed, 97.82%). Annotated v0.1.0 tag created LOCALLY (points at 936238b). NO deviations. SC3 SPLIT: local gate + local tag DONE; the SOLE human follow-up is `git push origin main && git push origin v0.1.0` + observe CI green — BLOCKED by no gh CLI / no push credential (standing blocker), documented in 08-01-SUMMARY (not a stalling checkpoint). v0.1 MILESTONE COMPLETE except the push."
+last_updated: "2026-05-22T23:30:49.554Z"
+last_activity: 2026-05-22 -- Phase 09 planning complete
 progress:
   total_phases: 14
   completed_phases: 8
-  total_plans: 18
+  total_plans: 21
   completed_plans: 18
-  percent: 100
+  percent: 57
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 Phase: 8
 Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-22
+Status: Ready to execute
+Last activity: 2026-05-22 -- Phase 09 planning complete
 
 Progress: [██████████] 100%
 
