@@ -426,7 +426,9 @@ def _render_info(bag_info, json_out: bool) -> None:
 
 > No CONTEXT.md exists for this phase, so there are no locked decisions to honor — the above assumptions are open for the planner/discuss-phase to confirm. All are LOW/NONE risk because they are presentation/naming choices, not correctness requirements; the core data path (metadata → dataclass → render) is fully VERIFIED.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+*All advisory presentation choices, resolved into the plans: OQ1 → accept multiple bag paths (`BAG...`); OQ2 → raw `size_bytes: int` in the API, human-readable formatting in the CLI only; OQ3 → table + footer layout. `--json` (A6) deferred as optional/out-of-scope.*
 
 1. **Should `info`/`tables` accept multiple bag paths (READ-05 multi-bag) in v1, or a single bag?**
    - What we know: `RosbagsReader` already accepts an iterable of same-format paths; `AnyReader` aggregates counts/duration; size sums per-path (Pattern 3). The design spec writes `bagq info BAG...` / `bagq tables BAG...` (plural).
