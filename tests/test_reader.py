@@ -79,9 +79,7 @@ def fixture_bags(tmp_path_factory) -> dict[str, Path]:
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
-def test_reader_opens_and_yields_nine_messages(
-    fixture_bags: dict[str, Path], fmt: str
-) -> None:
+def test_reader_opens_and_yields_nine_messages(fixture_bags: dict[str, Path], fmt: str) -> None:
     """Each format opens via the context manager and yields exactly 9 Messages.
 
     Exercises READ-01 (ROS 2 sqlite), READ-02 (ROS 2 MCAP), READ-03 (ROS 1)
@@ -134,9 +132,7 @@ def test_reader_stamp_derivation(fixture_bags: dict[str, Path], fmt: str) -> Non
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
-def test_reader_topics_metadata_without_iteration(
-    fixture_bags: dict[str, Path], fmt: str
-) -> None:
+def test_reader_topics_metadata_without_iteration(fixture_bags: dict[str, Path], fmt: str) -> None:
     """topics/connections are available on an opened reader WITHOUT calling read()."""
     with RosbagsReader(fixture_bags[fmt]) as reader:
         assert set(reader.topics) == EXPECTED_TOPICS
