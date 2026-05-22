@@ -86,10 +86,17 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
-- [ ] 03-01: Topic→table name sanitization
-- [ ] 03-02: Message flattening + time columns (`t`/`t_ns`/`stamp`/`topic`)
-- [ ] 03-03: Arrays as LIST/STRUCT + lazy blob handling
+- [ ] 03-01-PLAN.md — Topic→table name sanitization (`/a/b`→`a_b`, collision-resolving `TableNameResolver`) + the backend-neutral `ColumnDef`/`TableSchema` model contract -> QURY-01
+
+**Wave 2** *(blocked on 03-01)*
+
+- [ ] 03-02-PLAN.md — ROS→Arrow type map + recursive `get_msgdef().fields` flatten walk → dotted columns, LIST/STRUCT types, heavy-blob flag, and the four standard `t`/`t_ns`/`stamp`/`topic` columns -> QURY-02/03/04
+
+**Wave 3** *(blocked on 03-02)*
+
+- [ ] 03-03-PLAN.md — Row extraction + `build_arrow_table` (pyarrow Table from a Message stream), lazy heavy-blob `include` seam, sqlglot identifier quoting, and the public `schema/` API -> QURY-03/07
 
 ### Phase 4: Inspect
 
