@@ -88,7 +88,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Topic→table name sanitization (`/a/b`→`a_b`, collision-resolving `TableNameResolver`) + the backend-neutral `ColumnDef`/`TableSchema` model contract -> QURY-01
+- [x] 03-01-PLAN.md — Topic→table name sanitization (`/a/b`→`a_b`, collision-resolving `TableNameResolver`) + the backend-neutral `ColumnDef`/`TableSchema` model contract -> QURY-01
 
 **Wave 2** *(blocked on 03-01)*
 
@@ -196,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 |-------|----------------|--------|-----------|
 | 1. Scaffold & Test Harness | 3/3 | Complete   | 2026-05-22 |
 | 2. Bag Reader Layer | 3/3 | Complete    | 2026-05-22 |
-| 3. Message→Table Schema | 0/3 | Not started | - |
+| 3. Message→Table Schema | 1/3 | In Progress|  |
 | 4. Inspect | 0/2 | Not started | - |
 | 5. Query Engine | 0/2 | Not started | - |
 | 6. Output & Export | 0/2 | Not started | - |

@@ -23,7 +23,7 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 
 ### Query
 
-- [ ] **QURY-01**: Map each topic to one table with a sanitized name (`/camera/image_raw` → `camera_image_raw`)
+- [x] **QURY-01**: Map each topic to one table with a sanitized name (`/camera/image_raw` → `camera_image_raw`)
 - [ ] **QURY-02**: Flatten nested scalar fields to dotted, quoted columns (e.g. `"twist.twist.linear.x"`)
 - [ ] **QURY-03**: Represent arrays as `LIST` columns; arrays of sub-messages as `LIST` of `STRUCT`
 - [ ] **QURY-04**: Add always-present columns `t` (`TIMESTAMP_NS`), `t_ns` (`BIGINT`), `stamp`, `topic`
@@ -92,7 +92,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | READ-03 | Phase 2 | Complete |
 | READ-04 | Phase 2 | Complete |
 | READ-05 | Phase 2 | Complete |
-| QURY-01 | Phase 3 | Pending |
+| QURY-01 | Phase 3 | Complete |
 | QURY-02 | Phase 3 | Pending |
 | QURY-03 | Phase 3 | Pending |
 | QURY-04 | Phase 3 | Pending |

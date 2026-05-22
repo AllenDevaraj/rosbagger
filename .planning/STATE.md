@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-03-PLAN.md (fixture-backed RosbagsReader test suite); Phase 2 complete (3/3), Phase 3 (Message→Table Schema) next
-last_updated: "2026-05-22T08:36:42.863Z"
-last_activity: 2026-05-22 -- Phase 3 planning complete
+stopped_at: Completed 03-01-PLAN.md (schema names + ColumnDef/TableSchema model contract); Phase 3 in progress (1/3), 03-02 (flatten + standard time columns) next
+last_updated: "2026-05-22T08:42:36.076Z"
+last_activity: 2026-05-22 -- Completed 03-01 (schema names + model contract)
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 9
-  completed_plans: 6
-  percent: 25
+  completed_plans: 7
+  percent: 78
 ---
 
 # Project State
@@ -26,40 +26,44 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 3
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-22 -- Phase 3 planning complete
+Plan: 03-02 (next)
+Status: In progress — 03-01 complete (1/3 plans this phase)
+Last activity: 2026-05-22 -- Completed 03-01 (schema names + model contract)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 9
-- Average duration: —
-- Total execution time: 0 hours
+- Total plans completed: 7
+- Average duration: ~4 min
+- Total execution time: ~0.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 3 | - | - |
-| 02 | 3 | - | - |
-| 2 | 3 | - | - |
+| 01 | 3 | 12min | 4min |
+| 02 | 3 | 11min | ~4min |
+| 03 | 1 (of 3) | 5min | 5min |
 
 **Recent Trend:**
 
-- Last 5 plans: —
-- Trend: —
+- Last 5 plans: 6min, 3min, 4min, 4min, 5min
+- Trend: steady (~4-5 min/plan)
 
 *Updated after each plan completion*
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
 | Phase 01 P01-01 | 3min | 3 tasks | 12 files |
 | Phase 01 P01-02 | 3min | 3 tasks | 6 files |
 | Phase 01 P01-03 | 6min | 2 tasks | 3 files |
 | Phase 02 P02-01 | 3min | 2 tasks | 2 files |
 | Phase 02 P02-02 | 4min | 2 tasks | 2 files |
 | Phase 02 P02-03 | 4min | 2 tasks | 1 file |
+| Phase 03 P03-01 | 5min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -93,6 +97,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 02-03]: Multi-bag merge fixtures write each same-format bag into its OWN tmp dir (write_ros2_sqlite_bag always names the dir "ros2_sqlite", so a shared parent would collide); two ROS2 + two ROS1 each -> 18 msgs, ascending t_ns
 - [Phase 02-03]: Resolved research Open Question 1 / Assumption A1 into a verified fact — two ROS2 sqlite bags DO merge as one time-ordered dataset (msgcount sums to 6/topic); committed test_two_ros2_bags_merge_as_one_dataset proves it
 - [Phase 02-03]: Coverage gate restored — full suite 30 tests green at 96.63% (>=80% gate met); the 3 uncovered rosbags_reader.py lines are defensive guards (missing-sec/nanosec branch + topics/connections before-open RuntimeError). No coverage pragmas added (per plan)
+- [Phase 03-01]: schema/model.py types ColumnDef.arrow_type as `object` (not pyarrow.DataType) so the public model stays stdlib-only — keeps `import rosbagger_core` light and the model trivially unit-testable; real pyarrow type is supplied by 03-02/03-03 callers
+- [Phase 03-01]: heavy-blob `include` set keys on the dotted column name (research Open Q2) — degenerates to the bare name for the standard top-level blobs (Image.data/PointCloud2.data) and handles a hypothetical nested blob with no API change
+- [Phase 03-01]: TableNameResolver de-duplicates case-insensitively (SQL folds case: /Foo vs /foo collide), deterministically (a_b, a_b_2, ...), and idempotently (re-resolving a topic returns its first name and burns no suffix); the topic->name dict is the source of truth and `mapping` returns a copy so Phase 4 can't mutate state
+- [Phase 03-01]: arrow_schema() left as NotImplementedError("filled in 03-03") — the pyarrow build is intentionally deferred so this interface-defining wave ships pyarrow-free; offline guard unchanged (import rosbagger_core loads no schema/ submodule); full suite 49 passed at 97.86%
 
 ### Pending Todos
 
@@ -112,6 +120,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T08:07:02Z
-Stopped at: Completed 02-03-PLAN.md (fixture-backed RosbagsReader test suite); Phase 2 complete (3/3), Phase 3 (Message→Table Schema) next
+Last session: 2026-05-22T08:42:36Z
+Stopped at: Completed 03-01-PLAN.md (schema names + ColumnDef/TableSchema model contract); Phase 3 in progress (1/3), 03-02 (flatten + standard time columns) next
 Resume file: None
