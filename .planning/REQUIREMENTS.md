@@ -12,7 +12,7 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 - [ ] **READ-01**: Open ROS 2 (sqlite3) bags through a `BagReader` interface with no ROS install
 - [ ] **READ-02**: Open ROS 2 (MCAP) bags through the same interface
 - [ ] **READ-03**: Open ROS 1 (`.bag`) files through the same interface
-- [ ] **READ-04**: Iterate messages as `(topic, t, stamp, msgtype, deserialized fields)`
+- [x] **READ-04**: Iterate messages as `(topic, t, stamp, msgtype, deserialized fields)`
 - [ ] **READ-05**: Open multiple bag paths as one logical dataset
 
 ### Inspect
@@ -90,7 +90,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | READ-01 | Phase 2 | Pending |
 | READ-02 | Phase 2 | Pending |
 | READ-03 | Phase 2 | Pending |
-| READ-04 | Phase 2 | Pending |
+| READ-04 | Phase 2 | Complete |
 | READ-05 | Phase 2 | Pending |
 | QURY-01 | Phase 3 | Pending |
 | QURY-02 | Phase 3 | Pending |

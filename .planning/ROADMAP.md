@@ -61,7 +61,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — `BagReader` ABC seam + frozen `Message` record dataclass (topic, t, t_ns, stamp, msgtype, msg); ROS-free abstract contract -> READ-04
+- [x] 02-01-PLAN.md — `BagReader` ABC seam + frozen `Message` record dataclass (topic, t, t_ns, stamp, msgtype, msg); ROS-free abstract contract -> READ-04
 
 **Wave 2** *(blocked on 02-01)*
 
@@ -188,7 +188,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Scaffold & Test Harness | 3/3 | Complete   | 2026-05-22 |
-| 2. Bag Reader Layer | 0/3 | Not started | - |
+| 2. Bag Reader Layer | 1/3 | In Progress|  |
 | 3. Message→Table Schema | 0/3 | Not started | - |
 | 4. Inspect | 0/2 | Not started | - |
 | 5. Query Engine | 0/2 | Not started | - |
