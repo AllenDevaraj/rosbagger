@@ -114,7 +114,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — `bagq info`: `rosbagger_core/inspect.py` (`BagInfo`/`TopicInfo` + `collect_bag_info`) over O(1) AnyReader metadata + additive reader properties; thin `bagq info` rich command -> INSP-01/02
+- [x] 04-01-PLAN.md — `bagq info`: `rosbagger_core/inspect.py` (`BagInfo`/`TopicInfo` + `collect_bag_info`) over O(1) AnyReader metadata + additive reader properties; thin `bagq info` rich command -> INSP-01/02
 
 **Wave 2** *(blocked on 04-01)*
 
@@ -201,7 +201,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 1. Scaffold & Test Harness | 3/3 | Complete   | 2026-05-22 |
 | 2. Bag Reader Layer | 3/3 | Complete    | 2026-05-22 |
 | 3. Message→Table Schema | 3/3 | Complete    | 2026-05-22 |
-| 4. Inspect | 0/2 | Not started | - |
+| 4. Inspect | 1/2 | In Progress|  |
 | 5. Query Engine | 0/2 | Not started | - |
 | 6. Output & Export | 0/2 | Not started | - |
 | 7. CLI & Teaching Errors | 0/2 | Not started | - |

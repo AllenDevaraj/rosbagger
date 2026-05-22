@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-03-PLAN.md (row extraction + pyarrow Table build + lazy heavy-blob include seam + sqlglot quote_ident + public schema/ API); Phase 3 COMPLETE (3/3); Phase 4 (Inspect — bagq info / bagq tables) next
-last_updated: "2026-05-22T09:28:34.902Z"
-last_activity: 2026-05-22 -- Phase 4 planning complete
+stopped_at: Completed 04-01-PLAN.md (rosbagger_core.inspect BagInfo/TopicInfo + collect_bag_info, O(1) metadata only; six additive RosbagsReader properties + ABC; thin `bagq info` rich renderer). INSP-01/02 done. Phase 4 plan 2 of 2 (`bagq tables`, INSP-03) next.
+last_updated: "2026-05-22T09:36:24.533Z"
+last_activity: 2026-05-22 -- Completed 04-01 (bagq info)
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 11
-  completed_plans: 9
-  percent: 38
+  completed_plans: 10
+  percent: 91
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 4
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-22 -- Phase 4 planning complete
+Plan: 04-01 complete (1 of 2)
+Status: Executing — 04-02 (bagq tables, INSP-03) next
+Last activity: 2026-05-22 -- Completed 04-01 (bagq info)
 
-Progress: [████░░░░░░] 38% (3/8 phases)
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -47,11 +47,11 @@ Progress: [████░░░░░░] 38% (3/8 phases)
 | 01 | 3 | 12min | 4min |
 | 02 | 3 | 11min | ~4min |
 | 03 | 3 | 17min | ~6min |
-| 3 | 3 | - | - |
+| 04 | 1 (of 2) | 7min | 7min |
 
 **Recent Trend:**
 
-- Last 5 plans: 4min, 4min, 5min, 5min, 7min
+- Last 5 plans: 4min, 5min, 5min, 7min, 7min
 - Trend: steady (~4-7 min/plan)
 
 *Updated after each plan completion*
@@ -67,6 +67,7 @@ Progress: [████░░░░░░] 38% (3/8 phases)
 | Phase 03 P03-01 | 5min | 3 tasks | 3 files |
 | Phase 03 P03-02 | 5min | 3 tasks | 3 files |
 | Phase 03 P03-03 | 7min | 3 tasks | 6 files |
+| Phase 04 P04-01 | 7min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 03-03]: arrow_schema implemented — pyarrow imported INSIDE the method (not at model.py top) to keep the backend-neutral model importable without the heavy stack; stamp field explicitly nullable; build arrays with explicit ColumnDef.arrow_type (never inferred, Pitfall 1) and ndarrays passed straight through (Pitfall 2)
 - [Phase 03-03]: quote_ident via sqlglot.exp.to_identifier(quoted=True) is the SOLE identifier-safety boundary (T-03-06) — escapes embedded quotes, neutralizes injection; NO f-string hand-quoting. Verified end-to-end: cmd_vel/imu Message stream -> pa.Table; DuckDB round-trip yields TIMESTAMP_NS/BIGINT/DOUBLE/VARCHAR and a quoted-ident query returns correct rows
 - [Phase 03-03]: zero real `import duckdb` in shipped schema/ code (only docstring "do NOT import" mentions) — DuckDB round-trip exercised as an ad-hoc dev check only, no duckdb test dep added. public schema/__init__ re-exports the API (mirrors reader); top-level import rosbagger_core leaks no pyarrow/rosbags (offline guard 2/2, verified in a fresh subprocess). Updated 03-01's stale arrow_schema 'deferred' test (Rule 1). Full suite 88 passed at 96.43%. PHASE 3 COMPLETE (3/3)
+- [Phase 04-01]: API-first inspect — all computation in rosbagger_core.inspect (BagInfo/TopicInfo frozen+slotted dataclasses + collect_bag_info); bagq/cli.py is a thin rich renderer. inspect.py stdlib-only (dataclasses/pathlib), kept OUT of __init__ so import rosbagger_core stays light (offline guard 2/2). Mirrors the reader/schema subpackage import discipline
+- [Phase 04-01]: collect_bag_info reads ONLY O(1) AnyReader metadata (message_count/topics/start/end/duration) and NEVER calls reader.read() (threat T-04-01 — constant-time on hostile/huge bags); proven by a test that monkeypatches reader.read to raise
+- [Phase 04-01]: Verified single-fixture duration is 200_000_001 ns (end 1_200_000_001 - start 1_000_000_000), NOT the round 200_000_000 the plan/RESEARCH interfaces block stated (the RESEARCH Code Example already showed 200000001). Tests assert the runtime value; per-topic Hz via pytest.approx(15.0) since 3/0.200000001s != exactly 15.0 (Rule 1 fix, test-only)
+- [Phase 04-01]: Empty-bag guard (message_count==0 -> None start/end/duration, None Hz) so AnyReader's sys.maxsize/large-negative sentinel never surfaces (Pitfall 1); rendered as em dash. Format-aware size: ROS1 file stat().st_size, ROS2 dir summed rglob file sizes (not the ~4KB inode), summed across paths (READ-05). size_bytes stays raw int in the API; byte->human (B/KB/MB/GB) is CLI-only (Open Q2)
+- [Phase 04-01]: Six additive RosbagsReader properties (message_count/duration/start_time/end_time/typestore/paths) mirror the topics before-open RuntimeError guard; paths is the exception (reads no _reader, callable before open, returns a copy). All six also declared on the BagReader ABC (loosely typed int/object/list) so a future rosbag2_py backend satisfies the contract. Phase 2 read/open/close/topics/connections untouched. typer Argument via typing.Annotated (ruff B008-clean). Full suite 110 passed at 97.63%; cli.py + inspect.py at 100%
 
 ### Pending Todos
 
@@ -131,6 +137,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T09:01:44Z
-Stopped at: Completed 03-03-PLAN.md (row extraction + pyarrow Table build + lazy heavy-blob include seam + sqlglot quote_ident + public schema/ API); Phase 3 COMPLETE (3/3); Phase 4 (Inspect — bagq info / bagq tables) next
+Last session: 2026-05-22T09:36:24Z
+Stopped at: Completed 04-01-PLAN.md (rosbagger_core.inspect BagInfo/TopicInfo + collect_bag_info, O(1) metadata only; six additive RosbagsReader properties + ABC declarations; thin `bagq info` rich table + duration/count/size footer). INSP-01/02 done; full suite 110 passed at 97.63%. Phase 4 plan 2 of 2 (`bagq tables`, INSP-03) next.
 Resume file: None

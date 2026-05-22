@@ -17,8 +17,8 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 
 ### Inspect
 
-- [ ] **INSP-01**: `bagq info BAG` lists each topic with its message type and message count
-- [ ] **INSP-02**: `bagq info BAG` reports bag duration, approximate per-topic Hz, and size
+- [x] **INSP-01**: `bagq info BAG` lists each topic with its message type and message count
+- [x] **INSP-02**: `bagq info BAG` reports bag duration, approximate per-topic Hz, and size
 - [ ] **INSP-03**: `bagq tables BAG` prints each topic's table name and column schema
 
 ### Query
@@ -97,8 +97,8 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | QURY-03 | Phase 3 | Complete |
 | QURY-04 | Phase 3 | Complete |
 | QURY-07 | Phase 3 | Complete |
-| INSP-01 | Phase 4 | Pending |
-| INSP-02 | Phase 4 | Pending |
+| INSP-01 | Phase 4 | Complete |
+| INSP-02 | Phase 4 | Complete |
 | INSP-03 | Phase 4 | Pending |
 | QURY-05 | Phase 5 | Pending |
 | QURY-06 | Phase 5 | Pending |
