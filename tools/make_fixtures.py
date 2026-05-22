@@ -26,6 +26,7 @@ API (an internal contract later phases consume)::
     write_ros1_bag(dest_dir)        -> Path  # single-file .bag
     write_ros2_sqlite_bag(dest_dir) -> Path  # ROS 2 sqlite3 bag directory
     write_ros2_mcap_bag(dest_dir)   -> Path  # ROS 2 MCAP bag directory
+    write_tf_bag(dest_dir, *, ros1[, storage]) -> Path  # /tf + /tf_static with a seeded gap
     make_all_fixtures(dest_dir)     -> dict[str, Path]  # {"ros1", "ros2_sqlite", "ros2_mcap"}
 
 Run as a module to write the three bags to disk for manual ``bagq`` testing::
@@ -53,10 +54,21 @@ _N_MSGS = 3
 _TOPIC_CMD_VEL = "/cmd_vel"
 _TOPIC_IMU = "/imu"
 _TOPIC_IMAGE = "/image"
+_TOPIC_TF = "/tf"
+_TOPIC_TF_STATIC = "/tf_static"
 
 _MSGTYPE_TWIST = "geometry_msgs/msg/Twist"
 _MSGTYPE_IMU = "sensor_msgs/msg/Imu"
 _MSGTYPE_IMAGE = "sensor_msgs/msg/Image"
+_MSGTYPE_TFMESSAGE = "tf2_msgs/msg/TFMessage"
+
+# The TF fixture (write_tf_bag) publishes a dynamic edge over a 24-tick window with
+# a contiguous run omitted to seed a deterministic gap. Skipping indices 8..14 leaves
+# t=7 then t=15, so the single gap delta is _timestamp_ns(15) - _timestamp_ns(7) ==
+# 8 * _DT_NS == 800_000_000 ns; every other inter-arrival delta is exactly _DT_NS.
+_TF_N_TICKS = 24
+_TF_GAP_START_TICK = 8  # first omitted tick (inclusive)
+_TF_GAP_END_TICK = 15  # first tick published again after the gap (exclusive lower bound is 8..14)
 
 # A tiny custom .msg used ONLY by write_def_less_bag (the CLI-04 fixture). Its
 # definition is registered to write the bag, then stripped from the .db3 so the bag
@@ -127,6 +139,37 @@ def _image(ts, i: int, *, ros1: bool):
         step=np.uint32(step),
         data=data,
     )
+
+
+def _transform_stamped(ts, *, parent: str, child: str, sec: int, nanosec: int, ros1: bool):
+    """Build a ``geometry_msgs/msg/TransformStamped`` edge ``parent -> child``.
+
+    The PARENT frame goes in ``header.frame_id`` and the CHILD in ``child_frame_id``
+    (the tf2 convention). The transform itself is an identity pose (zero translation,
+    unit quaternion ``(0,0,0,1)``) — the fixture exercises graph/timing, not geometry.
+    """
+    transform_stamped_t = ts.types["geometry_msgs/msg/TransformStamped"]
+    transform_t = ts.types["geometry_msgs/msg/Transform"]
+    vector3_t = ts.types["geometry_msgs/msg/Vector3"]
+    quaternion_t = ts.types["geometry_msgs/msg/Quaternion"]
+    header = _make_header(ts, sec=sec, nanosec=nanosec, frame_id=parent, ros1=ros1)
+    return transform_stamped_t(
+        header=header,
+        child_frame_id=child,
+        transform=transform_t(
+            translation=vector3_t(x=0.0, y=0.0, z=0.0),
+            rotation=quaternion_t(x=0.0, y=0.0, z=0.0, w=1.0),
+        ),
+    )
+
+
+def _tf_message(ts, transforms: list):
+    """Wrap a list of ``TransformStamped`` in a ``tf2_msgs/msg/TFMessage``.
+
+    ``TFMessage`` has a single field ``transforms`` and NO top-level header.
+    """
+    tfmessage_t = ts.types[_MSGTYPE_TFMESSAGE]
+    return tfmessage_t(transforms=transforms)
 
 
 def _populate(writer, ts, *, ros1: bool) -> None:
@@ -219,6 +262,104 @@ def write_def_less_bag(dest_dir: Path | str, *, msgtype: str = "my_pkg/msg/Widge
         conn_db.commit()
     finally:
         conn_db.close()
+    return path
+
+
+def write_tf_bag(dest_dir: Path | str, *, ros1: bool, storage: str = "sqlite3") -> Path:
+    """Write a TF fixture bag (``/tf`` + ``/tf_static``) with a seeded ~800ms gap.
+
+    This is the Phase 9 (TF debugger) test artifact: a bag that proves the analyzer's
+    three Success Criteria with no ROS install. It writes ONE bag whose format is chosen
+    by ``ros1`` (and, for ROS 2, by ``storage``):
+
+    * ``ros1=True``                       -> ``dest_dir/tf_ros1.bag`` (``storage`` ignored)
+    * ``ros1=False, storage="sqlite3"``   -> ``dest_dir/tf_ros2`` (ROS 2 sqlite3 dir)
+    * ``ros1=False, storage="mcap"``      -> ``dest_dir/tf_ros2`` (ROS 2 MCAP dir)
+
+    Tests parametrize over all three to exercise every target format (SC3).
+
+    **ROS 1 type registration:** ``Stores.ROS1_NOETIC`` ships ``TransformStamped`` /
+    ``Transform`` but NOT ``tf2_msgs/msg/TFMessage`` (verified ``False``), so the ROS 1
+    path registers the type first via ``get_types_from_msg`` (round-trip-verified, the
+    same idiom as :func:`write_def_less_bag`). ``Stores.ROS2_HUMBLE`` already has it, so
+    the ROS 2 path does NOT register.
+
+    **Seeded content** (asserted verbatim by the Phase 9 analyzer test):
+
+    * ``/tf_static``: ONE latched message at ``_timestamp_ns(0)`` carrying a single
+      ``map -> odom`` transform. Proves a static edge is kept in the graph but never
+      gap-checked.
+    * ``/tf`` dynamic edge ``odom -> base_link``: published every ``_DT_NS`` for
+      ``i in range(_TF_N_TICKS)`` (24 ticks) with the contiguous block ``8..14`` OMITTED.
+      The omission leaves t=7 then t=15, so this edge has exactly ONE inter-arrival
+      delta of ``8 * _DT_NS == 800_000_000`` ns and all others equal to ``_DT_NS``.
+    * ``/tf`` dynamic edge ``base_link -> laser``: published every ``_DT_NS`` across the
+      SAME 24-tick window with NO omission — a clean edge whose deltas are all ``_DT_NS``.
+
+    Both dynamic edges are emitted as a SINGLE ``/tf`` ``TFMessage`` per tick carrying
+    whichever transforms are present at that tick (both edges on ticks ``0..7`` and
+    ``15..23``; only ``base_link -> laser`` on the omitted ticks ``8..14``). The analyzer
+    keys edges by ``(parent, child)``, so co-bundling the two edges in one message is
+    equivalent to publishing them separately.
+
+    OFFLINE INVARIANT: imports only ``rosbags`` / ``numpy`` / stdlib (all at module top);
+    never ``rclpy`` / ``rosbag2_py``.
+
+    Returns the written bag path (a ``.bag`` file for ROS 1, a bag directory for ROS 2).
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    if ros1:
+        ts = get_typestore(Stores.ROS1_NOETIC)
+        # ROS1_NOETIC has no TFMessage — register it (mirrors write_def_less_bag).
+        ts.register(
+            get_types_from_msg("geometry_msgs/TransformStamped[] transforms\n", _MSGTYPE_TFMESSAGE)
+        )
+        serialize = ts.serialize_ros1
+        path = dest_dir / "tf_ros1.bag"
+        writer_cm = Ros1Writer(path)
+    else:
+        ts = get_typestore(Stores.ROS2_HUMBLE)  # ROS 2 ships TFMessage — no registration.
+        serialize = ts.serialize_cdr
+        storage_plugin = {
+            "sqlite3": StoragePlugin.SQLITE3,
+            "mcap": StoragePlugin.MCAP,
+        }[storage]
+        path = dest_dir / "tf_ros2"
+        writer_cm = Ros2Writer(path, version=9, storage_plugin=storage_plugin)
+
+    with writer_cm as writer:
+        tf_conn = writer.add_connection(_TOPIC_TF, _MSGTYPE_TFMESSAGE, typestore=ts)
+        tf_static_conn = writer.add_connection(_TOPIC_TF_STATIC, _MSGTYPE_TFMESSAGE, typestore=ts)
+
+        # /tf_static: one latched map -> odom transform at t0.
+        static_tf = _transform_stamped(ts, parent="map", child="odom", sec=1, nanosec=0, ros1=ros1)
+        writer.write(
+            tf_static_conn,
+            _timestamp_ns(0),
+            serialize(_tf_message(ts, [static_tf]), _MSGTYPE_TFMESSAGE),
+        )
+
+        # /tf: dynamic edges over a 24-tick window. odom->base_link skips ticks 8..14
+        # (seeding the 800ms gap); base_link->laser is published on every tick (clean).
+        for i in range(_TF_N_TICKS):
+            t_ns = _timestamp_ns(i)
+            sec, nanosec = divmod(t_ns, 1_000_000_000)
+            transforms = []
+            if not (_TF_GAP_START_TICK <= i < _TF_GAP_END_TICK):
+                transforms.append(
+                    _transform_stamped(
+                        ts, parent="odom", child="base_link", sec=sec, nanosec=nanosec, ros1=ros1
+                    )
+                )
+            transforms.append(
+                _transform_stamped(
+                    ts, parent="base_link", child="laser", sec=sec, nanosec=nanosec, ros1=ros1
+                )
+            )
+            writer.write(tf_conn, t_ns, serialize(_tf_message(ts, transforms), _MSGTYPE_TFMESSAGE))
+
     return path
 
 
