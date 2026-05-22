@@ -192,10 +192,35 @@ def test_column_names_preserves_declared_order() -> None:
     assert schema.column_names(include={"data"}) == ["t", "topic", "height", "data"]
 
 
-def test_arrow_schema_is_deferred_to_03_03() -> None:
-    """arrow_schema is the seam Phase 5 drives; 03-01 leaves it a NotImplementedError stub."""
-    import pytest
+def test_arrow_schema_implemented_and_honors_include() -> None:
+    """arrow_schema (filled in 03-03) returns a pa.Schema applying the heavy-blob filter.
 
-    schema = _sample_table_schema()
-    with pytest.raises(NotImplementedError):
-        schema.arrow_schema()
+    The backend-neutral model carries ``arrow_type`` as ``object``; the actual
+    Arrow build needs real ``pyarrow.DataType`` instances, so this one test builds
+    a small pyarrow-typed schema locally (the bulk of the Arrow-build coverage
+    lives in ``tests/test_schema_arrow.py``). It supersedes the 03-01 "deferred /
+    NotImplementedError" assertion now that 03-03 implements the method.
+    """
+    import pyarrow as pa
+
+    from rosbagger_core.schema.model import ColumnDef, TableSchema
+
+    schema = TableSchema(
+        table_name="image",
+        topic="/image",
+        msgtype="sensor_msgs/msg/Image",
+        columns=[
+            ColumnDef("t", pa.timestamp("ns"), ("t",), False),
+            ColumnDef("topic", pa.string(), ("topic",), False),
+            ColumnDef("height", pa.uint32(), ("height",), False),
+            ColumnDef("data", pa.list_(pa.uint8()), ("data",), True),
+        ],
+    )
+    # Default: the heavy `data` blob is omitted (QURY-07).
+    default = schema.arrow_schema()
+    assert isinstance(default, pa.Schema)
+    assert default.names == ["t", "topic", "height"]
+    # include={"data"} re-adds it as list<uint8>.
+    with_blob = schema.arrow_schema(include={"data"})
+    assert with_blob.names == ["t", "topic", "height", "data"]
+    assert with_blob.field("data").type == pa.list_(pa.uint8())
