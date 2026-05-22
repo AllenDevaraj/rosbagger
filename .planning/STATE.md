@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 07-02-PLAN.md (Phase 7 plan 2/2 — PHASE 7 COMPLETE 2/2). Three errors-that-teach over 07-01's teaching_errors mechanism. Stdlib-only rosbagger_core/errors.py (difflib only): UnknownTableError (canonical home moved here, re-exported from backend/query.py so the class identity holds), UnknownColumnError, UnresolvedTypeError — all ValueError subclasses CARRYING their data (.name/.available/.suggestions, .column/.columns_by_table, .detail) + building the teaching message in core (API-first; CLI only presents). CLI-02: difflib.get_close_matches(cutoff=0.6) did-you-mean on UnknownTableError (suggestion when a close table exists, else available-tables list, else no-tables note). CLI-03: query() accumulates columns_by_table during the load loop, then catches duckdb.BinderException by TYPE (duckdb_binder_exception() lazy-import helper keeps the module top offline-light), parses the column via _BINDER_COL regex (miss -> '?'), raises UnknownColumnError listing all referenced tables' columns grouped (Open Q2) — catch nested INSIDE the existing try/finally so the default backend still close()s. CLI-04: RosbagsReader.open() wraps ONLY the 'no type definitions' AnyReaderError -> UnresolvedTypeError (cause preserved); mixed-format re-raises and FileNotFoundError is never caught (Pitfall 3 verified at the reader boundary). tools.make_fixtures.write_def_less_bag (ROS2 sqlite + stdlib sqlite3 DELETE FROM message_definitions) is the fixture; surfaces via info/tables/query. teaching_errors widened in ONE import + ONE except tuple. DEVIATION (Rule 1, test-only): the CLI no-traceback assertions use isinstance(result.exception, SystemExit) + not-ValueError (a clean typer.Exit(1) is SystemExit, not None per 07-RESEARCH §6 / 07-01) — corrects the plan's 'result.exception is None' wording; production code unchanged. Offline guard extended (errors.py pulls no heavy stack AND no rosbags). Full suite 254 passed at 97.82% (>=80% gate); errors.py 100%; ruff format-check + lint clean. Next: Phase 8 (Packaging, Docs & Release — pip-installable v0.1, offline-import check, README, version tag)."
-last_updated: "2026-05-22T18:00:36.788Z"
+status: ready_to_plan
+stopped_at: Phase 7 complete (2/2) — ready to discuss Phase 8
+last_updated: 2026-05-22T18:12:50.518Z
 last_activity: 2026-05-22 -- Completed 07-02 (PHASE 7 COMPLETE — CLI-02/03/04 errors-that-teach)
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 18
   completed_plans: 17
-  percent: 94
+  percent: 88
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 8 — packaging, docs & release (Phase 7 complete)
+**Current focus:** Phase 8 — packaging, docs & release
 
 ## Current Position
 
-Phase: 7 complete (next: Phase 8)
-Plan: 2 of 2 complete (07-01 + 07-02 done — PHASE 7 COMPLETE)
-Status: Ready to execute Phase 8
-Last activity: 2026-05-22 -- Completed 07-02 (PHASE 7 COMPLETE — CLI-02/03/04 errors-that-teach)
+Phase: 8
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-22
 
 Progress: [█████████░] 94%
 
@@ -36,7 +36,7 @@ Progress: [█████████░] 94%
 
 **Velocity:**
 
-- Total plans completed: 21
+- Total plans completed: 23
 - Average duration: ~5 min
 - Total execution time: ~1.1 hours
 
@@ -51,6 +51,7 @@ Progress: [█████████░] 94%
 | 4 | 2 | - | - |
 | 5 | 2 | - | - |
 | 6 | 2 | - | - |
+| 7 | 2 | - | - |
 
 **Recent Trend:**
 
