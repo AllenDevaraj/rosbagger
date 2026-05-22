@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 05-02-PLAN.md — PHASE 5 COMPLETE (2/2). query(sql, reader)->pyarrow.Table: sqlglot resolve (CTE-subtracted tables/columns/Star) -> topic->table inversion (shared TableNameResolver, skip msgtype-None) -> connection-filtered lazy load (read(topics={t}); only referenced topics deserialized, QURY-05) -> DuckDB register/execute (QURY-06). UnknownTableError lists available tables; SELECT * materializes blobs, projection omits them. read(topics=set()) short-circuits to empty (Rule 1). Full suite 186 passed at 97.91%; resolve.py 100%, query.py 98%, offline guard green. Next: Phase 6 (output — CSV/Parquet/plot from the result Table; use t_ns for display per Pitfall 6)."
-last_updated: "2026-05-22T16:44:44.337Z"
-last_activity: 2026-05-22 -- Phase 6 planning complete
+stopped_at: "Completed 06-01-PLAN.md (Phase 6 plan 1/2). rosbagger_core.output: rows_for_display (temporal-safe — timestamp[ns] t/stamp via to_numpy(datetime64), no ValueError), to_json (temporal->int64 raw-ns, A5), write_table (CSV+Parquet by ext via DuckDB COPY — NOT pyarrow.write_csv, which crashes on LIST; CSV LIST->bracketed string), write_csv_stream (CSV to /dev/stdout). bagq query \"<SQL>\" BAG [-o OUT] [--format table|csv|parquet|json] wired (calls Phase 5 query(), routes result; errors propagate — Phase 7 owns teaching). Offline guard extended: import rosbagger_core.output leaks no duckdb/sqlglot/pyarrow. Rule 1 fix: write_table('/dev/stdout') was impossible (ext-routed) -> added write_csv_stream sharing _copy_to COPY core (cli.py imports no duckdb). Full suite 208 passed at 97.89%; output/ 100%. Next: 06-02 (--plot, OUT-04: headless matplotlib vs t_ns; add matplotlib to dev group)."
+last_updated: "2026-05-22T16:53:30.000Z"
+last_activity: 2026-05-22 -- Completed 06-01 (output module + bagq query)
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 63
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 6
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-22 -- Phase 6 planning complete
+Plan: 06-01 complete (1/2) — next: 06-02
+Status: In progress
+Last activity: 2026-05-22 -- Completed 06-01 (output module + bagq query)
 
-Progress: [██████████] 100% (Phase 5: 2/2 plans complete)
+Progress: [█████████░] 93% (Phase 6: 1/2 plans complete)
 
 ## Performance Metrics
 
@@ -53,8 +53,8 @@ Progress: [██████████] 100% (Phase 5: 2/2 plans complete)
 
 **Recent Trend:**
 
-- Last 5 plans: 5min, 5min, 7min, 7min, 5min
-- Trend: steady (~4-7 min/plan)
+- Last 5 plans: 5min, 7min, 7min, 5min, 10min, 7min
+- Trend: steady (~4-10 min/plan)
 
 *Updated after each plan completion*
 
@@ -73,6 +73,7 @@ Progress: [██████████] 100% (Phase 5: 2/2 plans complete)
 | Phase 04 P04-02 | 5min | 2 tasks | 4 files |
 | Phase 05 P05-01 | 5min | 2 tasks | 6 files |
 | Phase 05 P02 | 10min | 2 tasks | 7 files |
+| Phase 06 P06-01 | 7min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 05]: [Phase 05-02] read(topics=set())/unknown-topic yields an EMPTY stream, not all — rosbags treats messages(connections=()) as its all-connections default, so an empty conn list short-circuits to nothing (Rule 1 fix)
 - [Phase 05]: [Phase 05-02] query() owns ONLY the default backend's lifecycle (try/finally close); a caller-supplied backend= is left open for reuse — execute() materializes Arrow before close so the result outlives the connection (refined from the plan's literal 'use with')
 - [Phase 05]: [Phase 05-02] PHASE 5 COMPLETE (2/2): query(sql, reader)->pyarrow.Table ties sqlglot resolve (CTE-subtracted tables + columns + Star) -> topic->table inversion (shared TableNameResolver, skip msgtype-None) -> connection-filtered lazy load (only referenced topics deserialized, QURY-05) -> DuckDB register/execute (QURY-06). UnknownTableError lists available tables. SELECT * materializes blobs; projection omits them. Full suite 186 passed at 97.91%; resolve.py 100%, query.py 98%
+- [Phase 06-01]: CSV+Parquet BOTH export via DuckDB `COPY result TO '<path>' (FORMAT ...)`, NOT `pyarrow.csv.write_csv` — the latter raises ArrowInvalid on any LIST column (every Imu.orientation_covariance / LaserScan.ranges is one; 06-RESEARCH Pitfall 2). DuckDB renders a LIST as a bracketed string `"[1.0, 2.0]"` in CSV and round-trips it in Parquet. One uniform writer; format chosen from a closed {csv,parquet} map
+- [Phase 06-01]: stdout/JSON rendering is temporal-safe — `t`/`stamp` are timestamp[ns]; naive `to_pylist()`/`str()` raises ValueError (ns exceeds datetime's µs floor, pandas absent; Pitfall 1). rows_for_display converts temporal cols via combine_chunks().to_numpy(zero_copy_only=False)->datetime64 (NaT->""); to_json casts temporal cols to int64 raw-ns (A5 — machine-parseable, lossless), not ISO strings
+- [Phase 06-01]: output module is backend-neutral + offline-safe — top levels (output/__init__, render.py, export.py) are stdlib-only; pyarrow/duckdb imported INSIDE function bodies (mirrors backend/query.py). Re-exporting __init__ binds names without firing heavy imports; `import rosbagger_core.output` leaks no duckdb/sqlglot/pyarrow (new fresh-subprocess guard). cli.py top level stays typer/rich; `bagq query` lazy-imports query()+output in the body
+- [Phase 06-01]: Rule 1 fix — the plan's "reuse write_table against /dev/stdout" for `--format csv` stdout streaming is impossible (write_table routes on file extension; /dev/stdout has none -> ValueError). Added write_csv_stream(table, path="/dev/stdout") that forces FORMAT CSV with no ext detection, sharing the single COPY core `_copy_to` (with the T-06-01 '-escape) with write_table — so the COPY/escape stays in core and cli.py imports no duckdb. `-o` picks format by ext; `--format parquet` w/o `-o` errors (binary). v1 errors propagate (Phase 7 owns teaching). Full suite 208 passed at 97.89%; output/ 100%, cli.py 98%. OUT-01/02/03 done
 
 ### Pending Todos
 
@@ -150,6 +155,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T10:35:02.972Z
-Stopped at: Completed 05-02-PLAN.md — PHASE 5 COMPLETE (2/2). query(sql, reader)->pyarrow.Table: sqlglot resolve (CTE-subtracted tables/columns/Star) -> topic->table inversion (shared TableNameResolver, skip msgtype-None) -> connection-filtered lazy load (read(topics={t}); only referenced topics deserialized, QURY-05) -> DuckDB register/execute (QURY-06). UnknownTableError lists available tables; SELECT * materializes blobs, projection omits them. read(topics=set()) short-circuits to empty (Rule 1). Full suite 186 passed at 97.91%; resolve.py 100%, query.py 98%, offline guard green. Next: Phase 6 (output — CSV/Parquet/plot from the result Table; use t_ns for display per Pitfall 6).
+Last session: 2026-05-22T16:53:30.000Z
+Stopped at: Completed 06-01-PLAN.md (Phase 6 plan 1/2). rosbagger_core.output: rows_for_display (temporal-safe — timestamp[ns] t/stamp via to_numpy(datetime64), no ValueError), to_json (temporal->int64 raw-ns, A5), write_table (CSV+Parquet by ext via DuckDB COPY — NOT pyarrow.write_csv which crashes on LIST; CSV LIST->bracketed string), write_csv_stream (CSV to /dev/stdout). bagq query "<SQL>" BAG [-o OUT] [--format table|csv|parquet|json] wired (calls Phase 5 query(), routes result; errors propagate — Phase 7 owns teaching). Offline guard extended: import rosbagger_core.output leaks no duckdb/sqlglot/pyarrow. Rule 1 fix: write_table('/dev/stdout') impossible (ext-routed) -> added write_csv_stream sharing _copy_to COPY core (cli.py imports no duckdb). Full suite 208 passed at 97.89%; output/ 100%. Next: 06-02 (--plot, OUT-04: headless matplotlib vs t_ns; add matplotlib to dev group).
 Resume file: None

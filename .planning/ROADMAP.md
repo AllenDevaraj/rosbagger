@@ -159,7 +159,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 06-01-PLAN.md — `rosbagger_core.output` (temporal-safe rich render + CSV/Parquet via DuckDB `COPY`) + thin `bagq query "<SQL>" BAG [-o OUT] [--format table|csv|parquet|json]` command -> OUT-01/02/03
+- [x] 06-01-PLAN.md — `rosbagger_core.output` (temporal-safe rich render + CSV/Parquet via DuckDB `COPY`) + thin `bagq query "<SQL>" BAG [-o OUT] [--format table|csv|parquet|json]` command -> OUT-01/02/03
 
 **Wave 2** *(blocked on 06-01)*
 
@@ -212,6 +212,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 3. Message→Table Schema | 3/3 | Complete    | 2026-05-22 |
 | 4. Inspect | 2/2 | Complete    | 2026-05-22 |
 | 5. Query Engine | 2/2 | Complete    | 2026-05-22 |
-| 6. Output & Export | 0/2 | Not started | - |
+| 6. Output & Export | 1/2 | In Progress|  |
 | 7. CLI & Teaching Errors | 0/2 | Not started | - |
 | 8. Packaging, Docs & Release | 0/1 | Not started | - |
