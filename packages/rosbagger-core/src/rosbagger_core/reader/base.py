@@ -102,6 +102,47 @@ class BagReader(abc.ABC):
         """
         ...
 
+    # --- O(1) bag metadata (Phase 4 Inspect) --------------------------------
+    # These feed plan 04-01's inspect API. Returns stay loosely typed (``int`` /
+    # ``object`` / ``list``) so a future ``rosbag2_py`` backend (impl #2) can
+    # satisfy the contract without base.py naming any ``rosbags`` type.
+
+    @property
+    @abc.abstractmethod
+    def message_count(self) -> int:
+        """Total message count across all opened bags (Phase 4 Inspect)."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def duration(self) -> int:
+        """Whole-bag duration in nanoseconds (Phase 4 Inspect; guard empty bag)."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def start_time(self) -> int:
+        """Earliest log time in nanoseconds across all opened bags (Inspect)."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def end_time(self) -> int:
+        """Latest log time in nanoseconds across all opened bags (Inspect)."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def typestore(self) -> object:
+        """The message typestore; loosely typed for the future rosbag2_py backend."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def paths(self) -> list:
+        """The opened bag paths (for size measurement; multi-bag READ-05)."""
+        ...
+
     # Shared lifecycle — concrete readers inherit this for free.
     def __enter__(self) -> BagReader:
         self.open()

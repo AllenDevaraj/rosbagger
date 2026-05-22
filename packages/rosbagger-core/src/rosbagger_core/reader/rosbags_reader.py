@@ -133,3 +133,61 @@ class RosbagsReader(BagReader):
         if self._reader is None:
             raise RuntimeError("RosbagsReader.connections accessed before open()")
         return self._reader.connections
+
+    # --- Additive O(1) metadata passthroughs (Phase 4 Inspect) --------------
+    # Each mirrors the ``topics`` before-open guard exactly: all whole-bag
+    # metadata is read straight off ``AnyReader`` (computed as min/max/sum over
+    # the sub-readers — no message deserialization). ``paths`` is the lone
+    # exception: it reads no ``_reader`` and is callable before open().
+
+    @property
+    def message_count(self) -> int:
+        """Total message count across all opened bags (O(1); whole-bag)."""
+        if self._reader is None:
+            raise RuntimeError("RosbagsReader.message_count accessed before open()")
+        return self._reader.message_count
+
+    @property
+    def duration(self) -> int:
+        """Whole-bag duration in nanoseconds (``end_time - start_time``).
+
+        Meaningless when ``message_count == 0`` (``AnyReader`` returns a
+        large-negative value for an empty bag); callers guard on the count.
+        """
+        if self._reader is None:
+            raise RuntimeError("RosbagsReader.duration accessed before open()")
+        return self._reader.duration
+
+    @property
+    def start_time(self) -> int:
+        """Earliest log time across all opened bags, in nanoseconds (O(1))."""
+        if self._reader is None:
+            raise RuntimeError("RosbagsReader.start_time accessed before open()")
+        return self._reader.start_time
+
+    @property
+    def end_time(self) -> int:
+        """Latest log time across all opened bags, in nanoseconds (O(1))."""
+        if self._reader is None:
+            raise RuntimeError("RosbagsReader.end_time accessed before open()")
+        return self._reader.end_time
+
+    @property
+    def typestore(self) -> object:
+        """The ``rosbags`` ``Typestore`` registered in ``AnyReader.open()``.
+
+        Loosely typed as ``object`` so the ``BagReader`` contract stays
+        backend-agnostic (Phase 4 ``tables`` feeds it to ``build_table_schema``).
+        """
+        if self._reader is None:
+            raise RuntimeError("RosbagsReader.typestore accessed before open()")
+        return self._reader.typestore
+
+    @property
+    def paths(self) -> list:
+        """The opened bag paths, as a fresh copy (for size; multi-bag READ-05).
+
+        Reads no ``_reader``, so it is callable WITHOUT open(): the paths are
+        known at construction. Returns a copy so callers cannot mutate state.
+        """
+        return list(self._paths)
