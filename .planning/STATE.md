@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md (schema names + ColumnDef/TableSchema model contract); Phase 3 in progress (1/3), 03-02 (flatten + standard time columns) next
-last_updated: "2026-05-22T08:42:36.076Z"
-last_activity: 2026-05-22 -- Completed 03-01 (schema names + model contract)
+stopped_at: Completed 03-02-PLAN.md (ROS->Arrow type map + build_table_schema flattening walk + standard columns); Phase 3 in progress (2/3), 03-03 (row extraction + pyarrow Table build + lazy heavy-blob include seam) next
+last_updated: "2026-05-22T08:51:24.228Z"
+last_activity: 2026-05-22 -- Completed 03-02 (ROS->Arrow types + flatten walk + standard columns)
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 9
-  completed_plans: 7
-  percent: 78
+  completed_plans: 8
+  percent: 89
 ---
 
 # Project State
@@ -26,19 +26,19 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 3
-Plan: 03-02 (next)
-Status: In progress — 03-01 complete (1/3 plans this phase)
-Last activity: 2026-05-22 -- Completed 03-01 (schema names + model contract)
+Plan: 03-03 (next)
+Status: In progress — 03-01 + 03-02 complete (2/3 plans this phase)
+Last activity: 2026-05-22 -- Completed 03-02 (ROS->Arrow types + flatten walk + standard columns)
 
-Progress: [████████░░] 78%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: ~4 min
-- Total execution time: ~0.5 hours
+- Total execution time: ~0.6 hours
 
 **By Phase:**
 
@@ -46,11 +46,11 @@ Progress: [████████░░] 78%
 |-------|-------|-------|----------|
 | 01 | 3 | 12min | 4min |
 | 02 | 3 | 11min | ~4min |
-| 03 | 1 (of 3) | 5min | 5min |
+| 03 | 2 (of 3) | 10min | 5min |
 
 **Recent Trend:**
 
-- Last 5 plans: 6min, 3min, 4min, 4min, 5min
+- Last 5 plans: 3min, 4min, 4min, 5min, 5min
 - Trend: steady (~4-5 min/plan)
 
 *Updated after each plan completion*
@@ -64,6 +64,7 @@ Progress: [████████░░] 78%
 | Phase 02 P02-02 | 4min | 2 tasks | 2 files |
 | Phase 02 P02-03 | 4min | 2 tasks | 1 file |
 | Phase 03 P03-01 | 5min | 3 tasks | 3 files |
+| Phase 03 P03-02 | 5min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 03-01]: heavy-blob `include` set keys on the dotted column name (research Open Q2) — degenerates to the bare name for the standard top-level blobs (Image.data/PointCloud2.data) and handles a hypothetical nested blob with no API change
 - [Phase 03-01]: TableNameResolver de-duplicates case-insensitively (SQL folds case: /Foo vs /foo collide), deterministically (a_b, a_b_2, ...), and idempotently (re-resolving a topic returns its first name and burns no suffix); the topic->name dict is the source of truth and `mapping` returns a copy so Phase 4 can't mutate state
 - [Phase 03-01]: arrow_schema() left as NotImplementedError("filled in 03-03") — the pyarrow build is intentionally deferred so this interface-defining wave ships pyarrow-free; offline guard unchanged (import rosbagger_core loads no schema/ submodule); full suite 49 passed at 97.86%
+- [Phase 03-02]: Nodetype.NAME payload is the bare type-name string (verified vs research §3's payload[0], which would have grabbed char 'g'); types.py/_walk_fields resolve via the string directly, with a defensive isinstance(...,str) tuple-fallback. RESEARCH §3 snippet was corrected (Rule 1 bug fix); the PLAN <action> text already said `payload`
+- [Phase 03-02]: schema/ flatten walk descends ONLY into Nodetype.NAME and STOPS at ARRAY/SEQUENCE (one LIST / LIST-of-STRUCT leaf, never dotted into) — Pitfall 4 + DoS mitigation T-03-04; a `seen` frozenset cycle guard (Pitfall 5) is cheap insurance no standard ROS type triggers
+- [Phase 03-02]: top-level `stamp` column coexists with nested `header.stamp.sec`/`.nanosec` (no dedup, Pitfall 6); `stamp` nullability is an Arrow-field property deferred to the 03-03 pyarrow.Schema build, keeping STANDARD_COLUMNS/ColumnDef backend-neutral
+- [Phase 03-02]: is_heavy_blob is structural (SEQUENCE of uint8|byte|char), NOT a name blocklist — Image.data flagged True; Imu.orientation_covariance (ARRAY float64[9]) and std_msgs/msg/String.data (BASE string) both False. Full suite 62 passed at 95.88% (gate >=80% held); import rosbagger_core still loads no schema/duckdb/pyarrow/rosbags
 
 ### Pending Todos
 
@@ -120,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T08:42:36Z
-Stopped at: Completed 03-01-PLAN.md (schema names + ColumnDef/TableSchema model contract); Phase 3 in progress (1/3), 03-02 (flatten + standard time columns) next
+Last session: 2026-05-22T08:50:11Z
+Stopped at: Completed 03-02-PLAN.md (ROS->Arrow type map + build_table_schema flattening walk + standard columns); Phase 3 in progress (2/3), 03-03 (row extraction + pyarrow Table build + lazy heavy-blob include seam) next
 Resume file: None

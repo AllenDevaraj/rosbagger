@@ -24,9 +24,9 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 ### Query
 
 - [x] **QURY-01**: Map each topic to one table with a sanitized name (`/camera/image_raw` → `camera_image_raw`)
-- [ ] **QURY-02**: Flatten nested scalar fields to dotted, quoted columns (e.g. `"twist.twist.linear.x"`)
-- [ ] **QURY-03**: Represent arrays as `LIST` columns; arrays of sub-messages as `LIST` of `STRUCT`
-- [ ] **QURY-04**: Add always-present columns `t` (`TIMESTAMP_NS`), `t_ns` (`BIGINT`), `stamp`, `topic`
+- [x] **QURY-02**: Flatten nested scalar fields to dotted, quoted columns (e.g. `"twist.twist.linear.x"`)
+- [x] **QURY-03**: Represent arrays as `LIST` columns; arrays of sub-messages as `LIST` of `STRUCT`
+- [x] **QURY-04**: Add always-present columns `t` (`TIMESTAMP_NS`), `t_ns` (`BIGINT`), `stamp`, `topic`
 - [ ] **QURY-05**: Resolve referenced topics from the SQL via `sqlglot` and load only those topics
 - [ ] **QURY-06**: Execute SQL through DuckDB behind a swappable `QueryBackend` seam
 - [ ] **QURY-07**: Materialize heavy byte blobs (`Image.data`, `PointCloud2.data`) only when the query references them
@@ -93,9 +93,9 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | READ-04 | Phase 2 | Complete |
 | READ-05 | Phase 2 | Complete |
 | QURY-01 | Phase 3 | Complete |
-| QURY-02 | Phase 3 | Pending |
-| QURY-03 | Phase 3 | Pending |
-| QURY-04 | Phase 3 | Pending |
+| QURY-02 | Phase 3 | Complete |
+| QURY-03 | Phase 3 | Complete |
+| QURY-04 | Phase 3 | Complete |
 | QURY-07 | Phase 3 | Pending |
 | INSP-01 | Phase 4 | Pending |
 | INSP-02 | Phase 4 | Pending |
