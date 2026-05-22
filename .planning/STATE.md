@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-02-PLAN.md (ROS->Arrow type map + build_table_schema flattening walk + standard columns); Phase 3 in progress (2/3), 03-03 (row extraction + pyarrow Table build + lazy heavy-blob include seam) next
-last_updated: "2026-05-22T08:51:24.228Z"
-last_activity: 2026-05-22 -- Completed 03-02 (ROS->Arrow types + flatten walk + standard columns)
+stopped_at: Completed 03-03-PLAN.md (row extraction + pyarrow Table build + lazy heavy-blob include seam + sqlglot quote_ident + public schema/ API); Phase 3 COMPLETE (3/3); Phase 4 (Inspect) next
+last_updated: "2026-05-22T09:01:44Z"
+last_activity: 2026-05-22 -- Completed 03-03 (flatten_message + build_arrow_table + arrow_schema + quote_ident + public schema API); Phase 3 done
 progress:
   total_phases: 8
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 9
-  completed_plans: 8
-  percent: 89
+  completed_plans: 9
+  percent: 38
 ---
 
 # Project State
@@ -21,24 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 3 — message→table schema
+**Current focus:** Phase 4 — Inspect (`bagq info` / `bagq tables`)
 
 ## Current Position
 
-Phase: 3
-Plan: 03-03 (next)
-Status: In progress — 03-01 + 03-02 complete (2/3 plans this phase)
-Last activity: 2026-05-22 -- Completed 03-02 (ROS->Arrow types + flatten walk + standard columns)
+Phase: 3 COMPLETE (3/3) → Phase 4 next
+Plan: 04-01 (next)
+Status: Phase 3 done — 03-01 + 03-02 + 03-03 complete (3/3 plans this phase); ready for Phase 4
+Last activity: 2026-05-22 -- Completed 03-03 (flatten_message + build_arrow_table + arrow_schema + quote_ident + public schema API)
 
-Progress: [█████████░] 89%
+Progress: [████░░░░░░] 38% (3/8 phases)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: ~4 min
-- Total execution time: ~0.6 hours
+- Total execution time: ~0.7 hours
 
 **By Phase:**
 
@@ -46,12 +46,12 @@ Progress: [█████████░] 89%
 |-------|-------|-------|----------|
 | 01 | 3 | 12min | 4min |
 | 02 | 3 | 11min | ~4min |
-| 03 | 2 (of 3) | 10min | 5min |
+| 03 | 3 | 17min | ~6min |
 
 **Recent Trend:**
 
-- Last 5 plans: 3min, 4min, 4min, 5min, 5min
-- Trend: steady (~4-5 min/plan)
+- Last 5 plans: 4min, 4min, 5min, 5min, 7min
+- Trend: steady (~4-7 min/plan)
 
 *Updated after each plan completion*
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 89%
 | Phase 02 P02-03 | 4min | 2 tasks | 1 file |
 | Phase 03 P03-01 | 5min | 3 tasks | 3 files |
 | Phase 03 P03-02 | 5min | 3 tasks | 3 files |
+| Phase 03 P03-03 | 7min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 03-02]: schema/ flatten walk descends ONLY into Nodetype.NAME and STOPS at ARRAY/SEQUENCE (one LIST / LIST-of-STRUCT leaf, never dotted into) — Pitfall 4 + DoS mitigation T-03-04; a `seen` frozenset cycle guard (Pitfall 5) is cheap insurance no standard ROS type triggers
 - [Phase 03-02]: top-level `stamp` column coexists with nested `header.stamp.sec`/`.nanosec` (no dedup, Pitfall 6); `stamp` nullability is an Arrow-field property deferred to the 03-03 pyarrow.Schema build, keeping STANDARD_COLUMNS/ColumnDef backend-neutral
 - [Phase 03-02]: is_heavy_blob is structural (SEQUENCE of uint8|byte|char), NOT a name blocklist — Image.data flagged True; Imu.orientation_covariance (ARRAY float64[9]) and std_msgs/msg/String.data (BASE string) both False. Full suite 62 passed at 95.88% (gate >=80% held); import rosbagger_core still loads no schema/duckdb/pyarrow/rosbags
+- [Phase 03-03]: build_arrow_table drives its kept-column set off schema.arrow_schema(include=...).names (single source of truth) so the Table schema and value arrays can't drift; standard columns identified by empty ros_path and sourced off the Message by the same attribute (t/t_ns/stamp/topic), data columns via reduce(getattr, ros_path, msg)
+- [Phase 03-03]: arrow_schema implemented — pyarrow imported INSIDE the method (not at model.py top) to keep the backend-neutral model importable without the heavy stack; stamp field explicitly nullable; build arrays with explicit ColumnDef.arrow_type (never inferred, Pitfall 1) and ndarrays passed straight through (Pitfall 2)
+- [Phase 03-03]: quote_ident via sqlglot.exp.to_identifier(quoted=True) is the SOLE identifier-safety boundary (T-03-06) — escapes embedded quotes, neutralizes injection; NO f-string hand-quoting. Verified end-to-end: cmd_vel/imu Message stream -> pa.Table; DuckDB round-trip yields TIMESTAMP_NS/BIGINT/DOUBLE/VARCHAR and a quoted-ident query returns correct rows
+- [Phase 03-03]: zero real `import duckdb` in shipped schema/ code (only docstring "do NOT import" mentions) — DuckDB round-trip exercised as an ad-hoc dev check only, no duckdb test dep added. public schema/__init__ re-exports the API (mirrors reader); top-level import rosbagger_core leaks no pyarrow/rosbags (offline guard 2/2, verified in a fresh subprocess). Updated 03-01's stale arrow_schema 'deferred' test (Rule 1). Full suite 88 passed at 96.43%. PHASE 3 COMPLETE (3/3)
 
 ### Pending Todos
 
@@ -125,6 +130,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T08:50:11Z
-Stopped at: Completed 03-02-PLAN.md (ROS->Arrow type map + build_table_schema flattening walk + standard columns); Phase 3 in progress (2/3), 03-03 (row extraction + pyarrow Table build + lazy heavy-blob include seam) next
+Last session: 2026-05-22T09:01:44Z
+Stopped at: Completed 03-03-PLAN.md (row extraction + pyarrow Table build + lazy heavy-blob include seam + sqlglot quote_ident + public schema/ API); Phase 3 COMPLETE (3/3); Phase 4 (Inspect — bagq info / bagq tables) next
 Resume file: None

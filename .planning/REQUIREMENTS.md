@@ -29,7 +29,7 @@ Scope = `rosbagger-core` + `bagq`. Each maps to a roadmap phase.
 - [x] **QURY-04**: Add always-present columns `t` (`TIMESTAMP_NS`), `t_ns` (`BIGINT`), `stamp`, `topic`
 - [ ] **QURY-05**: Resolve referenced topics from the SQL via `sqlglot` and load only those topics
 - [ ] **QURY-06**: Execute SQL through DuckDB behind a swappable `QueryBackend` seam
-- [ ] **QURY-07**: Materialize heavy byte blobs (`Image.data`, `PointCloud2.data`) only when the query references them
+- [x] **QURY-07**: Materialize heavy byte blobs (`Image.data`, `PointCloud2.data`) only when the query references them
 
 ### Output
 
@@ -96,7 +96,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | QURY-02 | Phase 3 | Complete |
 | QURY-03 | Phase 3 | Complete |
 | QURY-04 | Phase 3 | Complete |
-| QURY-07 | Phase 3 | Pending |
+| QURY-07 | Phase 3 | Complete |
 | INSP-01 | Phase 4 | Pending |
 | INSP-02 | Phase 4 | Pending |
 | INSP-03 | Phase 4 | Pending |

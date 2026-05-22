@@ -13,7 +13,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 
 - [x] **Phase 1: Scaffold & Test Harness** - Monorepo, packaging, and no-ROS fixture bags (completed 2026-05-22)
 - [x] **Phase 2: Bag Reader Layer** - Universal ROS1/ROS2/MCAP reading via rosbags (completed 2026-05-22)
-- [ ] **Phase 3: Message→Table Schema** - Flatten messages into DuckDB columns
+- [x] **Phase 3: Message→Table Schema** - Flatten messages into DuckDB columns (completed 2026-05-22)
 - [ ] **Phase 4: Inspect** - `bagq info` / `bagq tables`
 - [ ] **Phase 5: Query Engine** - DuckDB backend + sqlglot topic resolution
 - [ ] **Phase 6: Output & Export** - stdout table, CSV, Parquet, minimal plot
@@ -96,7 +96,7 @@ Plans:
 
 **Wave 3** *(blocked on 03-02)*
 
-- [ ] 03-03-PLAN.md — Row extraction + `build_arrow_table` (pyarrow Table from a Message stream), lazy heavy-blob `include` seam, sqlglot identifier quoting, and the public `schema/` API -> QURY-03/07
+- [x] 03-03-PLAN.md — Row extraction + `build_arrow_table` (pyarrow Table from a Message stream), lazy heavy-blob `include` seam, sqlglot identifier quoting, and the public `schema/` API -> QURY-03/07
 
 ### Phase 4: Inspect
 
@@ -196,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 |-------|----------------|--------|-----------|
 | 1. Scaffold & Test Harness | 3/3 | Complete   | 2026-05-22 |
 | 2. Bag Reader Layer | 3/3 | Complete    | 2026-05-22 |
-| 3. Message→Table Schema | 2/3 | In Progress|  |
+| 3. Message→Table Schema | 3/3 | Complete   | 2026-05-22 |
 | 4. Inspect | 0/2 | Not started | - |
 | 5. Query Engine | 0/2 | Not started | - |
 | 6. Output & Export | 0/2 | Not started | - |
