@@ -99,17 +99,42 @@ class RosbagsReader(BagReader):
             self._reader.close()
             self._reader = None
 
-    def read(self) -> Iterator[Message]:
+    def read(self, *, topics: set[str] | None = None) -> Iterator[Message]:
         """Lazily yield ``Message`` records, time-ordered across all opened bags.
 
         ``AnyReader.messages()`` already merges the per-bag streams by timestamp,
         so the combined stream is globally time-ordered — no reordering is
         hand-rolled here. Each message is deserialized one at a time inside the
         loop; the bag is never list-materialized.
+
+        ``topics`` is an optional CONNECTION-LEVEL filter (the QURY-05 lazy
+        seam): when given, the matching ``connections`` are passed to
+        ``AnyReader.messages(connections=...)`` so ONLY those topics' raw
+        messages are ever yielded — the others are never even handed to
+        ``deserialize``. This is materially different from filtering AFTER read
+        (``for m in read(): if m.topic in topics``), which would still pay full
+        deserialization for every unreferenced topic (05-RESEARCH Pitfall 2). An
+        unknown topic name simply matches no connection (an empty stream), not an
+        error. ``topics=None`` (the default) reads every topic, unchanged.
         """
         if self._reader is None:
             raise RuntimeError("RosbagsReader.read() called before open()")
-        for connection, t_ns, rawdata in self._reader.messages():
+        if topics is None:
+            stream = self._reader.messages()
+        else:
+            # Connection-level filter: select only the referenced topics'
+            # connections so unreferenced topics are never deserialized
+            # (05-RESEARCH Pattern 5; VERIFIED AnyReader.messages(connections=...)).
+            conns = [c for c in self._reader.connections if c.topic in topics]
+            # An EMPTY connection list is NOT "no filter": rosbags treats
+            # ``messages(connections=())`` as its all-connections default, so
+            # passing [] would yield everything. A caller that filtered to zero
+            # topics means zero messages — short-circuit to an empty stream so
+            # ``read(topics=set())`` / an unknown topic yields nothing, not all.
+            if not conns:
+                return
+            stream = self._reader.messages(connections=conns)
+        for connection, t_ns, rawdata in stream:
             msg = self._reader.deserialize(rawdata, connection.msgtype)
             yield Message(
                 topic=connection.topic,

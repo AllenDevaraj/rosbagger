@@ -72,11 +72,20 @@ class BagReader(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def read(self) -> Iterator[Message]:
+    def read(self, *, topics: set[str] | None = None) -> Iterator[Message]:
         """Lazily yield ``Message`` records, time-ordered across all opened bags.
 
         Implementations MUST be generators (deserialize one message at a time);
         real bags are too large to materialize eagerly.
+
+        ``topics`` is an optional connection-level filter: when given, ONLY the
+        named topics' messages are read AND deserialized — the others are never
+        decoded (the implementation filters at the connection layer, not after
+        deserialization). When ``None`` (the default), every topic's messages
+        are yielded, unchanged. This keeps the seam honest for a future
+        ``rosbag2_py`` backend (Phase 5 A3): an implementation MUST NOT satisfy
+        ``topics`` by deserializing everything and discarding — that would defeat
+        QURY-05's "load only referenced topics".
         """
         ...
 
