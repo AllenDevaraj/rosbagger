@@ -103,6 +103,23 @@ def test_plot_table_zero_rows_raises(ros1_bag: Path, tmp_path: Path) -> None:
     assert not out.exists()
 
 
+def test_plot_table_matplotlib_missing_teaching_error(
+    ros1_bag: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A base install without matplotlib raises a teaching RuntimeError (Pitfall 5).
+
+    Simulates the optional ``bagq[plot]`` extra being absent by binding ``matplotlib``
+    (and its pyplot submodule) to ``None`` in ``sys.modules`` — Python then raises
+    ``ImportError`` on ``import matplotlib`` — and asserts ``plot_table`` re-raises a
+    ``RuntimeError`` pointing at ``bagq[plot]`` (NOT a bare ``ModuleNotFoundError``).
+    """
+    monkeypatch.setitem(sys.modules, "matplotlib", None)
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", None)
+    result = _result(ros1_bag, 'SELECT t_ns, "linear.x" FROM cmd_vel')
+    with pytest.raises(RuntimeError, match=r"bagq\[plot\]"):
+        plot_table(result, tmp_path / "missing.png")
+
+
 def test_plot_table_closes_figures(ros1_bag: Path, tmp_path: Path) -> None:
     """Repeated plot_table calls leave no open figures (Pitfall 7 — figure-leak DoS)."""
     import matplotlib.pyplot as plt
