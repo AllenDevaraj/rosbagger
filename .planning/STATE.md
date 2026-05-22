@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-02-PLAN.md (rosbagger_core.inspect.collect_table_schemas — per-topic sanitized table name + columns via Phase 3 build_table_schema/TableNameResolver from O(1) metadata + typestore, multi-msgtype topics skipped, never reader.read(); thin `bagq tables` rich renderer showing every column with heavy blobs marked lazy). INSP-03 done; full suite 126 passed at 97.84%; cli.py + inspect.py at 100%. PHASE 4 COMPLETE (2/2) — ready for verification.
-last_updated: "2026-05-22T10:16:03.118Z"
-last_activity: 2026-05-22 -- Phase 5 planning complete
+stopped_at: Completed 05-01-PLAN.md (QueryBackend ABC in backend/base.py — stdlib-only abstract register_table/execute/close + inherited context-manager lifecycle; DuckDBBackend over one in-memory duckdb.connect(), Arrow via to_arrow_table() not deprecated fetch_arrow_table, idempotent close, duckdb imported ONLY in duckdb_backend.py; WR-01 fixed in build_table_schema — body columns colliding with t/t_ns/stamp/topic renamed with ros_path preserved so build_arrow_table no longer ArrowTypeError-crashes; W2 offline guard strengthened — import rosbagger_core/.backend leak no duckdb/sqlglot/pyarrow). QURY-06 done; full suite 150 passed at 97.81%; backend/base.py 100%, duckdb_backend.py 94%.
+last_updated: "2026-05-22T10:22:00Z"
+last_activity: 2026-05-22 -- Completed 05-01 (QueryBackend seam + DuckDB + WR-01 fix)
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 13
-  completed_plans: 11
-  percent: 50
+  completed_plans: 12
+  percent: 54
 ---
 
 # Project State
@@ -26,19 +26,19 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 5
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-22 -- Phase 5 planning complete
+Plan: 1 of 2 complete
+Status: Executing (05-02 next)
+Last activity: 2026-05-22 -- Completed 05-01 (QueryBackend seam + DuckDB + WR-01 fix)
 
-Progress: [██████████] 100%
+Progress: [█████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░] 50% (1/2 plans in Phase 5)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: ~4 min
-- Total execution time: ~0.8 hours
+- Total execution time: ~0.9 hours
 
 **By Phase:**
 
@@ -70,6 +70,7 @@ Progress: [██████████] 100%
 | Phase 03 P03-03 | 7min | 3 tasks | 6 files |
 | Phase 04 P04-01 | 7min | 3 tasks | 6 files |
 | Phase 04 P04-02 | 5min | 2 tasks | 4 files |
+| Phase 05 P05-01 | 5min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 04-02]: collect_table_schemas returns Phase 3 TableSchema objects directly (no new dataclass) — per topic it resolves the sanitized name (TableNameResolver) and builds columns via build_table_schema(msgtype, reader.typestore, topic=topic) from O(1) metadata; the CLI reads col.name/str(col.arrow_type)/col.is_heavy_blob and renders. The schema API is imported LAZILY inside the function (mirrors 04-01) so inspect.py top-level stays stdlib-only and import rosbagger_core never pulls schema/pyarrow (offline guard 2/2 held)
 - [Phase 04-02]: Multi-msgtype topic (TopicInfo.msgtype is None) is SKIPPED in collect_table_schemas — never passed to build_table_schema, which raises KeyError: None (Pitfall 4 / T-04-08, chose skip over per-connection fallback per A3); proven via a duck-typed reader stub since no fixture triggers it. collect_table_schemas never calls reader.read() (T-04-05), proven by a monkeypatched-read test
 - [Phase 04-02]: bagq tables shows ALL columns including heavy blobs, marked "lazy (blob)" via ColumnDef.is_heavy_blob directly (A2 / Pattern 4, NOT column_names(include=...)); the blob's bytes are never read (T-04-07). Verified: /image data -> list<item: uint8> marked lazy, while Imu orientation_covariance (ARRAY float64[9] -> list<item: double>) is correctly NOT marked — heavy-blob detection is structural, not a name blocklist. Full suite 126 passed at 97.84%; cli.py + inspect.py at 100%. INSP-03 done. PHASE 4 COMPLETE (2/2)
+- [Phase 05-01]: QueryBackend ABC (backend/base.py) mirrors reader/base.py — stdlib-only abstract register_table/execute/close + inherited __enter__(returns self)/__exit__(close, returns False); execute typed -> object so the seam imports NO pyarrow. DuckDBBackend (backend/duckdb_backend.py) owns ONE in-memory duckdb.connect() per instance, register_table via con.register, execute via con.execute(sql).to_arrow_table() (NOT deprecated fetch_arrow_table — pinned by a no-DeprecationWarning test), idempotent close mirroring RosbagsReader.close. import duckdb lives ONLY in duckdb_backend.py; backend/__init__ stays empty so import rosbagger_core/.backend leak no duckdb/sqlglot/pyarrow (W2 fresh-subprocess regression test added). QURY-06 done
+- [Phase 05-01]: WR-01 fixed at the schema-build SOURCE — build_table_schema enforces a unique-name invariant on body columns (taken-set seeded with _STANDARD_COLUMN_NAMES; suffix _ until unique), so a body field named t/t_ns/stamp/topic (or a repeated body name) is RENAMED with ros_path/arrow_type/is_heavy_blob preserved (value still extracts). The four standard columns are NEVER renamed (QURY-04 contract; RESEARCH Pitfall 1 standard-rename alternative rejected). This single fix makes build_arrow_table's name-keyed values dict safe (no ArrowTypeError collapse); chained collisions (topic->topic_->topic__) proven. Twist no-op verified (no QURY-01/02/03/04 regression). Full suite 150 passed at 97.81%; backend/base.py 100%, duckdb_backend.py 94% (1 defensive line)
 
 ### Pending Todos
 
@@ -142,6 +145,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T09:43:02Z
-Stopped at: Completed 04-02-PLAN.md (rosbagger_core.inspect.collect_table_schemas — per-topic sanitized table name + columns via Phase 3 build_table_schema/TableNameResolver from O(1) metadata + typestore, multi-msgtype topics skipped, never reader.read(); thin `bagq tables` rich renderer showing every column with heavy blobs marked lazy). INSP-03 done; full suite 126 passed at 97.84%; cli.py + inspect.py at 100%. PHASE 4 COMPLETE (2/2) — ready for verification.
+Last session: 2026-05-22T10:22:00Z
+Stopped at: Completed 05-01-PLAN.md (QueryBackend ABC in backend/base.py — stdlib-only abstract register_table/execute/close + inherited context-manager lifecycle; DuckDBBackend over one in-memory duckdb.connect(), Arrow via to_arrow_table() not deprecated fetch_arrow_table, idempotent close, duckdb imported ONLY in duckdb_backend.py; WR-01 fixed in build_table_schema — body columns colliding with t/t_ns/stamp/topic renamed with ros_path preserved so build_arrow_table no longer ArrowTypeError-crashes; W2 offline guard strengthened — import rosbagger_core/.backend leak no duckdb/sqlglot/pyarrow). QURY-06 done; full suite 150 passed at 97.81%. Next: 05-02 (query orchestrator — sqlglot resolution + lazy topic load on top of this backend).
 Resume file: None

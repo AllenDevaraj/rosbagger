@@ -137,7 +137,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — `QueryBackend` ABC seam + `DuckDBBackend` (register Arrow → run SQL → Arrow via `to_arrow_table`) + the WR-01 collision fix in `build_table_schema` -> QURY-06
+- [x] 05-01-PLAN.md — `QueryBackend` ABC seam + `DuckDBBackend` (register Arrow → run SQL → Arrow via `to_arrow_table`) + the WR-01 collision fix in `build_table_schema` -> QURY-06
 
 **Wave 2** *(blocked on 05-01)*
 
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 2. Bag Reader Layer | 3/3 | Complete    | 2026-05-22 |
 | 3. Message→Table Schema | 3/3 | Complete    | 2026-05-22 |
 | 4. Inspect | 2/2 | Complete    | 2026-05-22 |
-| 5. Query Engine | 0/2 | Not started | - |
+| 5. Query Engine | 1/2 | In Progress|  |
 | 6. Output & Export | 0/2 | Not started | - |
 | 7. CLI & Teaching Errors | 0/2 | Not started | - |
 | 8. Packaging, Docs & Release | 0/1 | Not started | - |
