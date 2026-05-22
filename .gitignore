@@ -1,0 +1,21 @@
+# Python / uv virtualenv
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Test & coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Locally-generated fixture bags & exports — binary bags must NOT be committed
+# (they are version-coupled to rosbags; tests generate them per-run into tmp_path).
+fixtures/
+out/

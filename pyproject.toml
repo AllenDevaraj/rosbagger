@@ -1,0 +1,16 @@
+# rosbagger — workspace ROOT (virtual workspace; intentionally NO [project] table).
+# A [project] table here would make uv try to build the root as a package and
+# complicate `uv add` (see 01-RESEARCH.md Anti-Patterns). Keep the root virtual:
+# only [tool.uv.*] + [dependency-groups].
+#
+# Lint/format config ([tool.ruff]) and test config ([tool.pytest.ini_options])
+# are intentionally deferred to plan 01-02 to keep file ownership clean.
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+rosbagger-core = { workspace = true }
+
+[dependency-groups]
+dev = ["ruff>=0.15,<0.16", "pytest>=8,<10", "pytest-cov>=6", "rosbags>=0.11,<0.12"]

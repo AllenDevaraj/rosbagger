@@ -1,0 +1,14 @@
+# rosbagger-core — the pure-Python OFFLINE library.
+# Distribution name uses a hyphen (rosbagger-core); the import package uses an
+# underscore (rosbagger_core). MUST NOT declare any ROS dependency, directly or
+# transitively. The single table-output dependency is rich (ships via typer in
+# bagq), so no lightweight-ASCII-table package is declared here.
+[project]
+name = "rosbagger-core"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = ["rosbags>=0.11,<0.12", "duckdb>=1.4,<2", "sqlglot>=27,<31", "pyarrow>=18"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

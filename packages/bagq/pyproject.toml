@@ -1,0 +1,19 @@
+# bagq — the CLI. Depends on rosbagger-core (resolved via the workspace source
+# wired in the root pyproject's [tool.uv.sources]). Exposes a console-script
+# entry point `bagq` -> bagq.cli:app. matplotlib is gated behind the optional
+# `plot` extra so the base install stays lean.
+[project]
+name = "bagq"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = ["rosbagger-core", "typer>=0.15,<1", "rich>=13"]
+
+[project.scripts]
+bagq = "bagq.cli:app"
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
