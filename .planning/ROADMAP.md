@@ -135,8 +135,13 @@ Plans:
 
 Plans:
 
-- [ ] 05-01: `QueryBackend` seam + DuckDB backend (load tables → run SQL → Arrow)
-- [ ] 05-02: sqlglot topic resolution (load only referenced topics)
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — `QueryBackend` ABC seam + `DuckDBBackend` (register Arrow → run SQL → Arrow via `to_arrow_table`) + the WR-01 collision fix in `build_table_schema` -> QURY-06
+
+**Wave 2** *(blocked on 05-01)*
+
+- [ ] 05-02-PLAN.md — sqlglot topic resolution + `query(sql, reader)` orchestrator (load only referenced topics via `read(topics=)`, register, execute) -> QURY-05/06
 
 ### Phase 6: Output & Export
 
