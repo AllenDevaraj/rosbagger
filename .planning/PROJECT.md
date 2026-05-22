@@ -18,12 +18,12 @@ Query and understand the data inside any ROS bag from one command — without wr
 - [x] Inspect a bag: topics, message types, counts, duration, approx Hz, size — *Validated in Phase 4 (INSP-01..03): `bagq info` + `bagq tables`, O(1) metadata, API-first*
 - [x] Query bag topics with SQL via DuckDB — one table per topic, dotted/quoted columns, `t`/`t_ns`/`stamp`/`topic` — *Validated in Phases 3+5 (QURY-01..06): `query(sql, reader)` over a swappable `QueryBackend`, end-to-end across all 3 formats*
 - [x] Resolve referenced topics from the SQL (sqlglot) and load only those — *Validated in Phase 5 (QURY-05): sqlglot resolver + connection-filtered `read(topics=)`*
+- [x] Export query results to CSV and Parquet; minimal `--plot` — *Validated in Phase 6 (OUT-01..04): `bagq query` stdout table + CSV/Parquet via DuckDB COPY + headless `--plot`*
 
 ### Active
 
 <!-- v1 = rosbagger-core + bagq. Hypotheses until shipped. -->
 
-- [ ] Export query results to CSV and Parquet; minimal `--plot`
 - [ ] Teaching errors: unknown table/column → suggestions; unresolvable custom msg → registration guidance
 
 ### Out of Scope
@@ -80,4 +80,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 after Phase 5 (Query Engine) completion — the keystone ships: `query(sql, reader)` runs SQL over ROS1/ROS2/MCAP bags via DuckDB behind a swappable `QueryBackend`, loading only sqlglot-referenced topics (QURY-01..06 all done). Reader (P2), schema (P3), inspect (P4), and query (P5) are validated — SQL-over-bags with no ROS install works end-to-end. Remaining: export to CSV/Parquet + `--plot` (Phase 6), CLI wiring + teaching errors (Phase 7), packaging/docs/release (Phase 8).*
+*Last updated: 2026-05-22 after Phase 6 (Output & Export) completion — `bagq query "<SQL>" BAG [-o out.{csv,parquet}] [--plot]` is end-to-end: SQL over ROS1/ROS2/MCAP → stdout table / CSV / Parquet / minimal plot, no ROS install (OUT-01..04 done). Read (P2), inspect (P4), query (P3+P5), and export (P6) are all validated — the core `bagq` value prop works. Remaining: CLI polish + teaching errors (Phase 7), packaging/docs/release (Phase 8).*
