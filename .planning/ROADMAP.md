@@ -22,7 +22,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 
 ### Milestone v0.2 — Modular cockpit (TF · ergonomics · edit · live · GUI)
 
-- [ ] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`rosbagger-tf`)
+- [ ] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand)
 - [ ] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown
 - [ ] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar
 - [ ] **Phase 12: Live Record** - live topic discovery + select recording (rclpy)
@@ -215,7 +215,7 @@ Plans:
 
 ### Phase 9: TF Debugger
 
-**Goal**: An offline TF analyzer (`rosbagger-tf`) that loads `/tf` + `/tf_static`, builds the transform graph over time, and reports dropouts/gaps on a timeline — reusing the v1 reader, no ROS install.
+**Goal**: An offline TF analyzer that loads `/tf` + `/tf_static`, builds the transform graph over time, and reports dropouts/gaps on a timeline — reusing the v1 reader, no ROS install. Surface = a `bagq tf` subcommand with logic in `rosbagger_core/tf.py` (locked decision; no separate `rosbagger-tf` package, so the existing `--cov=rosbagger_core` gate covers it).
 **Depends on**: Phase 2, Phase 5
 **Requirements**: TF-01
 **Success Criteria** (what must be TRUE):
@@ -224,7 +224,17 @@ Plans:
   2. Detects per-edge dropouts/gaps and reports them with timestamps (e.g. "odom→base_link unpublished 800ms at t=12.4s")
   3. Output is a timeline/table; runs on a fixture bag with no ROS install
 
-**Plans**: TBD (set at plan-phase)
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 09-01-PLAN.md — `write_tf_bag` fixture writer in `tools/make_fixtures.py`: `/tf_static` map→odom + dynamic `/tf` odom→base_link (seeded ~800ms gap) + clean base_link→laser, across ROS1/ROS2-sqlite/MCAP (ROS1 registers `tf2_msgs/msg/TFMessage`) -> TF-01
+- [ ] 09-02-PLAN.md — `rosbagger_core/tf.py` core: frozen `TfReport`/`EdgeReport`/`GapReport` + `collect_tf_report(reader)` (stream `/tf`+`/tf_static`, build parent→child graph, median×multiplier gap detection with all edge cases) + `NoTransformsError` in `errors.py` -> TF-01
+
+**Wave 2** *(blocked on 09-01 + 09-02)*
+
+- [ ] 09-03-PLAN.md — `bagq tf` subcommand (rich edge-summary + gap-timeline tables, `--gap-multiplier`/`--gap-ms`/`--format json`, `NoTransformsError` via `teaching_errors`) + fixture-backed SC1/SC2/SC3 tests across all three formats + offline-guard extension for the TF module -> TF-01
 
 ### Phase 10: Query Ergonomics
 
@@ -306,7 +316,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
-| 9. TF Debugger | 0/? | Not started | - |
+| 9. TF Debugger | 0/3 | Planned | - |
 | 10. Query Ergonomics | 0/? | Not started | - |
 | 11. Edit & Events | 0/? | Not started | - |
 | 12. Live Record | 0/? | Not started | - |
