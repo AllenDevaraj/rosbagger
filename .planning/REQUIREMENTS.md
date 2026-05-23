@@ -118,7 +118,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | CLI-04 | Phase 7 | Complete |
 | TF-01 | Phase 9 | Complete |
 | QURY-08 | Phase 10 | In Progress (mechanism shipped in 10-01: backend/alias.py + expand_aliases; orchestrator wiring + `--no-alias` land in 10-03) |
-| QURY-09 | Phase 10 | Planned |
+| QURY-09 | Phase 10 | In Progress (materialization mechanism shipped in 10-02: restrict= projection filter on arrow_schema/column_names/flatten_message/build_arrow_table — the skipped-read pushdown; orchestrator wiring + SC3 land in 10-03) |
 
 **Coverage:**
 - v1 requirements: 23 total (all Complete)

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
-stopped_at: Phase 10 context gathered
-last_updated: "2026-05-23T05:04:29.802Z"
+stopped_at: Phase 10 Plan 01 complete (alias pack + expand_aliases; 287 passed 97.35%)
+last_updated: "2026-05-23T05:13:38.455Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 14
   completed_phases: 9
   total_plans: 25
-  completed_plans: 22
-  percent: 64
+  completed_plans: 23
+  percent: 92
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 10 (Query Ergonomics) — EXECUTING
-Plan: 2 of 4
-Status: 10-01 complete (alias pack + expand_aliases); next is 10-02/10-03
-Last activity: 2026-05-23 -- Phase 10 Plan 01 complete
+Plan: 3 of 4
+Status: 10-02 complete (restrict= projection filter / QURY-09 mechanism); next is 10-03 (orchestrator wiring + SC3) then 10-04
+Last activity: 2026-05-23 -- Phase 10 Plan 02 complete
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -87,6 +87,7 @@ Progress: [█████████░] 88%
 | Phase 09 P02 | 3min | 2 tasks | 2 files |
 | Phase 09 P03 | 5min | 2 tasks | 3 files |
 | Phase 10 P10-01 | 8min | 3 tasks | 3 files |
+| Phase 10 P10-02 | 5min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 09-01] write_tf_bag(dest_dir, *, ros1, storage='sqlite3') added to tools/make_fixtures.py: /tf_static (one latched map->odom) + dynamic /tf (odom->base_link with ONE seeded 800_000_000 ns gap by omitting ticks 8..14 of 24; base_link->laser clean) in all three formats. ROS 1 registers tf2_msgs/msg/TFMessage via get_types_from_msg (absent from ROS1_NOETIC, verified); ROS 2 uses the built-in type. One /tf TFMessage per tick co-bundles present edges (analyzer keys by (parent,child)). make_all_fixtures untouched; offline invariant held; suite 255 passed 97.82%. TF-01 NOT marked complete (fixture only; analyzer lands in 09-02/03).
 - [Phase 09-02]: rosbagger_core/tf.py ships the entire TF-01 domain logic: collect_tf_report(reader, *, gap_multiplier=5.0, gap_ms=None) -> frozen TfReport. Streams /tf + /tf_static off the PASSED-IN v1 reader (Decision 2 — NOT the query layer that flattens /tf to one LIST-of-STRUCT col), keys edges by (parent,child), times by m.t_ns (TFMessage has no top-level header so Message.stamp is None — Decision 3), tags static by TOPIC NAME (Decision 4). Gap = median(inter-arrival diffs) x multiplier OR absolute gap_ms; deltas <=0 dropped before median, expected<=0 short-circuits (no ZeroDivision/false gap, T-09-03). Edge cases all guarded: static skip, single/zero-sample skip, MIXED /tf+/tf_static tie-break (static in graph yet gap-checked), no synthetic boundary gaps (A4), distinct series for self-edge/multi-parent (T-09-07). NoTransformsError (stdlib-only ValueError, .available) for the empty case (Decision 7). tf.py stdlib-only top (dataclasses, statistics), NOT in __init__, imports no ROS; __init__ untouched; offline guard held both ways. Suite 255 passed 85.46% (tf.py 0% BY DESIGN — tests land in 09-03). Lint fix: zip(..., strict=False) (Rule 3, bugbear B905). TF-01 NOT marked complete (spans 09-01/02/03; CLI+test in 09-03).
 - [Phase 10-01]: backend/alias.py ships ALIAS_PACK (6 msgtypes: Twist/TwistStamped/Odometry/Imu/PoseStamped/Pose, dotted targets re-verified vs the live ROS2 Humble typestore) + expand_aliases(tree, msgtype, schema_names) — a PURE sqlglot tree.transform (D-01): each unqualified short exp.Column whose .name is a pack alias AND whose dotted target is in the topic's TableSchema names (D-04 existence-gate) is replaced by exp.column(target, quoted=True); everything else (unknown tokens, wrong-topic aliases, already-dotted "linear.x", output exp.Alias, qualified c.vx) is a safe no-op. Canonical SC1: Twist vx->"linear.x", Odometry vx->"twist.twist.linear.x". Returns a NEW tree (input unmutated), reaches all clauses + function args. NEVER an f-string/regex (T-10-01, grep-gated). Chose a NEW module over extending resolve.py (keeps it single-purpose; 10-RESEARCH primary rec). Module top imports ONLY __future__ + sqlglot.exp (offline-safe, mirrors resolve.py) — no pyarrow/duckdb/rosbagger_core; offline guard extended with a duckdb/pyarrow-ONLY assertion (sqlglot at top is allowed, the resolve.py precedent). JOIN/CTE single-base-topic guard + --no-alias DEFERRED to orchestrator Plan 10-03 (Open Q1) — this helper is per-msgtype/per-schema. QURY-08 mechanism half DONE (orchestrator wiring is 10-03); QURY-08 traceability = In Progress. Full suite 287 passed 97.35% (>=80% gate); alias.py 95% (1 trivially-defensive _normalize fall-through line, no pragma — tf.py/types.py precedent). DEVIATION (test-only): added test_edge_msgtype_normalization to cover the _normalize defensive pkg/Type path (79%->95%); production code unchanged. ruff clean.
+- [Phase 10-02]: QURY-09 materialization mechanism — restrict= projection filter generalized across the FOUR schema functions (arrow_schema/column_names in model.py; flatten_message/build_arrow_table in flatten.py), keyword-only, default None. Composed (ANDed) WITH the existing heavy-blob include= filter, never replacing it: keep iff (not heavy or name in include) AND (restrict is None or name in restrict) (D-06) — a heavy blob in restrict but NOT include is still dropped. flatten_message SKIPS reduce(getattr, col.ros_path, msg) for any non-restricted data column — the literal pushdown (the value is never read off the message), proven by a spy whose .angular raises yet flatten_message(stub, restrict={linear.x}) does not. build_arrow_table threads the ONE restrict into BOTH schema.arrow_schema(include=, restrict=) (kept-column single source of truth) AND flatten_message(..., restrict=) so the schema + value arrays can't drift. Standard cols (t/t_ns/stamp/topic) NOT special-cased here — D-07's always-materialized guarantee is the orchestrator's job (10-03 unions them into restrict); a bare restrict={linear.x} yields EXACTLY [linear.x]. NO post-build drop_columns/.select (skip the read, not a post-hoc drop that would still read — grep-gated absent, T-10-05). restrict=None is byte-for-byte today's behavior so collect_table_schemas / bagq tables are provably untouched (dedicated regression test_tables_path_unaffected_by_restrict_param + column_names()==column_names(restrict=None) per topic). pyarrow stays imported INSIDE arrow_schema (offline invariant; no module-top heavy import). Full suite 297 passed 97.69% (>=80% gate); model.py 100%; offline guard 10/10; ruff clean. DEVIATION (Rule 1, test-only): the pushdown spy stub initially exposed only .x, so the no-restrict CONTROL raised on linear.y before reaching angular — gave _Linear x/y/z so the control reaches+raises on angular (production unchanged). QURY-09 mechanism DONE; orchestrator wiring (referenced_columns -> restrict, D-07 std-col union, D-08 star->None, D-09 over-include) + SC3 fixture assertion = Plan 10-03. QURY-09 traceability = In Progress until wired.
 - [Phase 09-03]: PHASE 9 COMPLETE (3/3); TF-01 DONE. bagq tf subcommand added to bagq/cli.py (Decision 1 — no new package, no pyproject/uv.lock/addopts/console-script edits; auto-covered by --cov=bagq + --cov=rosbagger_core). Thin rich renderer over collect_tf_report: a header line + a "TF edges" summary table (parent/child/kind/count/rate(Hz)/max gap/gaps, em-dash for missing) + a "TF gaps" dropout timeline (parent → child / gap / at (bag t) / at (abs ns)); the 09-01 seeded 800ms odom->base_link gap renders as a row (_human_dur renders 800_000_000 ns exactly as "800ms"). --gap-multiplier/--gap-ms/--format table|json (json = dataclasses.asdict with frames frozenset->sorted list). teaching_errors widened by ONE (NoTransformsError in the lazy import + except tuple; NO except Exception added) -> a non-TF bag exits 1 cleanly (no traceback). Empty gaps -> "no gaps detected" line, not an empty table. tests/test_tf.py (self-contained harness, per-format session fixtures) proves SC1 (frames {map,odom,base_link,laser}; map->odom static, odom->base_link/base_link->laser dynamic) + SC2 (exactly one ~800ms gap +/-1ns, expected_ns==100_000_000, zero on clean, none on static; at_rel==at-start; --gap-ms=300 flags / --gap-multiplier=100 suppresses) PARAMETRIZED over ROS 1 + ROS 2 sqlite3 + ROS 2 MCAP; + NoTransformsError, single-sample + all-duplicate-timestamp edge guards, CLI table/json/no-TF-error/no-gaps/bad-format (-k cli). test_offline_guard.py extended: import rosbagger_core.tf pulls no heavy stack + no rosbags. Suite 274 passed 97.76% (>=80% gate); tf.py 97% (3 unreachable defensive lines, no pragma — consistent w/ 09-02); ruff check + format --check clean. DEVIATION (Rule 1, test-only): an all-duplicate-timestamp coverage test first used a backwards stamp whose first sorted delta was positive (expected_ns!=None) — fixed to four IDENTICAL stamps (genuine empty diffs); production code unchanged.
 
 ### Pending Todos
@@ -186,7 +188,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T05:04:29.793Z
-Stopped at: Phase 10 Plan 01 complete (alias pack + expand_aliases; 287 passed 97.35%)
+Last session: 2026-05-23T05:12:08Z
+Stopped at: Phase 10 Plan 02 complete (restrict= projection filter / QURY-09 mechanism; 297 passed 97.69%)
 Resume file: None
-Next: Execute the remaining Phase 10 plans — 10-02 (projection pushdown / QURY-09) and 10-03 (orchestrator wiring of expand_aliases + `--no-alias`, which completes QURY-08). Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
+Next: Execute the remaining Phase 10 plans — 10-03 (orchestrator wiring: thread the restrict set from referenced_columns into build_arrow_table at backend/query.py:184, union the four standard columns per D-07, pass restrict=None under SELECT * per D-08, over-include on JOINs per D-09, plus wire expand_aliases + `--no-alias` — completes BOTH QURY-08 and QURY-09 incl. the SC3 fixture assertion D-10) then 10-04. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
