@@ -301,7 +301,20 @@ Plans:
   2. Records a selected subset to a bag while a publisher is running
   3. The recorded bag re-opens and iterates via the v1 reader
 
-**Plans**: TBD (set at plan-phase)
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 12-01-PLAN.md — `rosbagger-record` package scaffold + lazy ROS boundary (D-01/D-03), teaching capability errors, pure-Python topic discovery + subset selection (D-06/D-07), mocked unit tests, offline-guard extension (D-11) + `live` marker -> REC-01
+
+**Wave 2** *(blocked on 12-01)*
+
+- [ ] 12-02-PLAN.md — rclpy + rosbag2_py record core: discover→select→`create_subscription(raw=True)`→`SequentialWriter`→bounded/SIGINT stop→finalize (D-04/D-05/D-09); MCAP-preferred-default storage gate + `--storage sqlite3` escape (D-08 refined); mocked unit tests for the gate/stop-loop/finalize-on-error -> REC-01
+
+**Wave 3** *(blocked on 12-02)*
+
+- [ ] 12-03-PLAN.md — thin `rosbagger-record` CLI (`list` + record verb, D-02/D-07/D-08/D-09) + LIVE integration test (publisher→bounded record→re-open via v1 reader, SC1/SC2/SC3) gated by `importorskip`+`live`, proven via sqlite3, MCAP assertion skipif-guarded; phase gate (offline suite + ruff + offline guard + live lane) -> REC-01
 
 ### Phase 13: Live Replay
 
@@ -347,6 +360,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
 | 10. Query Ergonomics | 4/4 | Complete    | 2026-05-23 |
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
-| 12. Live Record | 0/? | Not started | - |
+| 12. Live Record | 0/3 | Planned | - |
 | 13. Live Replay | 0/? | Not started | - |
 | 14. GUI | 0/? | Not started | - |
