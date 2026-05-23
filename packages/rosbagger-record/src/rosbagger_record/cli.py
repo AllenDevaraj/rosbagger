@@ -69,11 +69,14 @@ def _capability_errors(fn):
     difference between a tool and a script).
 
     Catches ONLY the known capability set: :class:`RosNotAvailableError` (ROS 2 not
-    sourced — its message points the user at ``source /opt/ros/humble/setup.bash``) and
+    sourced — its message points the user at ``source /opt/ros/humble/setup.bash``),
     :class:`McapStorageUnavailableError` (the requested storage plugin is unregistered —
     its message names the registered writers + the install / ``--storage sqlite3``
-    remedy). A bare ``except Exception`` is deliberately NOT used: a genuine programming
-    bug must still surface as a traceback so it can be diagnosed.
+    remedy), and :class:`NoTopicsMatchedError` (the topic selection matched nothing live
+    — the day-one mistake of a mistyped or unpublished topic; its message names what is
+    discoverable + the ``rosbagger-record list`` / ``--all`` remedy, WR-04). A bare
+    ``except Exception`` is deliberately NOT used: a genuine programming bug must still
+    surface as a traceback so it can be diagnosed.
 
     The errors are imported LAZILY inside the wrapper so ``cli.py``'s top level stays
     typer-only (offline-guard discipline); ``errors.py`` is stdlib-only, so this import
@@ -86,20 +89,27 @@ def _capability_errors(fn):
         # stdlib-only, so importing it binds no rclpy/rosbag2_py.
         from rosbagger_record.errors import (
             McapStorageUnavailableError,
+            NoTopicsMatchedError,
             RosNotAvailableError,
         )
 
         try:
             return fn(*args, **kwargs)
-        except (RosNotAvailableError, McapStorageUnavailableError) as e:
+        except (
+            RosNotAvailableError,
+            McapStorageUnavailableError,
+            NoTopicsMatchedError,
+        ) as e:
             # Each carries its own teaching message (source ROS / install the storage
-            # plugin or use --storage sqlite3). Present cleanly with no traceback.
+            # plugin or use --storage sqlite3 / `rosbagger-record list` or --all for an
+            # empty selection). Present cleanly with no traceback.
             typer.secho(str(e), fg=typer.colors.RED, err=True)
             raise typer.Exit(1) from None
         # NOTE: NO `except Exception` — real bugs (KeyError/AttributeError/…) must still
-        # traceback. record()'s teaching ValueError on an empty selection is intentionally
-        # NOT swallowed here either: an empty-selection mistake is a usage error that
-        # benefits from the full message (and it is rare in practice).
+        # traceback. WR-04: record()'s empty-selection failure is now a typed
+        # NoTopicsMatchedError (caught above), so the most common day-one mistake — a
+        # mistyped/unpublished topic — prints one clean teaching line instead of a raw
+        # ValueError traceback, matching bagq's UnknownTableError discipline.
 
     return wrapper
 
@@ -188,8 +198,9 @@ def record(
     """
     # Lazy package-API import (offline invariant): the front-door function goes through
     # _require_ros() (clean RosNotAvailableError if ROS is absent). The storage gate
-    # (McapStorageUnavailableError) and any selection ValueError surface from it too; the
-    # capability errors are caught by @_capability_errors and printed cleanly. We import
+    # (McapStorageUnavailableError) and the empty-selection NoTopicsMatchedError surface
+    # from it too; all three capability errors are caught by @_capability_errors and
+    # printed as one clean line + Exit(1), no traceback (WR-04). We import
     # the submodule-shadow-proof alias (`record_topics`) so this resolves to the FUNCTION
     # even when `rosbagger_record.record` (the submodule) was imported earlier in the
     # process — `from rosbagger_record import record` would otherwise yield the MODULE.

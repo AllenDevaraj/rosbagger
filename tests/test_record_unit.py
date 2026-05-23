@@ -40,7 +40,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from rosbagger_record import McapStorageUnavailableError, RosNotAvailableError, record
+from rosbagger_record import (
+    McapStorageUnavailableError,
+    NoTopicsMatchedError,
+    RosNotAvailableError,
+    record,
+)
 from rosbagger_record.discovery import discover_topics, select_topics
 
 # --------------------------------------------------------------------------- #
@@ -170,7 +175,7 @@ def test_record_raises_teaching_error_when_ros_absent(no_ros):
 # (12-RESEARCH coverage rec. b) so the loop's exit logic is unit-coverable in the
 # uv venv while the irreducible rclpy spin wiring stays live-only.
 
-from rosbagger_record.record import _check_storage, _should_stop  # noqa: E402
+from rosbagger_record.record import _check_storage, _run, _should_stop  # noqa: E402
 
 
 def test_should_stop_max_messages_bound():
@@ -194,6 +199,107 @@ def test_should_stop_unbounded_never_stops():
     """Unbounded (both None) -> always False; only SIGINT (rclpy.ok()) ends the loop."""
     assert _should_stop(0, 0.0, max_messages=None, deadline=None) is False
     assert _should_stop(10_000, 1e9, max_messages=None, deadline=None) is False
+
+
+# --------------------------------------------------------------------------- #
+# _run — the duration-bounded spin loop (WR-03 closes the coverage gap), rclpy
+# MOCKED via sys.modules + a monotonic-clock seam (WR-01/WR-02 locked here)
+# --------------------------------------------------------------------------- #
+#
+# WHY THIS EXISTS (WR-03): _should_stop is unit-tested in isolation above, but _run —
+# the function that BUILDS the deadline (`time.monotonic() + duration if duration is
+# not None else None`) and drives the spin loop — previously had ZERO coverage (the
+# mocked record() tests monkeypatch _run away; the live test only drives --max-messages).
+# That let the WR-01 falsy bug (`if duration` turning `--duration 0` into an UNBOUNDED
+# record) and the WR-02 wall-clock deadline ship untested. These drive _run directly
+# with `rclpy` injected (ok()->True, spin_once a no-op) and a FAKE monotonic clock
+# (monkeypatch ri.time.monotonic) so the loop terminates deterministically offline.
+#
+# CLOCK SEAM (WR-02): _run now reads time.monotonic() (NOT time.time()), so we patch
+# `monotonic` on the module's `time` reference. The clock is a scripted iterator: the
+# 1st read builds the deadline, each later read is a per-spin _should_stop check.
+
+
+def _fake_monotonic(monkeypatch, values):
+    """Patch ``record.time.monotonic`` to yield ``values`` in order (a scripted clock).
+
+    A safety sentinel after the scripted reads raises if the loop spins more times than
+    expected — so a regression that fails to stop (e.g. the WR-01 falsy bug returning to
+    an unbounded deadline) surfaces as a loud StopIteration-style error, NOT a hang.
+    """
+    import rosbagger_record.record as ri
+
+    clock = iter(values)
+
+    def _next() -> float:
+        try:
+            return next(clock)
+        except StopIteration:  # pragma: no cover - only hit if the loop fails to stop
+            raise AssertionError(
+                "_run read the clock more times than scripted — it did not stop at the "
+                "deadline (WR-01/WR-02 regression: loop is effectively unbounded)."
+            ) from None
+
+    monkeypatch.setattr(ri.time, "monotonic", _next)
+    return ri
+
+
+def test_run_stops_at_duration_deadline(monkeypatch):
+    """``_run`` terminates once the monotonic clock reaches the ``--duration`` deadline.
+
+    rclpy.ok() stays True and spin_once is a no-op, so ONLY the deadline can end the loop.
+    The scripted clock: 100.0 (build deadline=100.05), 100.0 (check#1 < deadline -> spin),
+    100.06 (check#2 >= deadline -> break). If the deadline arithmetic regressed, the loop
+    would exhaust the clock and the sentinel would fail loudly rather than hang.
+    """
+    fake_rclpy = MagicMock()
+    fake_rclpy.ok.return_value = True
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+    _fake_monotonic(monkeypatch, [100.0, 100.0, 100.06])
+
+    _run(MagicMock(), {"n": 0}, duration=0.05)  # must RETURN, not hang
+
+    # one spin happened (check#1 was below the deadline), then check#2 broke the loop
+    assert fake_rclpy.spin_once.call_count == 1
+
+
+def test_run_duration_zero_stops_immediately(monkeypatch):
+    """WR-01 REGRESSION: ``--duration 0`` stops at once — it is NOT an unbounded record.
+
+    With the old truthiness guard (`deadline = ... if duration else None`), ``duration=0``
+    fell to ``deadline=None`` (unbounded) and this loop would spin forever (only SIGINT/
+    max_messages could end it). With the ``is not None`` fix, deadline == now at the first
+    check, ``_should_stop`` is True immediately, and NO spin happens. The scripted clock
+    has exactly two reads (build + the single check); a third read means it failed to stop.
+    """
+    fake_rclpy = MagicMock()
+    fake_rclpy.ok.return_value = True
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+    # build: deadline = 200.0 + 0 = 200.0 ; check#1: now=200.0 >= 200.0 -> stop at once
+    _fake_monotonic(monkeypatch, [200.0, 200.0])
+
+    _run(MagicMock(), {"n": 0}, duration=0)  # must RETURN immediately, never spin
+
+    fake_rclpy.spin_once.assert_not_called()  # stopped before the first spin (duration 0)
+
+
+def test_run_unbounded_stops_when_rclpy_not_ok(monkeypatch):
+    """With no bounds, ``_run`` spins until ``rclpy.ok()`` flips False (SIGINT — D-09).
+
+    Covers the unbounded branch: deadline stays None (duration omitted), max_messages None,
+    so only ``rclpy.ok()`` ends the loop. ok() returns True for two spins then False. With
+    ``duration`` omitted the deadline build takes the ``else None`` branch WITHOUT reading
+    the clock, so the clock is read once per True-iteration (the _should_stop check) — two
+    reads total; the final ok()->False exits before any further read.
+    """
+    fake_rclpy = MagicMock()
+    fake_rclpy.ok.side_effect = [True, True, False]  # two spins, then SIGINT
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+    _fake_monotonic(monkeypatch, [0.0, 0.0])  # no deadline build read + 2 per-spin checks
+
+    _run(MagicMock(), {"n": 0})  # unbounded -> ends only when ok() goes False
+
+    assert fake_rclpy.spin_once.call_count == 2  # spun until ok() flipped False
 
 
 # --------------------------------------------------------------------------- #
@@ -306,8 +412,10 @@ def test_record_empty_selection_raises_before_opening_writer(monkeypatch, mocked
     """No matched topics -> teaching error BEFORE ``writer.open()`` (no empty bag).
 
     Discovery returns a map containing NONE of the requested names, so selection is
-    empty; ``record()`` must raise the teaching ``ValueError`` BEFORE opening the
-    writer (assert ``SequentialWriter.open`` was never called — nothing was created).
+    empty; ``record()`` must raise the teaching ``NoTopicsMatchedError`` (WR-04 — a typed
+    error the CLI catches cleanly, NOT a bare ``ValueError``) BEFORE opening the writer
+    (assert ``SequentialWriter.open`` was never called — nothing was created). The error
+    carries the structured selection inputs + what WAS discoverable for the teaching line.
     """
     record_impl, writer = mocked_ros
     monkeypatch.setattr(
@@ -316,9 +424,14 @@ def test_record_empty_selection_raises_before_opening_writer(monkeypatch, mocked
         lambda node, **kw: {"/other": "std_msgs/msg/String"},  # not the requested topic
     )
 
-    with pytest.raises(ValueError, match="No live topics matched"):
+    with pytest.raises(NoTopicsMatchedError, match="No live topics matched") as excinfo:
         record_impl.record(["/telemetry"], "/tmp/out", storage="mcap")
 
+    err = excinfo.value
+    assert err.topics == ["/telemetry"]  # structured: what the user asked for
+    assert err.discovered == ["/other"]  # structured: what was actually live
+    assert "/other" in str(err)  # the teaching line names what IS discoverable
+    assert "rosbagger-record list" in str(err)  # ...and the remedy
     writer.open.assert_not_called()  # bailed out before opening the writer
     writer.close.assert_not_called()  # nothing to finalize — writer never opened
 
@@ -413,3 +526,52 @@ def test_cli_storage_enum_values_are_mcap_and_sqlite3():
     """The ``--storage`` choice set is exactly {mcap, sqlite3} (D-08 + the sqlite3 escape)."""
     assert {s.value for s in Storage} == {"mcap", "sqlite3"}
     assert Storage.MCAP.value == "mcap"  # the default
+
+
+def test_cli_record_empty_selection_exits_one_cleanly(monkeypatch):
+    """WR-04 REGRESSION: a mistyped/unpublished topic exits 1 with a clean teaching line.
+
+    The most common day-one mistake — recording a topic that is not currently published —
+    must NOT dump a raw ``ValueError`` traceback. We mock the full ROS stack so the CLI
+    front door clears ``_require_ros()`` and the storage gate (``mcap`` registered), then
+    force discovery to return a map WITHOUT the requested topic so selection is empty.
+    ``record()`` raises the typed ``NoTopicsMatchedError``; ``@_capability_errors`` catches
+    it and raises ``typer.Exit(1)``. CliRunner must see a clean ``SystemExit`` (code 1) with
+    the teaching message in the output — and crucially NO ``NoTopicsMatchedError`` /
+    ``ValueError`` escaping (which would mean a traceback leaked, the bug WR-04 fixes).
+
+    NOTE: this drives the REAL `record_topics` front door through the CLI (not the impl
+    directly), so it exercises the full WR-04 path end to end: lazy import -> _require_ros
+    (mocked OK) -> .record impl -> empty selection -> typed error -> decorator -> Exit(1).
+    """
+    import rosbagger_record.record as record_impl
+
+    # Mock the ROS stack so _require_ros() (in the package front door) succeeds and the
+    # impl's lazy `import rclpy` / `import rosbag2_py` bind these mocks. mcap is registered
+    # so the storage gate passes and we actually reach the empty-selection branch.
+    fake_rclpy = MagicMock()
+    fake_rosbag2_py = MagicMock()
+    fake_rosbag2_py.get_registered_writers.return_value = {"mcap", "sqlite3"}
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+    monkeypatch.setitem(sys.modules, "rosbag2_py", fake_rosbag2_py)
+
+    # Discovery returns a map that does NOT contain the requested /telemetry -> empty
+    # selection -> NoTopicsMatchedError raised BEFORE any writer is opened.
+    monkeypatch.setattr(
+        record_impl,
+        "discover_topics",
+        lambda node, **kw: {"/other": "std_msgs/msg/String"},
+    )
+
+    result = _runner.invoke(app, ["record", "/telemetry", "-o", "/tmp/rec"])
+
+    assert result.exit_code == 1  # clean Exit(1), not a crash (which CliRunner reports as 1 too)
+    # The exception reaching CliRunner is a clean SystemExit from typer.Exit, never the raw
+    # typed error (which would mean the @_capability_errors decorator failed to catch it and
+    # a traceback leaked) — this is the heart of the WR-04 fix.
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert not isinstance(result.exception, NoTopicsMatchedError)
+    assert not isinstance(result.exception, ValueError)
+    # The teaching message (and its remedy) is printed cleanly, not buried under a trace.
+    assert "No live topics matched" in result.output
+    assert "rosbagger-record list" in result.output

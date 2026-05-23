@@ -42,7 +42,7 @@ from __future__ import annotations
 import time
 
 from .discovery import discover_topics, select_topics
-from .errors import McapStorageUnavailableError
+from .errors import McapStorageUnavailableError, NoTopicsMatchedError
 
 
 def _check_storage(storage_id: str) -> None:
@@ -181,14 +181,24 @@ def _run(
     absorbs the SIGINT first). This function does NOT close the writer — the caller's
     ``finally`` owns finalization on EVERY exit path (SC3); keeping ``close()`` in the
     caller means an exception escaping this loop still finalizes the bag.
+
+    DEADLINE CLOCK (WR-01 / WR-02): the ``--duration`` deadline is built and compared
+    against :func:`time.monotonic` — NOT the wall clock — so a mid-record NTP step, a
+    manual ``date`` change, or a VM resume cannot push the bounded window early or late
+    (the live test relies on this determinism). The window is gated on
+    ``duration is not None`` (an explicit ``None`` check, NOT truthiness), so
+    ``--duration 0`` is HONORED as "stop immediately" — it stops on the first
+    :func:`_should_stop` check (``now >= deadline`` is true at once) — exactly mirroring
+    ``max_messages=0``. A truthiness test would have silently turned ``0`` into an
+    UNBOUNDED record (the opposite of the requested bound).
     """
     import rclpy
 
-    deadline = time.time() + duration if duration else None
+    deadline = time.monotonic() + duration if duration is not None else None
     try:
         while rclpy.ok():
             if _should_stop(
-                counter["n"], time.time(), max_messages=max_messages, deadline=deadline
+                counter["n"], time.monotonic(), max_messages=max_messages, deadline=deadline
             ):
                 break
             rclpy.spin_once(node, timeout_sec=0.05)
@@ -230,8 +240,10 @@ def record(
     3. ``discover_topics(node)`` (settle so external publishers appear — Pattern 3),
        then ``select_topics(discovered, topics=topics, all_topics=..., regex=...,
        exclude=...)`` (delegated to Plan 01's pure filter — selection is NOT
-       re-implemented here). If the selection is EMPTY, raise a teaching ``ValueError``
-       BEFORE opening the writer rather than silently recording an empty bag.
+       re-implemented here). If the selection is EMPTY, raise the teaching
+       :class:`~rosbagger_record.errors.NoTopicsMatchedError` BEFORE opening the writer
+       rather than silently recording an empty bag — the CLI's ``@_capability_errors``
+       wrapper presents it as one clean line + ``Exit(1)`` (WR-04), not a traceback.
     4. Open the writer; subscribe + ``create_topic`` for each selected topic; run the
        bounded-stop loop. ``writer.close()`` is in a ``finally`` so the bag is
        finalized on EVERY exit path — including an exception in the loop (SC3 / T-12-05;
@@ -258,12 +270,12 @@ def record(
             exclude=exclude,
         )
         if not selected:
-            raise ValueError(
-                f"No live topics matched (topics={topics!r}, all={all_topics}, "
-                f"regex={regex!r}, exclude={exclude!r}). Currently discoverable: "
-                f"{sorted(discovered) or '(none)'}. "
-                "Run `rosbagger-record list` to see what is being published, "
-                "or pass --all to record everything."
+            raise NoTopicsMatchedError(
+                topics=topics,
+                all_topics=all_topics,
+                regex=regex,
+                exclude=exclude,
+                discovered=sorted(discovered),
             )
         writer = _make_writer(out, storage)
         try:

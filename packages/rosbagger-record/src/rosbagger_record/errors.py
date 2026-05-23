@@ -43,6 +43,49 @@ class RosNotAvailableError(RuntimeError):
         )
 
 
+class NoTopicsMatchedError(RuntimeError):
+    """The topic selection resolved to ZERO live topics — nothing to record.
+
+    Raised by :func:`rosbagger_record.record.record` BEFORE opening the writer when
+    the requested selection (positional ``topics`` / ``--all`` / ``--regex`` /
+    ``--exclude``) matches none of the currently-discoverable topics — the day-one
+    mistake of naming a topic that is mistyped or not (yet) being published. This is
+    the recorder's most common usage error, so it gets the same teaching treatment as
+    the capability errors: :func:`rosbagger_record.cli._capability_errors` catches it
+    and prints a single stderr line + ``Exit(1)`` instead of dumping a traceback
+    (mirroring ``bagq``'s ``UnknownTableError``).
+
+    Subclasses ``RuntimeError`` (NOT ``ValueError``) for symmetry with the other
+    teaching capability errors in this module and so the CLI's ``@_capability_errors``
+    tuple stays a single typed family. Builds the teaching message in ``__init__``
+    (API-first: a CLI/GUI face only presents it) from the structured selection inputs
+    and what WAS discoverable, so the user can see both what they asked for and what is
+    actually live.
+    """
+
+    def __init__(
+        self,
+        *,
+        topics: list[str],
+        all_topics: bool,
+        regex: str | None,
+        exclude: str | None,
+        discovered: list[str],
+    ) -> None:
+        self.topics = topics
+        self.all_topics = all_topics
+        self.regex = regex
+        self.exclude = exclude
+        self.discovered = discovered
+        super().__init__(
+            f"No live topics matched (topics={topics!r}, all={all_topics}, "
+            f"regex={regex!r}, exclude={exclude!r}). Currently discoverable: "
+            f"{discovered or '(none)'}. "
+            "Run `rosbagger-record list` to see what is being published, "
+            "or pass --all to record everything."
+        )
+
+
 class McapStorageUnavailableError(RuntimeError):
     """The requested rosbag2 storage plugin is not registered (e.g. ``mcap``).
 

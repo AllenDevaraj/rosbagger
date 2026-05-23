@@ -23,7 +23,11 @@ interpreter that does ``import rosbagger_record`` leaks no ``rclpy`` / ``rosbag2
 from __future__ import annotations
 
 from .discovery import discover_topics, select_topics
-from .errors import McapStorageUnavailableError, RosNotAvailableError
+from .errors import (
+    McapStorageUnavailableError,
+    NoTopicsMatchedError,
+    RosNotAvailableError,
+)
 
 __version__ = "0.1.0"
 
@@ -34,6 +38,7 @@ __version__ = "0.1.0"
 # body, and select_topics is pure.
 __all__ = [
     "McapStorageUnavailableError",
+    "NoTopicsMatchedError",
     "RosNotAvailableError",
     "discover_topics",
     "list_record_topics",
