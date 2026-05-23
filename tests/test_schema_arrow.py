@@ -43,6 +43,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import make_all_fixtures  # noqa: E402  (after sys.path setup)
 
+from rosbagger_core.inspect import collect_table_schemas  # noqa: E402  (3rd-party stack)
 from rosbagger_core.reader import RosbagsReader  # noqa: E402  (3rd-party stack)
 from rosbagger_core.schema.flatten import (  # noqa: E402
     build_arrow_table,
@@ -533,3 +534,49 @@ def test_build_arrow_table_restrict_composes_with_heavy_blob(fixture_bags) -> No
     no_blob = build_arrow_table(msgs, schema, include=set(), restrict={"t"})
     assert no_blob.column_names == ["t"]
     assert "data" not in no_blob.column_names
+
+
+# --- Task 3: the bagq tables / collect_table_schemas path is unaffected -------
+
+
+def test_tables_path_unaffected_by_restrict_param(fixture_bags) -> None:
+    """``bagq tables`` (collect_table_schemas) is provably unchanged by the new restrict param.
+
+    The D-06 "the only production caller of the schema filter is backend/query.py;
+    bagq tables / collect_table_schemas never passes restrict" guarantee. Since
+    those functions default ``restrict=None``, ``column_names()`` (no restrict)
+    must still list EVERY non-heavy column in declared order and exclude the heavy
+    blob — exactly today's behavior. The /image table is the meaningful case: it
+    carries the only heavy blob (``data``) among the fixture topics.
+    """
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader:
+        schemas = collect_table_schemas(reader)
+    by_name = {s.table_name: s for s in schemas}
+
+    # /image: the non-heavy columns in declared order, with the heavy `data`
+    # blob omitted by the default (restrict=None, include=None) path — unchanged.
+    image = by_name["image"]
+    assert image.column_names() == [
+        "t",
+        "t_ns",
+        "stamp",
+        "topic",
+        "header.stamp.sec",
+        "header.stamp.nanosec",
+        "header.frame_id",
+        "height",
+        "width",
+        "encoding",
+        "is_bigendian",
+        "step",
+    ]
+    # The heavy blob is excluded by default and re-included only via include=
+    # (the QURY-07 rule), with restrict still None — no behavior change.
+    assert "data" not in image.column_names()
+    assert "data" in image.column_names(include={"data"})
+
+    # And the no-arg call equals the explicit restrict=None call for every topic
+    # (the default path is byte-for-byte the projection-disabled path).
+    for schema in schemas:
+        assert schema.column_names() == schema.column_names(restrict=None)
+        assert schema.arrow_schema().equals(schema.arrow_schema(restrict=None))
