@@ -172,6 +172,63 @@ def test_edit_refuses_to_overwrite_input(ros1_bag: Path) -> None:
     assert result.exit_code != 0  # overwrite refused -> BadParameter, no traceback
 
 
+def test_edit_existing_output_clean_exit_no_traceback(ros1_bag: Path, tmp_path: Path) -> None:
+    """WR-01: ``-o`` at an EXISTING (non-input) path exits cleanly — no WriterError traceback.
+
+    Re-running an edit onto a path that already exists is an extremely common mistake.
+    rosbags' Writer raises its own ``WriterError`` (not a ValueError) which the CLI's
+    ``except ValueError`` would miss, dumping a raw traceback. The fix rewords it to a
+    clean ValueError -> BadParameter: the exit is non-zero and the captured exception is
+    Click's controlled ``SystemExit`` (a clean message), NEVER the raw ``WriterError``.
+    """
+    out = tmp_path / "already_there.bag"
+    out.write_bytes(b"")  # the output path exists before the edit runs
+    result = runner.invoke(app, ["edit", str(ros1_bag), "-o", str(out)])
+    assert result.exit_code != 0
+    # No raw traceback: a clean BadParameter surfaces as a controlled SystemExit, not the
+    # library's WriterError. (CliRunner sets .exception to the controlled SystemExit.)
+    assert isinstance(result.exception, SystemExit)
+    assert type(result.exception).__name__ != "WriterError"
+
+
+def test_convert_existing_output_clean_exit_no_traceback(ros1_bag: Path, tmp_path: Path) -> None:
+    """WR-01 (convert verb): an existing ``-o`` path also exits cleanly (no traceback)."""
+    out = tmp_path / "convert_exists"  # ROS 2 dir dst that already exists
+    out.mkdir()
+    result = runner.invoke(app, ["convert", str(ros1_bag), "-o", str(out)])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, SystemExit)
+    assert type(result.exception).__name__ != "WriterError"
+
+
+def test_edit_backwards_trim_clean_exit(ros1_bag: Path, tmp_path: Path) -> None:
+    """WR-02: a backwards ``--trim 5 1`` exits cleanly non-zero, writing no bag.
+
+    A transposed trim window would otherwise be accepted and silently produce an empty
+    output. The core EditOps rejects start > end with a ValueError, which the CLI maps to
+    a clean BadParameter (controlled SystemExit, no traceback) and no bag is written.
+    """
+    out = tmp_path / "backwards.bag"
+    result = runner.invoke(app, ["edit", str(ros1_bag), "-o", str(out), "--trim", "5", "1"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, SystemExit)  # clean, not a raw traceback
+    assert not out.exists()  # nothing written on the rejected invocation
+
+
+def test_edit_contradictory_format_suffix_clean_exit(ros1_bag: Path, tmp_path: Path) -> None:
+    """WR-03: ``--format sqlite3`` with a ``.bag`` ``-o`` exits cleanly, writing nothing.
+
+    The contradiction would otherwise write a ROS 2 directory named ``out.bag/`` that
+    cannot be re-opened. The core ValueError maps to a clean BadParameter and no bag is
+    produced.
+    """
+    out = tmp_path / "contradiction.bag"
+    result = runner.invoke(app, ["edit", str(ros1_bag), "-o", str(out), "--format", "sqlite3"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, SystemExit)
+    assert not out.exists()
+
+
 # ---------------------------------------------------------------------------
 # both verbs registered (CLI surface)
 # ---------------------------------------------------------------------------

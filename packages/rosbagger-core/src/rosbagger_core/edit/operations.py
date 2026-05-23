@@ -13,10 +13,12 @@ downsample factors — plus the two validity rules the pipeline relies on:
   (``N <= 0`` is meaningless and would zero-divide or drop everything).
 
 The trim window is bag-relative SECONDS (D-06): a message at log time ``t_ns`` is
-kept iff ``start_ns + int(START*1e9) <= t_ns <= start_ns + int(END*1e9)`` where
-``start_ns`` is the reader's ``start_time``. The per-message decision helpers
-live here (``keeps_topic`` / ``trim_window_ns`` / ``downsample_factor``) so the
-streaming loop in ``pipeline.py`` stays readable.
+kept iff ``start_ns + round(START*1e9) <= t_ns <= start_ns + round(END*1e9)`` where
+``start_ns`` is the reader's ``start_time`` (``round`` not ``int`` — WR-06 — so an
+inexact float bound does not nudge the inclusive edge inward and drop a boundary
+message). The per-message decision helpers live here (``keeps_topic`` /
+``trim_window_ns`` / ``downsample_factor``) so the streaming loop in ``pipeline.py``
+stays readable.
 
 OFFLINE INVARIANT (11-RESEARCH Pitfall 5): this module imports ONLY the standard
 library (``dataclasses``) — never ``rosbags`` / ``duckdb`` / ``pyarrow``. The
@@ -60,6 +62,16 @@ class EditOps:
                 "Cannot combine drop and keep: --drop excludes named topics while "
                 "--keep includes only named topics. Use one or the other, not both."
             )
+        # WR-02: a backwards trim window (start > end) selects NOTHING — `lo <= t <= hi`
+        # is never true for an inverted `[lo, hi]` — so it would silently write an empty
+        # bag (a transposed `--trim 5 1`). Reject it at construction so the CLI maps the
+        # ValueError to a clean BadParameter before any bag is opened (defense-in-depth
+        # alongside the drop/keep + downsample checks).
+        if self.trim is not None and self.trim[0] > self.trim[1]:
+            raise ValueError(
+                f"trim window start ({self.trim[0]}) must be <= end ({self.trim[1]}); "
+                "a backwards window selects no messages."
+            )
         # V5 input validation: every downsample factor must be a positive integer.
         for topic, n in self.downsample.items():
             if not isinstance(n, int) or n <= 0:
@@ -92,14 +104,17 @@ class EditOps:
 
         ``start_ns`` is the reader's ``start_time``. Returns ``None`` when no trim
         is configured (the caller then keeps every timestamp). The seconds bounds
-        are converted to ns with ``int(x * 1e9)`` to match the fixtures' integer
-        nanosecond timestamps exactly.
+        are converted to ns with ``round(x * 1e9)`` (WR-06): a float seconds value
+        that is not exactly representable (e.g. ``0.3`` stored as ``0.299999...``)
+        would truncate one ns SHORT under ``int()``, silently excluding a message
+        whose timestamp sits exactly on the inclusive ``[lo, hi]`` edge. Rounding to
+        the nearest ns keeps a boundary message that the user intended to include.
         """
         if self.trim is None:
             return None
         start_s, end_s = self.trim
-        lo = start_ns + int(start_s * 1e9)
-        hi = start_ns + int(end_s * 1e9)
+        lo = start_ns + round(start_s * 1e9)
+        hi = start_ns + round(end_s * 1e9)
         return lo, hi
 
     def downsample_factor(self, topic: str) -> int | None:

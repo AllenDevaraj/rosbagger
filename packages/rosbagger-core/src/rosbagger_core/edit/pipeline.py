@@ -57,6 +57,47 @@ def _validate_fmt(fmt: str | None) -> None:
         raise ValueError(f"unknown output format {fmt!r}; expected ros1, mcap, or sqlite3.")
 
 
+def _validate_fmt_suffix(dst: Path, fmt: str | None) -> None:
+    """Reject a contradiction between an explicit ``fmt`` and ``dst``'s suffix (WR-03).
+
+    ``make_writer`` lets an explicit ``fmt`` OVERRIDE the suffix, but a contradictory
+    pair produces an output whose on-disk SHAPE (file vs directory) does not match what
+    its name implies, so :func:`rosbags.highlevel.AnyReader` cannot re-open it. The two
+    footguns:
+
+    * ``fmt`` is a ROS 2 format (``mcap`` / ``sqlite3``) but ``dst`` ends in ``.bag`` —
+      writes a ROS 2 bag DIRECTORY literally named ``out.bag/``; re-opening sees the
+      ``.bag`` suffix, treats the directory as a ROS 1 file, and raises
+      ``AnyReaderError: ... Is a directory.``.
+    * ``fmt == "ros1"`` but ``dst`` ends in ``.mcap`` — writes a ROS 1 FILE named
+      ``out.mcap``; re-opening dispatches on the ``.mcap`` suffix to the MCAP reader,
+      which cannot parse the ROS 1 bag bytes.
+
+    Raising ``ValueError`` routes through the CLI's clean ``BadParameter`` mapping, so the
+    contradiction is reported (with the fix) rather than silently producing a dead bag.
+    The non-contradictory explicit-``fmt`` paths (e.g. ``fmt="mcap"`` with a no-suffix
+    directory dest, the existing override test) are untouched — only a suffix that names
+    the OPPOSITE ROS major version is rejected.
+    """
+    if fmt is None:
+        return
+    suffix = dst.suffix.lower()
+    fmt_is2 = fmt != "ros1"
+    if fmt_is2 and suffix == ".bag":
+        raise ValueError(
+            f"output format {fmt!r} is a ROS 2 format but the output path {dst} ends in "
+            f"'.bag' (a ROS 1 extension). The result would be a directory named "
+            f"'{dst.name}' that cannot be re-opened. Use a directory or '.mcap' output "
+            f"name, or pass --format ros1."
+        )
+    if not fmt_is2 and suffix == ".mcap":
+        raise ValueError(
+            f"output format 'ros1' contradicts the output path {dst} ('.mcap' is a ROS 2 "
+            f"extension). The result would be a ROS 1 bag named '{dst.name}' that cannot "
+            f"be re-opened as MCAP. Use a '.bag' output name, or pass --format mcap/sqlite3."
+        )
+
+
 def dst_is_ros2(dst: Path | str, fmt: str | None = None) -> bool:
     """Is the destination a ROS 2 bag (the rosbags ``is2 = dst.suffix != '.bag'`` rule)?
 
@@ -103,6 +144,35 @@ def make_writer(dst: Path | str, fmt: str | None = None):
     return Ros2Writer(dst, version=9, storage_plugin=plugin)
 
 
+def _build_writer(dst: Path, fmt: str | None):
+    """Construct the output Writer, mapping an already-exists failure to ``ValueError`` (WR-01).
+
+    Both ``rosbags`` Writers raise their own ``WriterError`` (``rosbags.rosbag1`` and
+    ``rosbags.rosbag2`` define DISTINCT classes) from ``__init__`` when the destination
+    path already exists — ``"<path> exists already, not overwriting."`` Re-running
+    ``bagq edit src.bag -o out.bag`` (a very common mistake) would otherwise surface a raw
+    traceback: ``WriterError`` is not a ``ValueError``, so neither the CLI's
+    ``except ValueError`` nor the ``@teaching_errors`` tuple catches it. Translate it to a
+    clean teaching ``ValueError`` here so the CLI maps it to a clean ``BadParameter`` (no
+    traceback), consistent with how every other verb presents errors. Any OTHER
+    ``WriterError`` (or other exception) propagates unchanged — only the actionable
+    already-exists case is reworded. The two ``WriterError`` classes are imported LAZILY so
+    ``import rosbagger_core.edit`` stays off the rosbags graph (Pitfall 5).
+    """
+    from rosbags.rosbag1 import WriterError as Ros1WriterError
+    from rosbags.rosbag2 import WriterError as Ros2WriterError
+
+    try:
+        return make_writer(dst, fmt)
+    except (Ros1WriterError, Ros2WriterError) as e:
+        if "exists already" in str(e):
+            raise ValueError(
+                f"output path {dst} already exists; bagq never overwrites an output bag. "
+                f"Choose a new path or remove the existing one."
+            ) from None
+        raise  # any other Writer construction failure surfaces unchanged
+
+
 def _assert_not_overwriting_input(srcs: list[Path], dst: Path) -> None:
     """Refuse to overwrite an input path (D-05 / threat T-11-01).
 
@@ -134,9 +204,12 @@ def edit_bag(
     messages written (0 for an empty result — Open Q2 LOCKED: write the empty bag,
     report the count, no silent no-op).
 
-    Raises ``ValueError`` if ``dst`` would overwrite an input (D-05), and re-raises
-    a no-defs read error as :class:`~rosbagger_core.errors.UnresolvedTypeError`
-    (mixed-format ``AnyReaderError`` propagates unchanged — Pitfall 6).
+    Raises ``ValueError`` if ``dst`` would overwrite an input (D-05), if an explicit
+    ``fmt`` contradicts ``dst``'s suffix (WR-03 — would write an unreadable bag), or if
+    ``dst`` already exists (WR-01 — the rosbags ``WriterError`` is reworded to a clean
+    ``ValueError`` so the CLI never dumps a traceback). Re-raises a no-defs read error as
+    :class:`~rosbagger_core.errors.UnresolvedTypeError` (mixed-format ``AnyReaderError``
+    propagates unchanged — Pitfall 6).
     """
     # Lazy imports keep `import rosbagger_core.edit` off the rosbags graph (Pitfall 5).
     from rosbags.highlevel import AnyReader, AnyReaderError
@@ -146,6 +219,9 @@ def edit_bag(
 
     # D-05: never mutate the input; refuse before opening any Writer.
     _assert_not_overwriting_input(src_list, dst)
+    # WR-03: reject an explicit --format that contradicts the dst suffix (would write an
+    # unreadable bag) BEFORE opening any reader — the ValueError maps to a clean CLI error.
+    _validate_fmt_suffix(dst, fmt)
 
     reader = AnyReader(src_list)
     try:
@@ -185,7 +261,10 @@ def edit_bag(
         # it, and the converters are all the identity).
         write_ts = _convert.dst_typestore(dst_is2) if converting else reader.typestore
 
-        with make_writer(dst, fmt) as writer:
+        # WR-01: _build_writer maps a "destination exists already" WriterError to a clean
+        # ValueError (the CLI then presents it without a traceback); all other Writer
+        # construction errors propagate unchanged.
+        with _build_writer(dst, fmt) as writer:
             # Re-register ONLY kept connections (drop/keep at the connection layer):
             # a dropped topic is simply never added, so the output has no orphan
             # connection for it (11-RESEARCH Anti-Pattern).

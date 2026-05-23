@@ -264,6 +264,170 @@ def test_downsample_non_positive_raises():
 
 
 # ---------------------------------------------------------------------------
+# WR-02: a backwards trim window (start > end) is rejected at construction
+# ---------------------------------------------------------------------------
+
+
+def test_backwards_trim_window_raises():
+    """trim=(start, end) with start > end raises a clear ValueError (WR-02).
+
+    A transposed ``--trim 5 1`` would otherwise be accepted and silently write an
+    EMPTY bag (the inverted window matches nothing). Rejecting it at construction means
+    the CLI maps the ValueError to a clean BadParameter before any bag is opened.
+    """
+    with pytest.raises(ValueError, match="must be <= end"):
+        EditOps(trim=(5.0, 1.0))
+
+
+def test_equal_trim_window_is_allowed():
+    """trim=(start, end) with start == end is a valid (point) window — not rejected.
+
+    The boundary of the WR-02 check is ``start <= end``; an instantaneous window is a
+    legitimate (if narrow) selection, so equality must construct without error.
+    """
+    ops = EditOps(trim=(1.0, 1.0))  # must not raise
+    assert ops.trim == (1.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# WR-06: trim-edge float→ns conversion ROUNDS (not truncates), keeping a
+# message that sits exactly on the inclusive window edge.
+# ---------------------------------------------------------------------------
+
+
+def test_trim_window_ns_rounds_inclusive_edge():
+    """trim_window_ns uses round(), so an inexact float bound is not nudged inward (WR-06).
+
+    ``0.000129 * 1e9`` is the classic float case ``128999.99999...``: ``int()`` would
+    truncate it to 128999 (one ns SHORT of the intended 129000 edge), silently dropping
+    a message at exactly start+129000 ns. ``round()`` yields 129000, so the inclusive
+    ``[lo, hi]`` edge lands where the user meant it to.
+    """
+    start_ns = 1_000_000_000
+    lo, hi = EditOps(trim=(0.0, 0.000129)).trim_window_ns(start_ns)
+    assert lo == start_ns  # 0.0 * 1e9 == 0 exactly
+    assert hi == start_ns + 129_000  # round(128999.99999...) == 129000, NOT int()'s 128999
+
+
+def _write_ros1_bag_at_offsets(dest_dir: Path, offsets_ns: list[int]) -> Path:
+    """Write a ROS 1 bag with one /cmd_vel Twist per offset (ns after a fixed base).
+
+    The base log time is ``_START_NS`` so ``reader.start_time == _START_NS`` (offset 0
+    must be present). Used to place a message at an EXACT boundary ns the trim edge must
+    keep (WR-06).
+    """
+    from rosbags.rosbag1 import Writer as Ros1Writer
+    from rosbags.typesys import Stores, get_typestore
+
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / "offsets.bag"
+    ts = get_typestore(Stores.ROS1_NOETIC)
+    vector3_t = ts.types["geometry_msgs/msg/Vector3"]
+    twist_t = ts.types["geometry_msgs/msg/Twist"]
+    with Ros1Writer(path) as writer:
+        conn = writer.add_connection("/cmd_vel", "geometry_msgs/msg/Twist", typestore=ts)
+        for i, off in enumerate(offsets_ns):
+            msg = twist_t(
+                linear=vector3_t(x=float(i), y=0.0, z=0.0),
+                angular=vector3_t(x=0.0, y=0.0, z=0.0),
+            )
+            writer.write(conn, _START_NS + off, ts.serialize_ros1(msg, "geometry_msgs/msg/Twist"))
+    return path
+
+
+def test_trim_keeps_boundary_message_under_inexact_bound(tmp_path):
+    """End-to-end WR-06: a message exactly on the trim edge survives an inexact bound.
+
+    A bag carries /cmd_vel messages at offsets 0 and 129000 ns. With ``--trim 0.0
+    0.000129`` the upper bound is the classic ``128999.99999...`` float. Under the old
+    ``int()`` truncation the edge would be 128999 ns and the 129000-ns message would be
+    DROPPED; with ``round()`` the edge is 129000 ns (inclusive) so BOTH messages are kept.
+    """
+    src = _write_ros1_bag_at_offsets(tmp_path / "boundary", [0, 129_000])
+    out = tmp_path / "boundary_out.bag"
+    written = edit_bag([src], out, EditOps(trim=(0.0, 0.000129)))
+    assert written == 2  # the boundary message at +129000 ns is KEPT, not truncated away
+    per_topic = _roundtrip(out)
+    assert sorted(per_topic["/cmd_vel"]) == [_START_NS, _START_NS + 129_000]
+
+
+# ---------------------------------------------------------------------------
+# WR-03: an explicit --format that contradicts the dst suffix is rejected
+# (it would otherwise write a bag AnyReader cannot re-open).
+# ---------------------------------------------------------------------------
+
+
+def test_format_sqlite3_with_bag_suffix_rejected(fixture_bags, tmp_path):
+    """fmt='sqlite3' with a '.bag' dst raises ValueError (WR-03), writing nothing.
+
+    Otherwise this writes a ROS 2 sqlite directory literally named ``out.bag/`` that
+    AnyReader (seeing the ``.bag`` suffix) treats as a ROS 1 file and fails to re-open.
+    Rejecting at the boundary keeps the contradiction from producing a dead bag.
+    """
+    src = fixture_bags["ros2_sqlite"]
+    out = tmp_path / "out.bag"  # ROS 1 extension, but fmt says ROS 2 sqlite3
+    with pytest.raises(ValueError, match="ROS 2 format"):
+        edit_bag([src], out, EditOps(), fmt="sqlite3")
+    assert not out.exists()  # nothing written on the rejected invocation
+
+
+def test_format_mcap_with_bag_suffix_rejected(fixture_bags, tmp_path):
+    """fmt='mcap' with a '.bag' dst is the same WR-03 contradiction and is rejected."""
+    src = fixture_bags["ros2_sqlite"]
+    out = tmp_path / "out.bag"
+    with pytest.raises(ValueError, match="ROS 2 format"):
+        edit_bag([src], out, EditOps(), fmt="mcap")
+    assert not out.exists()
+
+
+def test_format_ros1_with_mcap_suffix_rejected(fixture_bags, tmp_path):
+    """fmt='ros1' with a '.mcap' dst is the inverse WR-03 contradiction (rejected).
+
+    A ROS 1 bag named ``out.mcap`` re-opens via the MCAP reader (suffix dispatch) and
+    cannot be parsed. Reject it so the contradiction surfaces clearly.
+    """
+    src = fixture_bags["ros1"]
+    out = tmp_path / "out.mcap"  # ROS 2 extension, but fmt says ROS 1
+    with pytest.raises(ValueError, match="ros1"):
+        edit_bag([src], out, EditOps(), fmt="ros1")
+    assert not out.exists()
+
+
+def test_format_override_output_reopens_via_anyreader(fixture_bags, tmp_path):
+    """A NON-contradictory explicit fmt still re-opens cleanly (WR-03 guard not over-broad).
+
+    ``fmt='mcap'`` with a suffix-less directory dst is the legitimate override case — it
+    must NOT be rejected, and the output must re-open AND deserialize via AnyReader (SC1).
+    """
+    src = fixture_bags["ros2_sqlite"]
+    out = tmp_path / "override_dir"  # no suffix -> fmt='mcap' is authoritative, no clash
+    edit_bag([src], out, EditOps(), fmt="mcap")
+    per_topic = _roundtrip(out)  # re-opens AND deserializes
+    assert set(per_topic) == EXPECTED_TOPICS
+
+
+# ---------------------------------------------------------------------------
+# WR-01: writing to an output path that already exists is a clean ValueError
+# (the rosbags WriterError is reworded so the CLI never dumps a traceback).
+# ---------------------------------------------------------------------------
+
+
+def test_edit_existing_output_raises_clean_value_error(fixture_bags, tmp_path):
+    """A pre-existing ``-o`` path raises a clean ValueError, not a raw WriterError (WR-01).
+
+    rosbags' Writer raises its own ``WriterError`` (not a ValueError) when the dst exists,
+    which the CLI's ``except ValueError`` would miss. ``edit_bag`` translates the
+    already-exists case to a ValueError so the CLI maps it to a clean BadParameter.
+    """
+    src = fixture_bags["ros1"]
+    out = tmp_path / "exists.bag"
+    out.write_bytes(b"")  # the destination already exists
+    with pytest.raises(ValueError, match="already exists"):
+        edit_bag([src], out, EditOps())
+
+
+# ---------------------------------------------------------------------------
 # D-05: refuse to overwrite an input path (never mutate the input)
 # ---------------------------------------------------------------------------
 

@@ -646,16 +646,18 @@ def edit(
     if drop and keep:
         raise typer.BadParameter("--drop and --keep are mutually exclusive; use one or the other.")
 
-    ops = EditOps(
-        trim=trim,
-        drop=frozenset(drop or ()),
-        keep=frozenset(keep or ()),
-        downsample=_parse_downsample(downsample or []),
-    )
-    # The core raises ValueError for an overwrite-input attempt (D-05) and for any
-    # spec the CLI did not pre-validate; map it to a clean BadParameter rather than a
-    # traceback (the @teaching_errors tuple does not include the bare ValueError).
+    # The core raises ValueError both at EditOps CONSTRUCTION (a backwards --trim window,
+    # WR-02; a non-positive downsample) and inside edit_bag (an overwrite-input attempt
+    # D-05; a contradictory --format/suffix WR-03; an already-existing output WR-01). Build
+    # the spec INSIDE the try so EVERY such ValueError maps to a clean BadParameter rather
+    # than a traceback (the @teaching_errors tuple does not include the bare ValueError).
     try:
+        ops = EditOps(
+            trim=trim,
+            drop=frozenset(drop or ()),
+            keep=frozenset(keep or ()),
+            downsample=_parse_downsample(downsample or []),
+        )
         n = edit_bag(srcs, out, ops, fmt=fmt)
     except ValueError as e:
         raise typer.BadParameter(str(e)) from None
