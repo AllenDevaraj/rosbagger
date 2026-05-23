@@ -66,7 +66,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 - **TF-01** ✓ (Phase 9 — Complete): Offline TF dropout/timeline report from `/tf` + `/tf_static`
 
 ### Live (record/replay)
-- **REC-01**: Live topic discovery + checkbox-select recording (needs rclpy)
+- **REC-01** ✓ (Phase 12 — Complete): Live topic discovery + checkbox-select recording (needs rclpy)
 - **REP-01**: Replay a bag to ROS topics with transport controls (play/pause/step/seek/rate/loop)
 
 ### GUI
@@ -121,12 +121,14 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | QURY-09 | Phase 10 | Complete (materialization in 10-02: restrict= projection filter; WIRED into query() in 10-03 — per-topic restrict=(columns & schema_names)|STANDARD when not star, restrict=None under SELECT*; SC2/SC3 proven across ROS1+ROS2-sqlite+MCAP via a recording backend observing query()'s registered table) |
 | EDIT-01 | Phase 11 | Complete (raw-copy trim/drop/keep/downsample/merge in 11-01: streaming AnyReader→Writer edit_bag, lossless across ROS1+ROS2-sqlite3+MCAP; cross-format convert ROS1↔ROS2 in 11-02 via the rosbags converter factory — is_same_wireformat→memoryview identity / generate_message_converter→migrate_bytes for the Header.seq case, NOT hand-rolled; headered /imu+/image DESERIALIZE after convert both directions; thin bagq edit / bagq convert verbs over the core API) |
 | EVNT-01 | Phase 11 | Complete (sidecar I/O in 11-03: rosbagger_core.events sidecar_path/add_event/list_events over the fixed v1 schema, reusing the locked DuckDB-COPY writer — SC2; reserved `events` query table in 11-04: query() subtracts `events` from topic resolution and registers the sidecar relation via list_events(reader.paths[0]), empty-schema when absent (Open Q3) — a standard BETWEEN interval join works natively across ROS1+ROS2-sqlite3+MCAP, SC3, no special operator; thin bagq events add/list verbs over the core API, SC2 at the CLI; offline invariant held) |
+| REC-01 | Phase 12 | Complete (rosbagger-record live module: package scaffold + lazy ROS boundary + teaching capability errors in 12-01; the verified discover→select→`create_subscription(raw=True)`→`rosbag2_py.SequentialWriter`→bounded/SIGINT stop→finalize record core + MCAP-preferred storage gate in 12-02; the thin `rosbagger-record` CLI [`list` + record verbs, parse-time-constrained `--storage`] + the LIVE integration test in 12-03 — external publisher→bounded record→re-open via the v1 RosbagsReader(default_typestore=ROS2_HUMBLE); the live lane RAN on this box, SC1/SC2/SC3 proven via sqlite3, the MCAP assertion skipif-guarded; offline tier stays ROS-free, guard green) |
 
 **Coverage:**
 - v1 requirements: 23 total (all Complete)
 - Query-ergonomics additions: QURY-08, QURY-09 (Phase 10; both mapped)
 - Edit/Events additions: EDIT-01, EVNT-01 (Phase 11; both Complete)
-- Mapped to phases: 27
+- Live additions: REC-01 (Phase 12; Complete)
+- Mapped to phases: 28
 - Unmapped: 0 ✓
 
 > Phases 1 (Scaffold & Test Harness) and 8 (Packaging, Docs & Release) are infrastructure phases that carry the Definition of Done rather than specific REQ-IDs.

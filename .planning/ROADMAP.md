@@ -25,7 +25,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand) (completed 2026-05-22)
 - [x] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown (completed 2026-05-23)
 - [x] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar (completed 2026-05-23)
-- [ ] **Phase 12: Live Record** - live topic discovery + select recording (rclpy)
+- [x] **Phase 12: Live Record** - live topic discovery + select recording (rclpy) (completed 2026-05-23)
 - [ ] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy)
 - [ ] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI)
 
@@ -314,7 +314,7 @@ Plans:
 
 **Wave 3** *(blocked on 12-02)*
 
-- [ ] 12-03-PLAN.md — thin `rosbagger-record` CLI (`list` + record verb, D-02/D-07/D-08/D-09) + LIVE integration test (publisher→bounded record→re-open via v1 reader, SC1/SC2/SC3) gated by `importorskip`+`live`, proven via sqlite3, MCAP assertion skipif-guarded; phase gate (offline suite + ruff + offline guard + live lane) -> REC-01
+- [x] 12-03-PLAN.md — thin `rosbagger-record` CLI (`list` + record verb, D-02/D-07/D-08/D-09) + LIVE integration test (publisher→bounded record→re-open via v1 reader, SC1/SC2/SC3) gated by `importorskip`+`live`, proven via sqlite3, MCAP assertion skipif-guarded; phase gate (offline suite + ruff + offline guard + live lane) -> REC-01
 
 ### Phase 13: Live Replay
 
@@ -360,6 +360,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
 | 10. Query Ergonomics | 4/4 | Complete    | 2026-05-23 |
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
-| 12. Live Record | 2/3 | In Progress|  |
+| 12. Live Record | 3/3 | Complete   | 2026-05-23 |
 | 13. Live Replay | 0/? | Not started | - |
 | 14. GUI | 0/? | Not started | - |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: executing
+status: verifying
 stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-05-23T11:53:31.895Z"
+last_updated: "2026-05-23T12:03:27.219Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 14
-  completed_phases: 11
+  completed_phases: 12
   total_plans: 32
-  completed_plans: 31
-  percent: 79
+  completed_plans: 32
+  percent: 86
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 Phase: 12 (Live Record) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-23
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -97,6 +97,7 @@ Progress: [██████████] 97%
 | Phase 11 P11-04 | ~22min | 3 tasks | 6 files |
 | Phase 12 P01 | 8min | 3 tasks | 8 files |
 | Phase 12 P12-02 | ~12min | 2 tasks | 2 files |
+| Phase 12 P12-03 | ~10min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -188,6 +189,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 12-01]: Scaffolded packages/rosbagger-record/ (uv workspace member; only uv-resolved deps rosbagger-core + typer>=0.15,<1 — rclpy/rosbag2_py environment-provided, NOT declared, D-03). Lazy ROS boundary in __init__.py (verified RESEARCH Pattern 1): _require_ros() imports rclpy+rosbag2_py INSIDE its body and raises the teaching RosNotAvailableError from the ImportError; record()/list_topics() are lazy delegators to .record (Plan 02); NO top-level ROS import — `import rosbagger_record` is ROS-free in the uv venv (verified, no rclpy/rosbag2_py in sys.modules). errors.py: RosNotAvailableError + McapStorageUnavailableError as RuntimeError subclasses (capability/env conditions, distinct from core's ValueError data errors), stdlib-only top. discovery.py: discover_topics(node, settle_iters=30, settle_dt=0.02) lazy-imports rclpy, spins to settle DDS discovery, returns {topic: types[0]} (typeless dropped); select_topics is PURE (no ROS) with precedence base(all_topics OR positional-present) -> regex include -> exclude, deterministic over discovered order, re.search only (no shell/eval, T-12-02). console script rosbagger-record declared (cli.py Plan 03). uv.lock RE-LOCKED (members=[packages/*] globs the new member; --locked failed until `uv lock` added rosbagger-record v0.1.0; sync then exit 0, 42 pkgs). tests/test_record_unit.py: 11 mocked unit tests (selection matrix + mocked discover_topics via monkeypatch.setitem(sys.modules,'rclpy',MagicMock) — NOT mock.patch string targets, Pitfall 6 — + no_ros capability error). Offline guard EXTENDED: test_import_record_does_not_pull_ros (fresh subprocess, plain env PYTHONPATH=''; the .pth-installed member resolves while host ROS stays hidden — W3) asserts no rclpy/rosbag2_py leaked; core/bagq stay ROS-free with the live member installed (existing 14 guard tests green). `live` marker registered (silences Plan 03's unknown-marker warning); rosbagger-record/src added to ruff src. rosbagger_record kept OUT of the --cov gate (gate stays --cov=rosbagger_core --cov=bagq) so the >=80% holds without weakening — the irreducibly-live record core can't be covered offline. Full offline suite 414 passed @ 97.37% (>=80% gate); ruff check+format clean (66 files). DEVIATION: [Rule 2] added rosbagger-record/src to ruff src for workspace-lint consistency (addopts/--cov untouched per plan). TDD note: Task 3 is tdd=true but a characterization suite over Tasks 1+2 code (plan-anticipated GREEN-on-first-run); feat commits precede the test commit by plan design, all GREEN first run (no Task 1/2 contract bug). REC-01 mechanism foundation DONE; record core (12-02) + CLI/live test (12-03) build on _require_ros + discovery.
 - [Phase ?]: Phase 12-02: kept rosbagger_record OUT of the --cov gate (gate stays --cov=rosbagger_core --cov=bagq); the pure pieces (_should_stop/_check_storage/empty-selection+finalize control flow) are unit-covered with ROS mocked, the irreducible rclpy wiring (init/spin loop body/create_subscription/shutdown) is the only uncovered part and is live-only (12-03). Full offline suite 421 passed @ 97.37% (>=80% gate not weakened).
 - [Phase ?]: Phase 12-02: NO auto-fallback exposed — record() default storage stays mcap (D-08 not weakened); sqlite3 is only an EXPLICIT --storage escape. _check_storage gates on rosbag2_py.get_registered_writers() and raises the teaching McapStorageUnavailableError(requested, sorted(available)) BEFORE rclpy.init(), never silently downgrading.
+- [Phase 12-03]: Shipped the thin rosbagger-record CLI (cli.py: typer app, `list` verb [SC1] + `record` verb over the API; module top ROS-free, package API lazy-imported in command bodies; @_capability_errors presents RosNotAvailableError/McapStorageUnavailableError as a clean Exit(1), no traceback — mirrors bagq teaching_errors). SELECTION THREADING (the plan's choice point): record() stays the SINGLE orchestrator — extended its signature with all_topics/regex/exclude threaded into the one select_topics(discovered, ...) call; the CLI forwards flags only (API-first, D-02), never calling discovery itself. --storage is a str Enum {mcap,sqlite3} (W2) so an invalid value is REJECTED AT PARSE TIME (click usage error, exit 2) before any ROS work — making T-12-02's parse-time-constraint claim real; default Storage.MCAP (D-08 not weakened). Rule 1 fix: `from rosbagger_record import record` resolves to the MODULE (not the function) once `import rosbagger_record.record` (the submodule) runs anywhere in-process — added submodule-shadow-proof aliases record_topics/list_record_topics in __init__.py (point at the FUNCTIONS); the CLI imports those. LIVE LANE RAN ON THIS BOX (ROS-sourced): `source /opt/ros/humble/setup.bash && PYTHONPATH=<record/core/bagq/tests src prepend>:$PYTHONPATH python3 -m pytest tests/test_record_live.py -m live` → 2 passed, 1 skipped (SC1 discovers /telemetry; sqlite3 SC2/SC3 records 5 frames + re-opens via the v1 RosbagsReader(default_typestore=ROS2_HUMBLE), 5 msgs all on /telemetry; the mcap variant SKIPS — plugin absent, skipif on get_registered_writers()). Deterministic across reruns; an actually-passing live run (not collected-and-skipped). Offline: full suite 429 passed, 1 skipped @ 97.37% (test_record_live collected-and-skipped via importorskip, contributes 0 to cov; +8 CLI tests over Plan 02); ruff clean (69 files); offline guard 15 green (core/bagq/record + cli ROS-free); uv sync --locked --dev exit 0 (no re-lock — typer already declared). REC-01 COMPLETE — the offline↔live closing loop is proven. Human follow-up (optional, non-blocking): `sudo apt install ros-humble-rosbag2-storage-mcap` to run the skipped mcap live variant.
 
 ### Pending Todos
 
@@ -207,7 +209,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T11:51:51.781Z
+Last session: 2026-05-23T12:03:27.208Z
 Stopped at: Completed 12-02-PLAN.md
 Resume file: None
-Next: Phase 12 plan 01 COMPLETE (rosbagger-record scaffolded; lazy ROS boundary + teaching errors + pure-Python discovery/selection + offline-guard extension; full offline suite 414 passed @ 97.37%, ruff clean, `import rosbagger_record` ROS-free verified). Next is 12-02 (the rclpy/rosbag2_py record core — record.py: generic raw=True subscription -> SequentialWriter, bounded stop, Pattern 5 storage gate; reuses _require_ros + discovery + McapStorageUnavailableError). Then 12-03 (cli.py + test_record_live.py using the now-registered `live` marker). REC-01 stays in-progress until the recording path lands (Plans 02/03). Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
+Next: Phase 12 COMPLETE — all 3 plans landed (12-01 scaffold + lazy ROS boundary; 12-02 rclpy/rosbag2_py record core; 12-03 thin CLI + the LIVE SC1/SC2/SC3 proof). REC-01 marked Complete. The offline↔live closing loop is proven: the live lane RAN on this box (`source /opt/ros/humble/setup.bash && PYTHONPATH=<src prepend>:$PYTHONPATH python3 -m pytest tests/test_record_live.py -m live` → 2 passed, 1 skipped — SC1 + sqlite3 SC2/SC3 pass; mcap variant skipif-skipped, plugin absent). Offline: 429 passed, 1 skipped @ 97.37%, ruff clean, offline guard green, uv sync --locked --dev exit 0. Phase status = ready_for_verification (run /gsd:verify-work). Optional human follow-up (non-blocking): `sudo apt install ros-humble-rosbag2-storage-mcap` to exercise the skipped mcap live variant. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
