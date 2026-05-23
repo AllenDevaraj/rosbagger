@@ -357,6 +357,13 @@ def query(
             help="Plot numeric columns vs t. Bare = write plot.png; --plot FILE = that file.",
         ),
     ] = None,
+    no_alias: Annotated[
+        bool,
+        typer.Option(
+            "--no-alias",
+            help="Disable the built-in alias pack (e.g. vx → twist.twist.linear.x).",
+        ),
+    ] = False,
 ) -> None:
     """Run a SQL query over one or more bags and print or export the result.
 
@@ -368,6 +375,12 @@ def query(
     numeric result columns vs ``t_ns``; bare ``--plot`` writes ``plot.png`` in CWD,
     ``--plot FILE`` writes that file. When ``--plot`` is given it takes precedence over
     table/``--format`` rendering.
+
+    The built-in alias pack is ON by default (D-11), so a short token like ``vx``
+    expands to its dotted column (e.g. ``twist.twist.linear.x`` on an Odometry topic);
+    ``--no-alias`` disables expansion (rarely needed — an alias only expands when it
+    matches a column of the referenced topic). Column projection pushdown is always on
+    and transparent (it changes only what is loaded, never the result), so it has no flag.
     """
     # Import the core API lazily (inside the body) so module import stays light and
     # `bagq --help` pays no rosbags/duckdb/pyarrow import cost (offline-guard).
@@ -379,8 +392,11 @@ def query(
     # the @teaching_errors wrapper -> a clean one-line message + Exit(1), no traceback.
     # The result Arrow table is fully materialized inside query() (the backend closes
     # before it returns), so it outlives the reader `with` block.
+    # --no-alias forwards alias=False to the orchestrator (D-11); default (no_alias=False)
+    # leaves aliases ON. This is a thin pass-through — the orchestrator owns the rewrite and
+    # the trusted-SQL boundary (decision 1, API-first); the CLI builds no SQL.
     with RosbagsReader(bags) as reader:
-        result = run_query(sql, reader)
+        result = run_query(sql, reader, alias=not no_alias)
 
     # --plot is its own output sink (OUT-04) and takes precedence: when set, plot and
     # return, ignoring table/-o/--format. The bare-flag sentinel resolves to plot.png
