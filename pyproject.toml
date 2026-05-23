@@ -26,10 +26,18 @@ dev = [
 
 # --- Lint + format (ruff): one tool for lint, isort, and format ---
 # `src` includes tools and tests so ruff also lints the fixture generator
-# (plan 01-03) and the test suite, not just the two packages.
+# (plan 01-03) and the test suite, not just the packages. The Phase-12 live
+# member (rosbagger-record/src) is included too so `ruff check .` lints it and
+# resolves it as first-party for import sorting.
 [tool.ruff]
 line-length = 100
-src = ["packages/rosbagger-core/src", "packages/bagq/src", "tools", "tests"]
+src = [
+    "packages/rosbagger-core/src",
+    "packages/bagq/src",
+    "packages/rosbagger-record/src",
+    "tools",
+    "tests",
+]
 
 [tool.ruff.lint]
 # E/pycodestyle, F/pyflakes, I/isort, UP/pyupgrade, B/bugbear, SIM/simplify
@@ -44,3 +52,11 @@ quote-style = "double"
 [tool.pytest.ini_options]
 addopts = "--cov=rosbagger_core --cov=bagq --cov-report=term-missing --cov-fail-under=80"
 testpaths = ["tests"]
+# The `live` marker tags the Phase-12 LIVE integration tests (tests/test_record_live.py,
+# Plan 03) that require a sourced ROS 2 environment (rclpy + rosbag2_py). They are
+# SKIPPED in the offline CI (gated by importorskip("rclpy")); registering the marker
+# here silences pytest's "Unknown pytest.mark.live" warning. Coverage stays gated on
+# rosbagger_core + bagq only — the irreducibly-live record core can't be covered offline.
+markers = [
+    "live: integration tests that require a sourced ROS 2 environment (rclpy + rosbag2_py); skipped in the offline CI",
+]

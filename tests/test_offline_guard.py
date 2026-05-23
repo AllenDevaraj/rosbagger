@@ -1,10 +1,18 @@
 """The load-bearing offline-import invariant.
 
-These two tests protect the architectural "universal / no-ROS" promise for the
-life of the repo: the offline packages (``rosbagger_core``, ``bagq``) must never
-pull in a ROS module, directly or transitively. The ``no_ros`` fixture
-(tests/conftest.py) installs a ``sys.meta_path`` blocker so the assertion is
-meaningful on both a clean CI runner AND this ROS-equipped dev box.
+These tests protect the architectural "universal / no-ROS" promise for the life of
+the repo: the offline packages (``rosbagger_core``, ``bagq``) must never pull in a
+ROS module, directly or transitively. The ``no_ros`` fixture (tests/conftest.py)
+installs a ``sys.meta_path`` blocker so the assertion is meaningful on both a clean
+CI runner AND this ROS-equipped dev box.
+
+Phase 12 adds the offline↔LIVE boundary (D-11): ``rosbagger_record`` is the first
+package that REQUIRES ROS at runtime, but it isolates ``rclpy`` / ``rosbag2_py``
+behind LAZY function-body imports so ``import rosbagger_record`` itself stays
+ROS-free in the uv venv. ``test_import_record_does_not_pull_ros`` regression-locks
+that, and ``test_core_imports_without_ros`` / ``test_no_ros_leaked_into_sys_modules``
+confirm adding the live member to the workspace did not regress the core/bagq
+guarantee.
 """
 
 import importlib
@@ -273,3 +281,36 @@ def test_import_events_does_not_pull_rosbags():
     )
     leaked = [m for m in result.stdout.strip().split(",") if m]
     assert leaked == [], f"import rosbagger_core.events pulled in rosbags: {leaked}"
+
+
+def test_import_record_does_not_pull_ros():
+    """`import rosbagger_record` must NOT pull rclpy/rosbag2_py (the offline↔live boundary, D-11).
+
+    The Phase 12 live module isolates every ``rclpy`` / ``rosbag2_py`` import inside
+    function bodies (``_require_ros`` / ``record`` / ``list_topics`` / the lazy import
+    in ``discovery.discover_topics``), and ``errors.py`` / the ``select_topics`` filter
+    are pure stdlib. So the bare top-level ``import rosbagger_record`` binds none of
+    the ROS stack — the offline guarantee holds even though this package REQUIRES ROS
+    at run time (12-RESEARCH Pitfall 5).
+
+    Mechanism (mirrors the rosbags checks above): a FRESH interpreter with
+    ``env={"PYTHONPATH": ""}``. The empty ``PYTHONPATH`` neutralizes this dev host's
+    ROS-on-``PYTHONPATH`` leak, yet ``rosbagger_record`` is still importable because
+    the uv workspace member is installed as an editable ``.pth`` in site-packages
+    (which resolves regardless of ``PYTHONPATH``) — so this asserts the package's
+    import GRAPH is ROS-free, not merely that ROS is off the path.
+    """
+    code = (
+        "import sys; import rosbagger_record; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] in {'rclpy', 'rosbag2_py'}]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"import rosbagger_record pulled in ROS modules: {leaked}"
