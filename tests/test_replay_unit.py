@@ -384,3 +384,113 @@ def test_scheduler_bounded_duration_zero_halts_before_first_publish():
 
     assert recorded == []  # duration=0 is a real bound (NOT unbounded via truthiness)
     assert r.state is State.DONE
+
+
+# --------------------------------------------------------------------------- #
+# cli — the thin rosbagger-replay CLI (Plan 03), via typer's CliRunner (ENV=offline)
+# --------------------------------------------------------------------------- #
+#
+# These run in the ROS-free uv venv. The CLI's command body lazy-imports the package
+# front door (`from rosbagger_replay import replay_bag as replay_api`); we MOCK that front
+# door by monkeypatching the `replay_bag` ATTRIBUTE on the `rosbagger_replay` package so no
+# real ROS runs (mirrors the Phase-12 attribute-patch discipline — NOT a brittle string
+# target). The app has a SINGLE command, so typer flattens it: it is invoked as
+# `rosbagger-replay <bag> [opts]` (the command name is optional), so the tests invoke the
+# flat form with the BAG positional first. `--help` builds purely from the typer decorators
+# (no ROS import), so it exits 0 and we can grep the help text. A NoMessagesToReplayError
+# raised by the mocked API must surface as a clean Exit(1) (the @_capability_errors
+# wrapper) — CliRunner sees a SystemExit, never the raw RuntimeError escaping.
+
+from typer.testing import CliRunner  # noqa: E402
+
+import rosbagger_replay  # noqa: E402
+from rosbagger_replay.cli import app  # noqa: E402
+from rosbagger_replay.errors import NoMessagesToReplayError  # noqa: E402
+
+_runner = CliRunner()
+
+
+def test_cli_replay_help_exits_zero():
+    """``rosbagger-replay --help`` exits 0 (help builds without any ROS import)."""
+    result = _runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+
+
+def test_cli_replay_help_documents_end_folded_into_duration():
+    """W5: ``--help`` documents that --end is folded into --duration (D-10 accounted for).
+
+    The locked D-10 flag list names "optional --duration/--end"; this v1 CLI implements
+    --duration and folds --end into it. The help text must SAY SO (not silently drop --end),
+    so grep the rendered help for both "--end" and "--duration".
+    """
+    result = _runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "--duration" in result.output
+    assert "--end" in result.output  # explicitly accounted for, not silently dropped
+
+
+def test_cli_replay_parses_and_forwards_flags(monkeypatch):
+    """``replay BAG --rate 5 --max-messages 3 --topics /imu`` forwards parsed flags to the API.
+
+    The package front door is mocked (attribute patch on the `rosbagger_replay` package, the
+    target the CLI's lazy `from rosbagger_replay import replay_bag` resolves), so no ROS runs.
+    Asserts the call lands with rate=5.0, max_messages=3, topics={"/imu"}.
+    """
+    calls = {}
+
+    def fake_replay_bag(bag, **kwargs):
+        calls["bag"] = bag
+        calls.update(kwargs)
+        return 3
+
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", fake_replay_bag)
+
+    result = _runner.invoke(
+        app, ["/tmp/bag", "--rate", "5", "--max-messages", "3", "--topics", "/imu"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls["bag"] == "/tmp/bag"
+    assert calls["rate"] == 5.0
+    assert calls["max_messages"] == 3
+    assert calls["topics"] == {"/imu"}
+    assert "Published 3 messages" in result.output
+
+
+def test_cli_replay_topics_omitted_forwards_none(monkeypatch):
+    """With no --topics, the CLI forwards ``topics=None`` (publish everything), not an empty set."""
+    calls = {}
+
+    def fake_replay_bag(bag, **kwargs):
+        calls.update(kwargs)
+        return 9
+
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", fake_replay_bag)
+
+    result = _runner.invoke(app, ["/tmp/bag"])
+    assert result.exit_code == 0, result.output
+    assert calls["topics"] is None
+    assert calls["rate"] == 1.0  # default
+    assert calls["loop"] is False  # default
+
+
+def test_cli_replay_no_messages_exits_one_cleanly(monkeypatch):
+    """A NoMessagesToReplayError from the API surfaces as a clean Exit(1) — no traceback.
+
+    The mocked front door raises the typed teaching error; ``@_capability_errors`` catches
+    it and raises ``typer.Exit(1)``. CliRunner must see a clean ``SystemExit`` (code 1) with
+    the teaching message printed — and crucially NO ``NoMessagesToReplayError`` escaping
+    (which would mean a traceback leaked). Mirrors the record CLI error test.
+    """
+
+    def fake_replay_bag(bag, **kwargs):
+        raise NoMessagesToReplayError(bag_paths=bag, topics=kwargs.get("topics"))
+
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", fake_replay_bag)
+
+    result = _runner.invoke(app, ["/tmp/bag", "--topics", "/nope"])
+
+    assert result.exit_code == 1  # clean Exit(1), not a crash
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert not isinstance(result.exception, NoMessagesToReplayError)
+    assert "No messages to replay" in result.output

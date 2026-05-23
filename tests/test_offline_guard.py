@@ -314,3 +314,64 @@ def test_import_record_does_not_pull_ros():
     )
     leaked = [m for m in result.stdout.strip().split(",") if m]
     assert leaked == [], f"import rosbagger_record pulled in ROS modules: {leaked}"
+
+
+def _ros_modules_after_import(*import_targets: str) -> list[str]:
+    """Return the ROS-runtime modules in sys.modules after importing ``import_targets``.
+
+    Spawned in a FRESH interpreter with ``env={"PYTHONPATH": ""}`` — the empty
+    ``PYTHONPATH`` neutralizes this dev host's ROS-on-``PYTHONPATH`` leak, yet the uv
+    workspace member is still importable via its editable ``.pth`` in site-packages (which
+    resolves regardless of ``PYTHONPATH``) — so this asserts the package's import GRAPH is
+    ROS-free, not merely that ROS is off the path. Only the ROS-RUNTIME modules
+    (``rclpy`` / ``rosbag2_py``) are checked; ``rosbags`` (a pure-Python locked dep the
+    source seam uses) is allowed.
+    """
+    imports = "; ".join(f"import {t}" for t in import_targets)
+    code = (
+        "import sys; "
+        f"{imports}; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] in {'rclpy', 'rosbag2_py'}]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    return [m for m in result.stdout.strip().split(",") if m]
+
+
+def test_import_replay_does_not_pull_ros():
+    """`import rosbagger_replay` must NOT pull rclpy/rosbag2_py (the offline↔live boundary, D-12).
+
+    The Phase 13 live module isolates every ``rclpy`` / ``rosidl_runtime_py`` import inside
+    function bodies (``_require_ros`` / the lazy front door + the publish sink in
+    ``replay.py``), and ``errors.py`` / ``scheduler.py`` are pure stdlib while ``source.py``
+    imports ``rosbags`` only (lazily). So the bare top-level ``import rosbagger_replay``
+    binds none of the ROS RUNTIME stack — the offline guarantee holds even though this
+    package REQUIRES ROS at run time (mirrors ``test_import_record_does_not_pull_ros``).
+
+    Mechanism: a FRESH interpreter with ``env={"PYTHONPATH": ""}`` (the empty PYTHONPATH
+    neutralizes this dev host's ROS-on-PYTHONPATH leak; the editable workspace member still
+    resolves via its site-packages ``.pth``), so this asserts the package's import GRAPH is
+    ROS-free, not merely that ROS is off the path.
+    """
+    leaked = _ros_modules_after_import("rosbagger_replay")
+    assert leaked == [], f"import rosbagger_replay pulled in ROS modules: {leaked}"
+
+
+def test_import_replay_submodules_do_not_pull_ros():
+    """`import rosbagger_replay.scheduler` / `.source` must NOT pull rclpy/rosbag2_py either.
+
+    The pure transport ``scheduler`` (Plan 02) is stdlib-only and the raw-CDR ``source``
+    seam (Plan 01) imports ``rosbags`` only (and lazily) — neither touches the ROS RUNTIME.
+    Importing both in a fresh ROS-free interpreter must leave ``sys.modules`` free of
+    ``rclpy`` / ``rosbag2_py`` (``rosbags`` is an allowed pure-Python dep, not checked here).
+    Pinning the submodules — not just the package ``__init__`` — proves the lazy boundary
+    holds even if a future edit accidentally imports the ``.replay`` ROS sink eagerly.
+    """
+    leaked = _ros_modules_after_import("rosbagger_replay.scheduler", "rosbagger_replay.source")
+    assert leaked == [], f"import rosbagger_replay submodules pulled in ROS modules: {leaked}"
