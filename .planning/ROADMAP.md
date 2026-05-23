@@ -23,7 +23,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 ### Milestone v0.2 — Modular cockpit (TF · ergonomics · edit · live · GUI)
 
 - [x] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand) (completed 2026-05-22)
-- [ ] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown
+- [x] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown (completed 2026-05-23)
 - [ ] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar
 - [ ] **Phase 12: Live Record** - live topic discovery + select recording (rclpy)
 - [ ] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy)
@@ -261,7 +261,7 @@ Plans:
 
 **Wave 3** *(blocked on 10-03)*
 
-- [ ] 10-04-PLAN.md — `bagq query --no-alias` surface (aliases on by default, projection transparent; D-11) + full-suite/ruff/offline-guard phase gate -> QURY-08
+- [x] 10-04-PLAN.md — `bagq query --no-alias` surface (aliases on by default, projection transparent; D-11) + full-suite/ruff/offline-guard phase gate -> QURY-08
 
 ### Phase 11: Edit & Events
 
@@ -331,7 +331,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
 | 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
-| 10. Query Ergonomics | 3/4 | In Progress|  |
+| 10. Query Ergonomics | 4/4 | Complete   | 2026-05-23 |
 | 11. Edit & Events | 0/? | Not started | - |
 | 12. Live Record | 0/? | Not started | - |
 | 13. Live Replay | 0/? | Not started | - |

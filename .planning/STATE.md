@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: executing
-stopped_at: Phase 10 Plan 03 complete (orchestrator wiring — alias expansion + projection pushdown; QURY-08+QURY-09 traceable; 313 passed 97.73%)
-last_updated: "2026-05-23T05:24:07.056Z"
+status: verifying
+stopped_at: PHASE 10 COMPLETE (4/4) — bagq query --no-alias CLI surface added (D-11; alias=not no_alias forwarded, thin pass-through); QURY-08 + QURY-09 delivered end-to-end; phase gate green (316 passed 97.73%, ruff + offline-guard clean, SC1/SC2/SC3 confirmed incl. via the real bagq binary)
+last_updated: "2026-05-23T05:31:09.508Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 14
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 25
   completed_plans: 25
-  percent: 96
+  percent: 71
 ---
 
 # Project State
@@ -27,16 +27,16 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 Phase: 10 (Query Ergonomics) — EXECUTING
 Plan: 4 of 4
-Status: 10-03 complete; 10-04 (bagq query --no-alias CLI surface) is the last plan
+Status: Phase complete — ready for verification
 Last activity: 2026-05-23
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 25
+- Total plans completed: 26
 - Average duration: ~5 min
 - Total execution time: ~1.1 hours
 
@@ -54,7 +54,7 @@ Progress: [██████████] 96%
 | 7 | 2 | - | - |
 | 8 | 1 | - | - |
 | 09 | 3 | - | - |
-| 10 | 3/4 | 18min | 6min |
+| 10 | 4/4 | 20min | 5min |
 
 **Recent Trend:**
 
@@ -89,6 +89,7 @@ Progress: [██████████] 96%
 | Phase 10 P10-01 | 8min | 3 tasks | 3 files |
 | Phase 10 P10-02 | 5min | 3 tasks | 3 files |
 | Phase 10 P10-03 | 5min | 2 tasks | 2 files |
+| Phase 10 P10-04 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -173,6 +174,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 10-03] PHASE-10 INTEGRATION CRUX: query() reordered per D-02/Pattern 4 — parse -> HOIST typestore + per-topic TableSchema (schemas_by_table, O(1) no reader.read(), W3 fix moved typestore up) -> single-base-topic-gated expand_aliases -> referenced_*/has_star on the REWRITTEN tree -> load (reusing hoisted schemas, build_table_schema appears exactly once) -> backend.execute(tree.sql('duckdb')). alias: bool = True keyword added (D-11; --no-alias hatch), expand_aliases lazy-imported (offline). SC1: SELECT vx FROM cmd_vel -> linear.x [0,1,2] x3 formats; alias=False raises UnknownColumnError; AS speed preserved.
 - [Phase ?]: [Phase 10-03] Single-base-topic alias gate LOCKED (Open Q1/A3): orchestrator counts CTE-subtracted base topics (referenced_tables_in mapped through table_to_topic, unmapped dropped) and calls expand_aliases ONLY when exactly one resolves, keyed on its msgtype + existence-gated on its schema names. JOIN/CTE/multi-topic + alias=False = safe no-op (DuckDB rejects the unresolved token) — this is what protects the existing JOIN test (test_query_alias_join_no_op pins it).
 - [Phase ?]: [Phase 10-03] Projection wired (D-06/07/08/09): _STANDARD_COLUMNS frozenset (stdlib, offline-safe at module top); per topic in the load loop — star -> include=heavy, restrict=None (D-08, full materialization, Pitfall 4 short-circuit incl. o.*); else include=heavy&columns, restrict=(columns & schema_names)|STANDARD (D-06+D-07). Applied per-topic against that topic's schema_names -> over-include on JOIN never under-include (D-09). Threaded into build_arrow_table(include=, restrict=). SC3 proven by a _RecordingBackend (wraps real DuckDBBackend, captures register_table table) asserting column_names=={linear.x,t,t_ns,stamp,topic} x3 formats (W2 fix — observe, not re-derive). QURY-08+QURY-09 traceable end-to-end. Full suite 313 passed 97.73%; offline guard 10/10; ruff clean.
+- [Phase 10-04]: PHASE 10 COMPLETE (4/4). bagq query gained a --no-alias boolean (default False=aliases ON, D-11), declared in the existing Annotated[bool, typer.Option("--no-alias", ...)] idiom after --plot; the body forwards alias=not no_alias on the single run_query(sql, reader) call — a thin pass-through (decision 1, API-first): the CLI builds no SQL, adds no module-top import, and run_query stays lazy-imported (importing bagq.cli pulls no rosbags/pyarrow/duckdb, verified). _PlotCommand/--plot, -o/--format routing all untouched. Projection pushdown gets NO flag (D-11 — transparent). --no-alias "SELECT vx FROM cmd_vel" -> clean UnknownColumnError teaching line via the existing @teaching_errors (Exit 1, no traceback: CliRunner sees SystemExit, not ValueError; real binary prints "Unknown column 'vx'. Columns in cmd_vel: ..."); default-on renders linear.x [0,1,2]. TDD (RED 4ed0e76 -> GREEN cd32af2); the gate's ruff format collapsed the test's multi-line invoke (style 41e037c). Phase gate green: full suite 316 passed @ 97.73% (>=80%; 313 baseline + 3 CLI tests; cli.py fully covered), ruff check+format clean (53 files), offline-guard 10 passed; SC1 (alias resolves) + SC2/SC3 (projection loads only referenced cols) confirmed (18 alias/projection/star integration tests + real-shell smoke). QURY-08+QURY-09 delivered end-to-end. DEVIATION: none (the docstring note was plan-mandated; the format fix is a style fix on this plan's own edit, not behavioral).
 
 ### Pending Todos
 
@@ -192,7 +194,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T05:24:07.056Z
-Stopped at: Phase 10 Plan 03 complete (orchestrator wiring — alias expansion + projection pushdown both wired into query(); QURY-08 + QURY-09 traceable end-to-end; SC1/SC2/SC3 proven across ROS1+ROS2-sqlite+MCAP; 313 passed 97.73%)
+Last session: 2026-05-23T05:31:09.508Z
+Stopped at: PHASE 10 COMPLETE (4/4) — 10-04 added the `bagq query --no-alias` CLI surface (D-11; default False=aliases ON, forwarded as `alias=not no_alias` to run_query() — a thin pass-through, no SQL built, run_query stays lazy). Phase gate green: full suite 316 passed @ 97.73% (>=80%), ruff check+format clean (53 files), offline-guard 10 passed; SC1 (alias resolves), SC2/SC3 (projection loads only referenced cols) confirmed incl. via the real bagq binary. QURY-08 + QURY-09 delivered end-to-end.
 Resume file: None
-Next: Execute the LAST Phase 10 plan — 10-04 (the `bagq query` CLI surface: add a `--no-alias` boolean to the query command and forward `alias=not no_alias` through to query(); projection needs no flag — D-11). The orchestrator keyword (alias=True) the CLI threads onto is in place and tested. After 10-04, Phase 10 is complete. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
+Next: Phase 10 is complete and ready for verification (verifier agent not installed — verified inline this session: gate green, SC1/SC2/SC3 confirmed). Phase 10 was the last query-ergonomics phase of milestone v0.2. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
