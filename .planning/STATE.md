@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: verifying
-stopped_at: Completed 11-03-PLAN.md (event sidecar I/O)
-last_updated: "2026-05-23T09:44:40.944Z"
+status: ready_to_plan
+stopped_at: Phase 11 complete (4/4) — ready to discuss Phase 12
+last_updated: 2026-05-23T10:04:16.489Z
 last_activity: 2026-05-23
 progress:
   total_phases: 14
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 11 — Edit & Events
+**Current focus:** Phase 12 — live record
 
 ## Current Position
 
-Phase: 11 (Edit & Events) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
+Phase: 12
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-23
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 30
+- Total plans completed: 34
 - Average duration: ~5 min
 - Total execution time: ~1.1 hours
 
@@ -55,7 +55,7 @@ Progress: [██████████] 100%
 | 8 | 1 | - | - |
 | 09 | 3 | - | - |
 | 10 | 4 | - | - |
-| 11 | 4 | ~49min | ~12min |
+| 11 | 4 | - | - |
 
 **Recent Trend:**
 
