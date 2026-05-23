@@ -193,3 +193,43 @@ def test_import_tf_does_not_pull_rosbags():
     )
     leaked = [m for m in result.stdout.strip().split(",") if m]
     assert leaked == [], f"import rosbagger_core.tf pulled in rosbags: {leaked}"
+
+
+def test_import_edit_does_not_pull_heavy_query_stack():
+    """`import rosbagger_core.edit` must NOT load duckdb/sqlglot/pyarrow (Pitfall 5).
+
+    The Phase 11 edit pipeline (``edit/operations.py`` + ``edit/pipeline.py`` and
+    the re-exporting ``edit/__init__``) keeps its top level stdlib-only:
+    ``operations`` imports only ``dataclasses`` and ``pipeline`` confines its
+    ``rosbags`` Writer/Reader imports to function bodies. So re-exporting
+    ``edit_bag`` / ``EditOps`` on package import pulls in none of the heavy query
+    stack — the same discipline as the ``tf`` / ``output`` guards above. Regression
+    test for the 11-RESEARCH offline invariant (Pitfall 5).
+    """
+    leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.edit")
+    assert leaked == [], f"import rosbagger_core.edit leaked the heavy stack: {leaked}"
+
+
+def test_import_edit_does_not_pull_rosbags():
+    """`import rosbagger_core.edit` must NOT pull ``rosbags`` either (no ROS, Pitfall 5).
+
+    A fresh subprocess (empty PYTHONPATH neutralizes the host ROS leak) asserts no
+    ``rosbags`` module lands in ``sys.modules`` after ``import rosbagger_core.edit`` —
+    every ``rosbags`` Writer/``AnyReader`` import in ``edit/pipeline.py`` is LAZY
+    inside a function body, so the bare module import binds none of it (mirrors the
+    tf-module check above).
+    """
+    code = (
+        "import sys; import rosbagger_core.edit; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] == 'rosbags']; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"import rosbagger_core.edit pulled in rosbags: {leaked}"
