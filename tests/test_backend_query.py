@@ -47,6 +47,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import make_all_fixtures  # noqa: E402  (after sys.path setup)
 
+from rosbagger_core.backend.base import QueryBackend  # noqa: E402
 from rosbagger_core.backend.duckdb_backend import DuckDBBackend  # noqa: E402  (3rd-party)
 from rosbagger_core.backend.query import (  # noqa: E402
     UnknownColumnError,
@@ -341,3 +342,107 @@ def test_query_alias_rewritten_sql_preserves_output_alias(
         result = query("SELECT vx AS speed FROM cmd_vel", reader)
     assert result.schema.names == ["speed"]
     assert result.column("speed").to_pylist() == [0.0, 1.0, 2.0]
+
+
+# ---------------------------------------------------------------------------
+# QURY-09 — projection pushdown wired into query() (Plan 10-03 Task 2 / SC2/SC3).
+#
+# SC3 is proven by OBSERVING what query() actually materializes — not by re-deriving
+# the restrict set in the test. A recording QueryBackend (the existing `backend=`
+# seam) WRAPS a real DuckDBBackend: it forwards register_table/execute/close so the
+# query runs for real, while capturing each registered pyarrow.Table keyed by name.
+# Asserting on the captured table's `column_names` is sufficient proof (research A4):
+# a column absent from the registered Table cannot have had its reduce(getattr) run.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingBackend(QueryBackend):
+    """A QueryBackend spy that captures each registered Arrow table, wrapping a real one.
+
+    Implements the ABC (register_table/execute/close) by forwarding to an inner
+    DuckDBBackend so `execute` returns real query results, while stashing every
+    table handed to `register_table` keyed by name. The SC3 assertion reads
+    `.registered[name].column_names` — the EXACT column set query() computed and
+    passed to build_arrow_table (the load-bearing capture-on-register, research A4).
+    """
+
+    def __init__(self) -> None:
+        self._inner = DuckDBBackend()
+        self.registered: dict[str, pa.Table] = {}
+
+    def register_table(self, name: str, table: object) -> None:
+        self.registered[name] = table  # the capture — the SC3 proof reads this
+        self._inner.register_table(name, table)
+
+    def execute(self, sql: str) -> object:
+        return self._inner.execute(sql)
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_query_projection_materializes_only_referenced_plus_standard(
+    fixture_bags: dict[str, Path], fmt: str
+) -> None:
+    """SC3: `SELECT vx FROM cmd_vel` materializes exactly {linear.x} ∪ the 4 standard cols.
+
+    Observed via a recording backend wrapping a real DuckDBBackend (the `backend=`
+    seam): the table query() registers for `cmd_vel` carries exactly
+    {linear.x, t, t_ns, stamp, topic} and EXCLUDES the unreferenced light columns
+    angular.z / linear.y (and any heavy blob). This proves the integrated wiring
+    alias-expansion -> restrict computation -> build_arrow_table as it runs INSIDE
+    query() — not a restrict expression re-derived in the test (research A4 /
+    Code Example 5). Parametrized over ROS1 + ROS2-sqlite + MCAP (D-10).
+    """
+    with RosbagsReader(fixture_bags[fmt]) as reader, _RecordingBackend() as spy:
+        query("SELECT vx FROM cmd_vel", reader, backend=spy)
+        registered = spy.registered["cmd_vel"]
+    assert set(registered.column_names) == {"linear.x", "t", "t_ns", "stamp", "topic"}
+    assert "angular.z" not in registered.column_names
+    assert "linear.y" not in registered.column_names
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_query_projection_filtered_rows_still_correct(
+    fixture_bags: dict[str, Path], fmt: str
+) -> None:
+    """Regression: the filtered-rows result still holds with projection ON (all 3 formats).
+
+    `SELECT t_ns, "linear.x" FROM cmd_vel WHERE "linear.x" > 0.5` -> linear.x [1.0, 2.0]
+    — projection narrows what is loaded, never what the query returns.
+    """
+    sql = 'SELECT t_ns, "linear.x" FROM cmd_vel WHERE "linear.x" > 0.5'
+    with RosbagsReader(fixture_bags[fmt]) as reader:
+        result = query(sql, reader)
+    assert result.column("linear.x").to_pylist() == [1.0, 2.0]
+    assert result.column("t_ns").to_pylist() == [1_100_000_000, 1_200_000_000]
+
+
+def test_query_star_disables_projection(fixture_bags: dict[str, Path]) -> None:
+    """`SELECT * FROM cmd_vel` materializes ALL non-heavy columns (projection off, D-08).
+
+    Pitfall 4: under a star `referenced_columns` is empty, so a naive `columns | STD`
+    would drop every body column — the star path MUST pass `restrict=None`. Observed
+    via the recording backend: the registered table keeps angular.z AND linear.y
+    (NOT collapsed to just the four standard columns).
+    """
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader, _RecordingBackend() as spy:
+        query("SELECT * FROM cmd_vel", reader, backend=spy)
+        registered = spy.registered["cmd_vel"]
+    assert "angular.z" in registered.column_names
+    assert "linear.y" in registered.column_names
+    assert "linear.x" in registered.column_names
+
+
+def test_query_qualified_star_disables_projection(fixture_bags: dict[str, Path]) -> None:
+    """`SELECT o.* FROM cmd_vel AS o` also disables projection (qualified star, Pitfall 5).
+
+    `has_star` is true for `o.*`, so D-08 routes to `restrict=None` before the `'*'`
+    column name matters. The observed registered table is the full non-heavy set.
+    """
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader, _RecordingBackend() as spy:
+        query("SELECT o.* FROM cmd_vel AS o", reader, backend=spy)
+        registered = spy.registered["cmd_vel"]
+    assert "angular.z" in registered.column_names
+    assert "linear.y" in registered.column_names
