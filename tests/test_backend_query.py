@@ -46,7 +46,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.make_fixtures import make_all_fixtures  # noqa: E402  (after sys.path setup)
+from tools.make_fixtures import (  # noqa: E402  (after sys.path setup)
+    make_all_fixtures,
+    write_ros1_bag,
+    write_ros2_mcap_bag,
+    write_ros2_sqlite_bag,
+)
 
 from rosbagger_core.backend.base import QueryBackend  # noqa: E402
 from rosbagger_core.backend.duckdb_backend import DuckDBBackend  # noqa: E402  (3rd-party)
@@ -532,3 +537,104 @@ def test_query_qualified_star_disables_projection(fixture_bags: dict[str, Path])
         registered = spy.registered["cmd_vel"]
     assert "angular.z" in registered.column_names
     assert "linear.y" in registered.column_names
+
+
+# ---------------------------------------------------------------------------
+# The reserved `events` table (Plan 11-04 / D-14 / D-15 / SC3).
+#
+# These write a sidecar NEXT TO a FRESH per-test bag (never the shared session
+# fixtures), so the `<bag>.events.parquet` they create is isolated and cannot
+# leak into the other query tests. Each format gets its own throwaway bag via the
+# per-format writers (mirrors tests/test_cli_edit.py's per-format fixtures).
+# ---------------------------------------------------------------------------
+
+# The per-format writer for each FORMATS key — used to materialize an isolated bag
+# (with no shared sidecar) for the events tests.
+_WRITERS = {
+    "ros1": write_ros1_bag,
+    "ros2_sqlite": write_ros2_sqlite_bag,
+    "ros2_mcap": write_ros2_mcap_bag,
+}
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_query_events_join_returns_windowed_rows(tmp_path: Path, fmt: str) -> None:
+    """SC3: a standard `BETWEEN` interval join against the reserved `events` table.
+
+    Write an event window `[1.0s, 1.1s]` next to a fresh bag, then join `/imu` to
+    `events` on `i.t_ns BETWEEN e.t_start_ns AND e.t_end_ns`. The 3-message fixture
+    logs /imu at t_ns = 1.0/1.1/1.2s, so the window selects EXACTLY the 1.0s + 1.1s
+    rows (the 1.2s row is outside) — the VERIFIED RESEARCH result (D-15, no special
+    operator). Parametrized over ROS1 + ROS2-sqlite3 + MCAP (D-10).
+    """
+    from rosbagger_core.events import add_event
+
+    bag = _WRITERS[fmt](tmp_path / fmt)
+    add_event(bag, t_start_ns=1_000_000_000, t_end_ns=1_100_000_000, label="window")
+    sql = (
+        "SELECT i.t_ns FROM imu i "
+        "JOIN events e ON i.t_ns BETWEEN e.t_start_ns AND e.t_end_ns"
+    )
+    with RosbagsReader(bag) as reader:
+        result = query(sql, reader)
+    assert isinstance(result, pa.Table)
+    assert set(result.column("t_ns").to_pylist()) == {1_000_000_000, 1_100_000_000}
+
+
+def test_query_events_reserved_name_not_unknown_table(tmp_path: Path) -> None:
+    """`SELECT * FROM events` with a sidecar present returns the event rows (no error).
+
+    `events` is SUBTRACTED from topic resolution (D-14), so it is NEVER mistaken for
+    a topic and NEVER raises `UnknownTableError`. With a sidecar present, the rows
+    come back with the fixed v1 schema (label/t_start_ns/...).
+    """
+    from rosbagger_core.events import add_event
+
+    bag = write_ros1_bag(tmp_path / "reserved")
+    add_event(bag, t_start_ns=1_000_000_000, t_end_ns=1_100_000_000, label="turn", note="left")
+    with RosbagsReader(bag) as reader:
+        result = query("SELECT * FROM events", reader)
+    assert isinstance(result, pa.Table)
+    assert result.num_rows == 1
+    assert set(result.column_names) == {"t_start_ns", "t_end_ns", "label", "note"}
+    assert result.column("label").to_pylist() == ["turn"]
+
+
+def test_query_events_absent_sidecar_yields_zero_rows(tmp_path: Path) -> None:
+    """No sidecar -> `SELECT * FROM events` is a 0-row table, NOT an error (Open Q3).
+
+    When no `<bag>.events.parquet` exists, query() registers an EMPTY-schema `events`
+    relation (the fixed v1 four columns), so a SELECT/join yields zero rows rather
+    than a DuckDB "table does not exist" or an `UnknownTableError` (Open Q3 LOCKED —
+    predictable behavior).
+    """
+    bag = write_ros1_bag(tmp_path / "absent")  # NO add_event -> no sidecar
+    with RosbagsReader(bag) as reader:
+        result = query("SELECT * FROM events", reader)
+    assert isinstance(result, pa.Table)
+    assert result.num_rows == 0
+    assert set(result.column_names) == {"t_start_ns", "t_end_ns", "label", "note"}
+
+
+def test_query_events_join_does_not_break_aliasing(tmp_path: Path) -> None:
+    """A topic-JOIN-events query keeps the single-base-topic alias gate behavior.
+
+    `events` maps to no topic, so the alias gate's `t in table_to_topic` filter
+    leaves exactly ONE mapped base topic (`cmd_vel`) — aliasing is unaffected, and
+    the `vx` alias still expands to `linear.x` while `events` is subtracted from
+    topic resolution. The window `[1.0s, 1.1s]` selects the 1.0s + 1.1s /cmd_vel
+    rows, whose linear.x (== vx, == float(i)) are 0.0 and 1.0.
+    """
+    from rosbagger_core.events import add_event
+
+    bag = write_ros1_bag(tmp_path / "alias")
+    add_event(bag, t_start_ns=1_000_000_000, t_end_ns=1_100_000_000, label="window")
+    sql = (
+        "SELECT c.vx FROM cmd_vel c "
+        "JOIN events e ON c.t_ns BETWEEN e.t_start_ns AND e.t_end_ns"
+    )
+    with RosbagsReader(bag) as reader:
+        result = query(sql, reader)
+    # vx expands to linear.x; the result column is the dotted expanded name.
+    assert result.num_rows == 2
+    assert sorted(result.column("linear.x").to_pylist()) == [0.0, 1.0]
