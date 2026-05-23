@@ -67,6 +67,15 @@ __all__ = ["UnknownColumnError", "UnknownTableError", "query"]
 # at module top, no offline-invariant impact.
 _BINDER_COL = re.compile(r'Referenced column "([^"]+)" not found')
 
+# The four always-present standard columns (QURY-04). D-07: projection MUST always
+# materialize these — they anchor ordering, `--plot` (vs t_ns), and time-joins, so a
+# `SELECT vx` stays plottable. The orchestrator unions them into the per-topic
+# `restrict` set (10-RESEARCH Pitfall 3 / Code Example 4); they are NOT special-cased
+# in the schema layer (Plan 10-02 left that to here). Mirrors the names of
+# ``schema.flatten.STANDARD_COLUMNS`` but is a stdlib-only frozenset so referencing it
+# at this module's top level does not pull the heavy stack (offline invariant).
+_STANDARD_COLUMNS: frozenset[str] = frozenset({"t", "t_ns", "stamp", "topic"})
+
 
 def _topic_table_maps(reader: BagReader) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     """Build ``(topic_to_table, table_to_topic, topic_to_msgtype)`` from the reader.
@@ -231,13 +240,28 @@ def query(
             # Reuse the hoisted schema (Step 3) — no double-build (Pattern 4).
             schema = schemas_by_table[topic_to_table[topic]]
             columns_by_table[topic_to_table[topic]] = [c.name for c in schema.columns]
-            # Heavy-blob include set: the referenced columns that are heavy blobs,
-            # OR ALL of this topic's heavy blobs when the SQL is a SELECT *
-            # (05-RESEARCH Pitfall 3 / A1 — a star materializes blobs).
+            # Per-topic column filters (10-RESEARCH Code Example 4), composed:
+            #   include  — heavy-blob filter (the UNCHANGED QURY-07 rule): a topic's
+            #              heavy blobs, or only the REFERENCED heavy blobs when not a star.
+            #   restrict — the QURY-09 projection (D-06): the referenced columns that
+            #              exist in THIS topic's schema, unioned with the four standard
+            #              columns (D-07, the Pitfall 3 safety net). Computed and applied
+            #              PER topic against that topic's own schema_names — over-include
+            #              on a JOIN, NEVER under-include (D-09); table-qualified
+            #              projection stays deferred.
+            # A SELECT * (incl. qualified `o.*`) DISABLES projection: restrict=None
+            # restores today's full non-heavy + blob materialization (D-08). This is
+            # CRITICAL — under a star `columns` is empty, so a naive `columns | STANDARD`
+            # would drop every body column (Pitfall 4); the star branch sets restrict=None.
+            schema_names = {c.name for c in schema.columns}
             heavy = {c.name for c in schema.columns if c.is_heavy_blob}
-            include = heavy if star else (heavy & columns)
+            if star:
+                include, restrict = heavy, None
+            else:
+                include = heavy & columns
+                restrict = (columns & schema_names) | _STANDARD_COLUMNS
             msgs = reader.read(topics={topic})  # the Task 1 connection-filtered seam
-            arrow = build_arrow_table(msgs, schema, include=include)
+            arrow = build_arrow_table(msgs, schema, include=include, restrict=restrict)
             # Register under the SANITIZED table name — the name the SQL references.
             backend.register_table(topic_to_table[topic], arrow)
         # Step 8 — forward the REWRITTEN SQL (`tree.sql("duckdb")`, D-02): when alias
