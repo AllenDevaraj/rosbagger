@@ -458,3 +458,74 @@ def test_column_names_restrict_mirrors_arrow_schema_names(typestore) -> None:
         names = schema.column_names(include=include, restrict=restrict)
         arrow_names = schema.arrow_schema(include=include, restrict=restrict).names
         assert names == arrow_names, (include, restrict)
+
+
+# --- Task 2: restrict= on flatten_message + build_arrow_table (skipped read) ---
+
+
+def test_flatten_message_restrict_returns_only_named_column(fixture_bags) -> None:
+    """flatten_message(restrict={"linear.x"}) returns ONLY linear.x (others not iterated)."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/cmd_vel")
+    schema = build_table_schema("geometry_msgs/msg/Twist", ts, topic="/cmd_vel")
+    row = flatten_message(msgs[0].msg, schema, restrict={"linear.x"})
+    assert set(row) == {"linear.x"}
+    assert "linear.y" not in row
+    assert "angular.z" not in row
+
+
+def test_flatten_message_restrict_skips_the_read_proven_by_spy() -> None:
+    """The pushdown: a non-restricted column's reduce(getattr,...) NEVER runs.
+
+    A spy message whose ``.angular`` raises on attribute access proves that
+    ``flatten_message(stub, schema, restrict={"linear.x"})`` never touches
+    ``angular`` — the literal skipped read (D-06 / Pattern 3). Belt-and-suspenders
+    over the column-set assertion (research A4): the value is provably never read.
+    """
+
+    class _Linear:
+        x = 7.0  # only linear.x is reachable
+
+    class _SpyMsg:
+        linear = _Linear()
+
+        @property
+        def angular(self):  # touching angular at all blows up
+            raise AssertionError("angular was read off the message — pushdown failed")
+
+    schema = build_table_schema(
+        "geometry_msgs/msg/Twist", get_typestore(Stores.ROS2_HUMBLE), topic="/cmd_vel"
+    )
+    # restrict to linear.x only: angular.* must never be reduced, so no raise.
+    row = flatten_message(_SpyMsg(), schema, restrict={"linear.x"})
+    assert row == {"linear.x": 7.0}
+    # And the control: WITHOUT restrict, the same spy DOES touch angular and raises.
+    with pytest.raises(AssertionError, match="angular was read"):
+        flatten_message(_SpyMsg(), schema)
+
+
+def test_build_arrow_table_restrict_projects_single_column(fixture_bags) -> None:
+    """build_arrow_table(restrict={"linear.x"}) -> Table with exactly that column; values match."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/cmd_vel")
+    schema = build_table_schema("geometry_msgs/msg/Twist", ts, topic="/cmd_vel")
+    table = build_arrow_table(msgs, schema, restrict={"linear.x"})
+    assert table.column_names == ["linear.x"]
+    # Fixture content: linear.x = i (0.0, 1.0, 2.0).
+    assert table.column("linear.x").to_pylist() == [0.0, 1.0, 2.0]
+    # Regression: restrict=None reproduces today's full-column Table.
+    full = build_arrow_table(msgs, schema, restrict=None)
+    assert full.schema.equals(schema.arrow_schema())
+    assert "angular.z" in full.column_names
+
+
+def test_build_arrow_table_restrict_composes_with_heavy_blob(fixture_bags) -> None:
+    """build_arrow_table threads restrict AND include for heavy blobs (D-06)."""
+    msgs, ts = _read_topic(fixture_bags["ros2_sqlite"], "/image")
+    schema = build_table_schema("sensor_msgs/msg/Image", ts, topic="/image")
+    # data (heavy) in BOTH include and restrict, plus t -> both materialized.
+    both = build_arrow_table(msgs, schema, include={"data"}, restrict={"data", "t"})
+    assert set(both.column_names) == {"data", "t"}
+    assert both.schema.field("data").type == pa.list_(pa.uint8())
+    # include=set(), restrict={"t"}: data heavy + NOT included -> absent.
+    no_blob = build_arrow_table(msgs, schema, include=set(), restrict={"t"})
+    assert no_blob.column_names == ["t"]
+    assert "data" not in no_blob.column_names
