@@ -306,7 +306,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 12-01-PLAN.md — `rosbagger-record` package scaffold + lazy ROS boundary (D-01/D-03), teaching capability errors, pure-Python topic discovery + subset selection (D-06/D-07), mocked unit tests, offline-guard extension (D-11) + `live` marker -> REC-01
+- [x] 12-01-PLAN.md — `rosbagger-record` package scaffold + lazy ROS boundary (D-01/D-03), teaching capability errors, pure-Python topic discovery + subset selection (D-06/D-07), mocked unit tests, offline-guard extension (D-11) + `live` marker -> REC-01
 
 **Wave 2** *(blocked on 12-01)*
 
@@ -360,6 +360,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
 | 10. Query Ergonomics | 4/4 | Complete    | 2026-05-23 |
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
-| 12. Live Record | 0/3 | Planned | - |
+| 12. Live Record | 1/3 | In Progress|  |
 | 13. Live Replay | 0/? | Not started | - |
 | 14. GUI | 0/? | Not started | - |
