@@ -613,6 +613,78 @@ def test_query_events_absent_sidecar_yields_zero_rows(tmp_path: Path) -> None:
     assert set(result.column_names) == {"t_start_ns", "t_end_ns", "label", "note"}
 
 
+def _write_bag_with_events_topic(dest_dir: Path) -> Path:
+    """Write a ROS 1 bag whose ONLY topic is a real ``/events`` (CR-01 fixture).
+
+    ``/events`` sanitizes to the table name ``events`` — the same name the reserved
+    event sidecar claims — so this bag is the exact CR-01 collision case. The topic
+    carries 3 ``geometry_msgs/msg/Twist`` messages (headerless, no covariance) at
+    t = 1.0 / 1.1 / 1.2 s with ``linear.x`` = 0.0 / 1.0 / 2.0, mirroring the corpus's
+    ``/cmd_vel`` content so the rows are easy to assert.
+    """
+    from rosbags.rosbag1 import Writer as Ros1Writer
+    from rosbags.typesys import Stores, get_typestore
+
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / "events_topic.bag"
+    ts = get_typestore(Stores.ROS1_NOETIC)
+    vector3_t = ts.types["geometry_msgs/msg/Vector3"]
+    twist_t = ts.types["geometry_msgs/msg/Twist"]
+    with Ros1Writer(path) as writer:
+        conn = writer.add_connection("/events", "geometry_msgs/msg/Twist", typestore=ts)
+        for i in range(3):
+            msg = twist_t(
+                linear=vector3_t(x=float(i), y=0.0, z=0.0),
+                angular=vector3_t(x=0.0, y=0.0, z=0.1 * i),
+            )
+            writer.write(
+                conn,
+                1_000_000_000 + i * 100_000_000,
+                ts.serialize_ros1(msg, "geometry_msgs/msg/Twist"),
+            )
+    return path
+
+
+def test_query_real_events_topic_not_shadowed_by_sidecar(tmp_path: Path) -> None:
+    """CR-01: a REAL `/events` topic returns ITS rows from `SELECT * FROM events`.
+
+    A bag publishing an `/events` topic sanitizes that topic to the table name `events`,
+    which collides with the reserved event-sidecar name. Before the fix the sidecar
+    silently shadowed the topic (0 rows, the sidecar's 4-column schema) with no error.
+    The topic must take precedence: `SELECT * FROM events` returns the 3 Twist rows
+    (linear.x = 0/1/2), NOT the empty sidecar relation.
+    """
+    bag = _write_bag_with_events_topic(tmp_path / "real_events")
+    with RosbagsReader(bag) as reader:
+        result = query("SELECT * FROM events", reader)
+    assert isinstance(result, pa.Table)
+    assert result.num_rows == 3  # the topic's rows, not the sidecar's 0 rows
+    # The Twist topic flattens to dotted columns — the sidecar's schema is
+    # {t_start_ns, t_end_ns, label, note}, which must NOT be what we got back.
+    assert "linear.x" in result.column_names
+    assert set(result.column_names) != {"t_start_ns", "t_end_ns", "label", "note"}
+    assert result.column("linear.x").to_pylist() == [0.0, 1.0, 2.0]
+
+
+def test_query_real_events_topic_wins_even_with_sidecar_present(tmp_path: Path) -> None:
+    """CR-01: even if a sidecar ALSO exists, the real `/events` topic still wins.
+
+    A `<bag>.events.parquet` sidecar sitting next to a bag that ALSO has a real
+    `/events` topic must not hide the topic — the topic owns the `events` table name,
+    so `SELECT * FROM events` returns the topic's 3 Twist rows, never the sidecar row.
+    """
+    from rosbagger_core.events import add_event
+
+    bag = _write_bag_with_events_topic(tmp_path / "events_and_sidecar")
+    add_event(bag, t_start_ns=1_000_000_000, t_end_ns=1_100_000_000, label="sidecar")
+    with RosbagsReader(bag) as reader:
+        result = query("SELECT * FROM events", reader)
+    assert result.num_rows == 3  # topic rows, not the 1 sidecar row
+    assert "linear.x" in result.column_names
+    assert "label" not in result.column_names  # the sidecar schema did NOT win
+
+
 def test_query_events_join_does_not_break_aliasing(tmp_path: Path) -> None:
     """A topic-JOIN-events query keeps the single-base-topic alias gate behavior.
 

@@ -129,15 +129,20 @@ def query(
     projection pushdown — Plan 10-03). An unmapped table name raises
     :class:`UnknownTableError` (listing the available tables) BEFORE anything loads.
 
-    ``events`` is a RESERVED table name (D-14): when the SQL references it, query()
-    SUBTRACTS it from the topic-resolution set (so it never raises
-    :class:`UnknownTableError`) and registers the per-bag sidecar
+    ``events`` is a RESERVED table name (D-14): when the SQL references it AND no real
+    topic owns that table name, query() SUBTRACTS it from the topic-resolution set (so
+    it never raises :class:`UnknownTableError`) and registers the per-bag sidecar
     (``<bag>.events.parquet``, loaded via ``rosbagger_core.events.list_events`` next to
     the single ``reader.paths[0]``) under the name ``events``. A standard SQL ``BETWEEN``
     interval join (``... ON data.t_ns BETWEEN events.t_start_ns AND events.t_end_ns``)
     then runs natively against it (D-15, no special operator). When no sidecar exists an
     EMPTY-schema ``events`` relation is registered, so a SELECT/join yields zero rows
     rather than erroring (Open Q3). v1 is single-bag; multi-bag events are deferred.
+
+    The reservation is GATED on the name being otherwise unclaimed (CR-01): a bag with a
+    REAL topic that sanitizes to ``events`` (e.g. a published ``/events`` topic) resolves
+    and loads that topic normally — the sidecar is reserved ONLY when no topic owns the
+    name, so a real ``/events`` topic's data is never silently shadowed by the sidecar.
 
     Pipeline (D-02 / 10-RESEARCH Pattern 4): ``parse`` → build per-topic
     ``TableSchema`` up front (O(1) metadata, no ``reader.read()``) → (if ``alias``)
@@ -263,8 +268,16 @@ def query(
     # `BETWEEN` interval join then runs natively (D-15, no special operator). The alias
     # gate above is unaffected: it already filters `t in table_to_topic`, so `events`
     # (no topic) never counts toward the single-base-topic total.
-    events_referenced = _EVENTS_TABLE in tables
-    data_tables = tables - {_EVENTS_TABLE}
+    #
+    # CR-01: a REAL bag topic that sanitizes to `events` (e.g. a published `/events`
+    # topic) TAKES PRECEDENCE over the sidecar — otherwise its data would be silently
+    # shadowed by the (typically empty) sidecar relation, returning the sidecar's 0 rows
+    # with no error. `table_to_topic` is already built (Step 2), so we only reserve
+    # `events` for the sidecar when NO real topic owns that table name; when a topic
+    # does, `events` stays in `data_tables` and resolves+loads as an ordinary topic.
+    events_is_real_topic = _EVENTS_TABLE in table_to_topic
+    events_referenced = _EVENTS_TABLE in tables and not events_is_real_topic
+    data_tables = tables - ({_EVENTS_TABLE} if events_referenced else set())
 
     # Step 6 — resolve each referenced (non-`events`) table name to a topic; an unmapped
     # name raises a clear error listing the available tables, BEFORE any load
