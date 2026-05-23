@@ -304,3 +304,120 @@ def test_trim_window_outside_writes_empty_bag(fixture_bags, tmp_path):
     assert written == 0  # reported count, not a silent no-op
     per_topic = _roundtrip(out)  # still a re-openable bag
     assert per_topic == {}
+
+
+# ---------------------------------------------------------------------------
+# convert (D-04 cross-format half): ROS1 <-> ROS2 via the rosbags converter
+# factory. The load-bearing assertion is that the headered /imu + /image
+# messages DESERIALIZE after convert (Pitfall 1/2) — a naive byte path opens but
+# crashes deserializing them (the ROS1 Header.seq field ROS2 dropped). Both
+# directions are tested across the ROS2 sqlite + MCAP destination formats.
+# ---------------------------------------------------------------------------
+
+
+def test_convert_ros1_to_ros2_sqlite_deserializes_headered(fixture_bags, tmp_path):
+    """convert ROS1 -> ROS2 sqlite: every topic re-opens AND deserializes (SC1)."""
+    src = fixture_bags["ros1"]
+    out = tmp_path / "ros1_to_ros2_sqlite"  # directory dst -> ROS2 sqlite3
+    written = edit_bag([src], out, EditOps())
+    assert written == _N_PER_TOPIC * len(EXPECTED_TOPICS)  # 9 = 3 topics x 3 msgs
+    per_topic = _roundtrip(out)  # _roundtrip DESERIALIZES every message (Pitfall 2)
+    assert set(per_topic) == EXPECTED_TOPICS
+    for topic in EXPECTED_TOPICS:
+        assert len(per_topic[topic]) == _N_PER_TOPIC
+
+
+def test_convert_ros1_to_ros2_mcap_deserializes_headered(fixture_bags, tmp_path):
+    """convert ROS1 -> ROS2 MCAP: headered /imu + /image deserialize after convert."""
+    src = fixture_bags["ros1"]
+    out = tmp_path / "out.mcap"  # .mcap dst -> ROS2 MCAP
+    edit_bag([src], out, EditOps())
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == EXPECTED_TOPICS
+    for topic in EXPECTED_TOPICS:
+        assert len(per_topic[topic]) == _N_PER_TOPIC
+
+
+def test_convert_ros2_sqlite_to_ros1_deserializes_headered(fixture_bags, tmp_path):
+    """convert ROS2 sqlite -> ROS1 .bag: the seq-field direction the naive path crashes on.
+
+    This is Pitfall 1's hard case — a ROS2 message has no ``Header.seq``, so a
+    byte-level convert writes a .bag that re-opens but raises deserializing /imu +
+    /image. The factory's ``migrate_bytes`` fills the missing ``seq`` from a default
+    message, so ``_roundtrip`` (which deserializes every message) succeeds.
+    """
+    src = fixture_bags["ros2_sqlite"]
+    out = tmp_path / "out.bag"  # .bag dst -> ROS1
+    edit_bag([src], out, EditOps())
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == EXPECTED_TOPICS
+    for topic in EXPECTED_TOPICS:
+        assert len(per_topic[topic]) == _N_PER_TOPIC
+
+
+def test_convert_ros2_mcap_to_ros1_deserializes_headered(fixture_bags, tmp_path):
+    """convert ROS2 MCAP -> ROS1 .bag: the other ROS2 source format, same seq case."""
+    src = fixture_bags["ros2_mcap"]
+    out = tmp_path / "out.bag"
+    edit_bag([src], out, EditOps())
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == EXPECTED_TOPICS
+    for topic in EXPECTED_TOPICS:
+        assert len(per_topic[topic]) == _N_PER_TOPIC
+
+
+def test_convert_composes_with_drop_filter(fixture_bags, tmp_path):
+    """convert + drop in ONE pass (D-10): ROS1 -> ROS2 dropping /image.
+
+    Proves the filter and the cross-format conversion compose in a single
+    read->write loop — the output is ROS2, carries only /cmd_vel + /imu, and both
+    deserialize (the headered /imu survives the convert).
+    """
+    src = fixture_bags["ros1"]
+    out = tmp_path / "convert_drop_ros2"  # ROS2 sqlite3 dir
+    edit_bag([src], out, EditOps(drop=frozenset({"/image"})))
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == {"/cmd_vel", "/imu"}  # /image dropped, no orphan
+    assert len(per_topic["/cmd_vel"]) == _N_PER_TOPIC
+    assert len(per_topic["/imu"]) == _N_PER_TOPIC
+
+
+# ---------------------------------------------------------------------------
+# raw-copy (D-04 split): same-wireformat targets do NOT engage migration.
+# ROS2-sqlite3 -> MCAP and ROS1 -> ROS1 are both byte-identical copies. We
+# assert the bytes are UNCHANGED for at least one message (the convert factory
+# returns the memoryview identity when is_same_wireformat AND src_is2==dst_is2).
+# ---------------------------------------------------------------------------
+
+
+def _first_raw(path: Path, topic: str) -> bytes:
+    """Read the first raw payload of ``topic`` from ``path`` (no deserialize)."""
+    from rosbags.highlevel import AnyReader
+
+    with AnyReader([path]) as reader:
+        for connection, _t_ns, rawdata in reader.messages():
+            if connection.topic == topic:
+                return bytes(rawdata)
+    raise AssertionError(f"topic {topic} not found in {path}")
+
+
+def test_raw_copy_ros2_sqlite_to_mcap_is_byte_identical(fixture_bags, tmp_path):
+    """ROS2 sqlite3 -> MCAP stays raw-copy (both CDR): the /imu bytes are unchanged."""
+    src = fixture_bags["ros2_sqlite"]
+    out = tmp_path / "raw_out.mcap"
+    edit_bag([src], out, EditOps())
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == EXPECTED_TOPICS
+    # Same wireformat (CDR both sides) -> the converter is the identity, so the
+    # raw bytes survive untouched (pins the D-04 raw-copy branch).
+    assert _first_raw(out, "/imu") == _first_raw(src, "/imu")
+
+
+def test_raw_copy_ros1_to_ros1_is_byte_identical(fixture_bags, tmp_path):
+    """ROS1 -> ROS1 stays raw-copy (no migration): the /imu bytes are unchanged."""
+    src = fixture_bags["ros1"]
+    out = tmp_path / "raw_out.bag"
+    edit_bag([src], out, EditOps())
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == EXPECTED_TOPICS
+    assert _first_raw(out, "/imu") == _first_raw(src, "/imu")
