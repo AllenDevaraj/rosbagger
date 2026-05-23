@@ -39,7 +39,7 @@ Phase 12 is rosbagger's **first LIVE phase**: `rosbagger-record` discovers curre
 
 ### Output format & stop control
 
-- **D-08 — Default output MCAP** (ROS 2 default; design records to MCAP). `-o OUT` sets the path; MCAP is the v1 lock (other formats deferred).
+- **D-08 — Default output MCAP** (ROS 2 default; design records to MCAP). `-o OUT` sets the path. **Refined by RESEARCH (env reality):** MCAP stays the *preferred default*, but a `--storage {mcap,sqlite3}` **capability escape** is added because the MCAP `rosbag2_py` storage plugin is not installed on this box (needs `sudo`) — without the escape the recorder can't run or be tested here. The MCAP-specific path is `skipif`-guarded on `rosbag2_py.get_registered_writers()`; SC2/SC3 are proven via the available sqlite3 path. (sqlite3 is therefore an in-scope capability escape, NOT a general multi-format feature — see Deferred.)
 - **D-09 — Stop on SIGINT (Ctrl-C) with a graceful shutdown** that finalizes/closes the bag so it re-opens cleanly; PLUS an optional bounded mode `--duration SECONDS` and/or `--max-messages N`. The bounded mode is what makes the live integration test deterministic (record exactly N messages / T seconds, then exit and assert).
 
 ### Test strategy & offline guarantee (CRITICAL — the defining decision of this phase)
@@ -108,7 +108,7 @@ Exact module layout; CLI flag names; the precise `rclpy` generic-subscription + 
 - **Replay** (`rosbagger-replay`, transport controls) — Phase 13 (also needs rclpy).
 - **GUI Record panel** — Phase 14 (capability-gated over this module's API).
 - **QoS profile capture / override**, **compression**, **split by size/duration**, **service/action recording** — recording-feature depth beyond REC-01.
-- **Non-MCAP record formats** (ROS 1 `.bag`, ROS 2 sqlite3) — MCAP is the v1 lock.
+- **Non-MCAP record formats as a general feature** (ROS 1 `.bag`, format menus) — MCAP is the preferred default. (The `--storage sqlite3` capability escape in D-08 is the one exception, forced by the missing MCAP plugin; it is not a general multi-format offering.)
 - **`rosbag2_py` reader backend** — still out of scope per PROJECT (add only if a live-workspace custom-msg read need appears).
 
 </deferred>
