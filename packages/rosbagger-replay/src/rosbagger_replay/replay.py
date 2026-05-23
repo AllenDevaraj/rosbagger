@@ -33,6 +33,8 @@ counts published messages.
 
 from __future__ import annotations
 
+import contextlib
+
 
 def replay(
     bag_paths,
@@ -86,7 +88,14 @@ def replay(
         # (WR-04 / Pitfall 6): caught by the CLI's @_capability_errors as a clean Exit(1).
         raise NoMessagesToReplayError(bag_paths=bag_paths, topics=topics)
 
-    rclpy.init()
+    # WR-04: only manage the rclpy context WE create. A re-entrant caller (the Phase-14 GUI
+    # owns its own long-lived context) may already have an initialized context — calling
+    # rclpy.init() again would raise, and an unconditional shutdown() in finally would tear
+    # the caller's context out from under it. Guard on rclpy.ok(): init only if we created it,
+    # and shutdown only that same context (created_ctx) in finally.
+    created_ctx = not rclpy.ok()
+    if created_ctx:
+        rclpy.init()
     node = None
     published = {"n": 0}
     try:
@@ -123,6 +132,12 @@ def replay(
     finally:
         # Finalize on EVERY exit path (normal end, bound trip, or a raised exception):
         # tear down the node + the rclpy context so a re-run / the next process is clean.
+        # WR-05: each teardown is best-effort so a cleanup raise (e.g. context already torn
+        # down, or a publisher mid-flight) does NOT mask the ORIGINAL publish exception the
+        # finally exists for. WR-04: only shut down the context if WE created it.
         if node is not None:
-            node.destroy_node()
-        rclpy.shutdown()
+            with contextlib.suppress(Exception):
+                node.destroy_node()
+        if created_ctx:
+            with contextlib.suppress(Exception):
+                rclpy.shutdown()
