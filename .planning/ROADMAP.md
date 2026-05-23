@@ -274,7 +274,21 @@ Plans:
   2. An event sidecar (`<bag>.events.parquet`) is written and read back
   3. The `events` table is queryable and JOINable against data by time
 
-**Plans**: TBD (set at plan-phase)
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 11-01-PLAN.md — Edit core: streaming `AnyReader → filter → rosbags Writer` pipeline (`rosbagger_core/edit/`) with raw-copy trim/drop/keep/downsample/merge + format selection; round-trip (re-open + deserialize) tests across ROS1/ROS2-sqlite3/MCAP + offline-guard extension -> EDIT-01
+- [ ] 11-03-PLAN.md — Events sidecar I/O (`rosbagger_core/events.py`): file-vs-dir-aware `sidecar_path` + `add_event`/`list_events` over `<bag>.events.parquet` (fixed v1 schema), reusing the locked DuckDB-COPY writer; SC2 write/read/append tests -> EVNT-01
+
+**Wave 2** *(blocked on 11-01)*
+
+- [ ] 11-02-PLAN.md — Cross-format convert via the `rosbags` converter factory (`is_same_wireformat`/`generate_message_converter`, no hand-rolled migration) wired into `edit_bag` + thin `bagq edit`/`bagq convert` verbs; convert round-trip (deserialize headered msgs) tests both directions -> EDIT-01
+
+**Wave 3** *(blocked on 11-02 + 11-03)*
+
+- [ ] 11-04-PLAN.md — Reserved `events`-table hook in `query()` (subtract from topic resolution, register sidecar relation, native `BETWEEN` interval join — SC3) + thin `bagq events add`/`list` verbs (SC2 at the CLI) + events offline-guard extension -> EVNT-01
 
 ### Phase 12: Live Record
 
