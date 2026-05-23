@@ -336,7 +336,7 @@ Plans:
 
 **Wave 2** *(blocked on 13-01)*
 
-- [ ] 13-02-PLAN.md — the PURE `Replayer` transport scheduler (`scheduler.py`: play/pause/step/seek/rate/loop state machine + monotonic pacing + bounded stop, ROS-free; D-06..D-09) + SC2/SC3 unit tests (fake clock + recording sink) -> REP-01
+- [x] 13-02-PLAN.md — the PURE `Replayer` transport scheduler (`scheduler.py`: play/pause/step/seek/rate/loop state machine + monotonic pacing + bounded stop, ROS-free; D-06..D-09) + SC2/SC3 unit tests (fake clock + recording sink) -> REP-01
 
 **Wave 3** *(blocked on 13-01 + 13-02)*
 
@@ -374,5 +374,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 10. Query Ergonomics | 4/4 | Complete    | 2026-05-23 |
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
 | 12. Live Record | 3/3 | Complete    | 2026-05-23 |
-| 13. Live Replay | 1/3 | In Progress|  |
+| 13. Live Replay | 2/3 | In Progress|  |
 | 14. GUI | 0/? | Not started | - |
