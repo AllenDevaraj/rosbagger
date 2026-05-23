@@ -35,6 +35,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 # Repo root on sys.path so `from tools.make_fixtures import ...` resolves under
 # pytest's default import mode (mirrors tests/test_tf.py); scoped to this file.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +49,7 @@ from tools.make_fixtures import (  # noqa: E402  (after sys.path)
     write_ros2_sqlite_bag,
 )
 
+from rosbagger_replay.scheduler import Replayer, State  # noqa: E402
 from rosbagger_replay.source import ReplayItem, load_items  # noqa: E402
 
 _TOPICS = {"/cmd_vel", "/imu", "/image"}
@@ -143,3 +146,241 @@ def test_source_imports_no_rclpy(tmp_path):
 
     assert "rclpy" not in sys.modules
     assert "rosbag2_py" not in sys.modules
+
+
+# --------------------------------------------------------------------------- #
+# scheduler — the pure Replayer state machine (SC2 + SC3, D-06..D-09, W3/W4)
+#
+# These drive the ROS-free Replayer with a recording sink + recording sleep +
+# (where needed) a fake monotonic clock — no real sleeping, no rclpy. SC2 (all
+# six controls work) and SC3 (rate scaling halves/doubles the slept Δt; seek
+# lands on the expected message index/timestamp) are proven deterministically.
+# Select with `-k scheduler` (SC3 ones also match `-k 'rate or seek or loop or step'`).
+# --------------------------------------------------------------------------- #
+
+
+def _items(t_ns_list):
+    """Build a list of ReplayItem with crafted t_ns (topic carries the index for assertions)."""
+    return [
+        ReplayItem(t_ns=t, topic=f"/t{i}", msgtype="std_msgs/msg/String", cdr=b"x")
+        for i, t in enumerate(t_ns_list)
+    ]
+
+
+class _FakeClock:
+    """A monotonic clock that advances by `step` seconds on each call (for the duration bound)."""
+
+    def __init__(self, step=1.0):
+        self._t = 0.0
+        self._step = step
+
+    def __call__(self):
+        t = self._t
+        self._t += self._step
+        return t
+
+
+def test_scheduler_play_full_publishes_all_in_order_then_done():
+    """SC2 play: play()+run() publishes all N in order; end state DONE (loop=False)."""
+    items = _items([0, 100, 200, 300])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None)
+    r.play()
+    r.run()
+
+    assert recorded == items  # all N, in order
+    assert [it.topic for it in recorded] == ["/t0", "/t1", "/t2", "/t3"]
+    assert r.state is State.DONE
+
+
+def test_scheduler_step_one_then_paused():
+    """SC2 step: step()+run() publishes ONE -> PAUSED, cursor==1; a 2nd step publishes the next."""
+    items = _items([0, 100, 200])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None)
+
+    r.step()
+    r.run()
+    assert recorded == [items[0]]
+    assert r.cursor == 1
+    assert r.state is State.PAUSED
+
+    r.step()
+    r.run()
+    assert recorded == [items[0], items[1]]
+    assert r.cursor == 2
+    assert r.state is State.PAUSED
+
+
+def test_scheduler_pause_holds_cursor():
+    """SC2 pause: play to max=2, pause() holds cursor 2; resume continues from 2 (no re-publish)."""
+    items = _items([0, 100, 200, 300])
+    recorded = []
+    # First leg: a bounded run publishes exactly items[0:2] and stops.
+    r = Replayer(items, recorded.append, sleep=lambda s: None, max_messages=2)
+    r.play()
+    r.run()
+    assert recorded == [items[0], items[1]]
+    assert r.cursor == 2
+
+    # pause() holds the cursor; a fresh play()+run() (no bound) continues from index 2.
+    r.pause()
+    assert r.cursor == 2
+    r._max_messages = None  # lift the bound for the resume leg
+    r.play()
+    r.run()
+    assert recorded == items  # items[2:] appended, NOT re-publishing 0/1
+    assert [it.topic for it in recorded] == ["/t0", "/t1", "/t2", "/t3"]
+
+
+def test_scheduler_seek_lands_on_first_item_at_or_after_target():
+    """SC3 seek: t_ns [0,100,200,300]; seek(150) lands index 2 (t_ns 200); skipped absent."""
+    items = _items([0, 100, 200, 300])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None)
+
+    r.seek(150)  # first t_ns >= 0+150 is 200 at index 2
+    assert r.cursor == 2
+
+    r.play()
+    r.run()
+    assert recorded == items[2:]  # only items[2], items[3]
+    assert items[0] not in recorded and items[1] not in recorded  # skipped, never published
+    assert r.state is State.DONE
+
+
+def test_scheduler_seek_past_end_publishes_nothing_then_done():
+    """SC3 seek-past-end: seek beyond last t_ns -> cursor==len; run() publishes nothing; DONE."""
+    items = _items([0, 100, 200, 300])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None)
+
+    r.seek(10_000)  # past the last t_ns (300)
+    assert r.cursor == len(items)
+
+    r.play()
+    r.run()
+    assert recorded == []
+    assert r.state is State.DONE
+
+
+def test_scheduler_rate_scales_sleep():
+    """SC3 rate: items 100ms apart; rate=1.0 sleeps ~0.1; rate=2.0 halves it; first no pre-sleep."""
+    spacing_ns = 100_000_000  # 100 ms
+    items = _items([0, spacing_ns, 2 * spacing_ns, 3 * spacing_ns])
+
+    slept_1x = []
+    r1 = Replayer(items, lambda i: None, sleep=slept_1x.append, rate=1.0)
+    r1.play()
+    r1.run()
+    # 4 items -> 3 inter-message sleeps; the FIRST publish incurs no pre-sleep.
+    assert len(slept_1x) == 3
+    assert all(s == pytest.approx(0.1) for s in slept_1x)
+
+    slept_2x = []
+    r2 = Replayer(items, lambda i: None, sleep=slept_2x.append, rate=2.0)
+    r2.play()
+    r2.run()
+    assert len(slept_2x) == 3
+    assert all(s == pytest.approx(0.05) for s in slept_2x)
+    # The set_rate(2.0) schedule is exactly HALF the rate=1.0 schedule (SC3).
+    assert all(s2 == pytest.approx(s1 / 2) for s1, s2 in zip(slept_1x, slept_2x, strict=True))
+
+
+def test_scheduler_rate_invalid_raises():
+    """SC3 rate guard: set_rate(0)/set_rate(-1)/rate=-1 ctor raise ValueError (no div-by-zero)."""
+    r = Replayer(_items([0, 100]), lambda i: None, sleep=lambda s: None)
+    with pytest.raises(ValueError, match="rate must be > 0"):
+        r.set_rate(0)
+    with pytest.raises(ValueError, match="rate must be > 0"):
+        r.set_rate(-1)
+    # construction-time validation too
+    with pytest.raises(ValueError, match="rate must be > 0"):
+        Replayer(_items([0, 100]), lambda i: None, rate=-1)
+
+
+def test_scheduler_loop_restarts_at_end_of_stream():
+    """SC2 loop: loop=True + max=2*N proves the cursor wraps to 0 and re-publishes from the top."""
+    items = _items([0, 100, 200])
+    n = len(items)
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, loop=True, max_messages=2 * n)
+    r.play()
+    r.run()
+
+    assert len(recorded) == 2 * n
+    first_half = [it.topic for it in recorded[:n]]
+    second_half = [it.topic for it in recorded[n:]]
+    assert first_half == ["/t0", "/t1", "/t2"]
+    assert second_half == first_half  # wrapped to 0 and re-published the same stream
+
+
+def test_scheduler_loop_bound_exact_end_done_wins_over_loop_reset():
+    """W4: loop=True + max==N over N items publishes EXACTLY N then DONE (bound wins at end)."""
+    items = _items([0, 100, 200])
+    n = len(items)
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, loop=True, max_messages=n)
+    r.play()
+    r.run()
+
+    # The bound trips on the final item where cursor==len; DONE wins over the loop-reset.
+    assert len(recorded) == n  # NOT 2*N, NOT unbounded
+    assert r.state is State.DONE  # NOT PLAYING
+
+
+def test_scheduler_bounded_max_messages():
+    """Bounded stop: max=2 over 9 items publishes exactly 2 then DONE (is-not-None, WR-01)."""
+    items = _items([i * 100 for i in range(9)])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, max_messages=2)
+    r.play()
+    r.run()
+
+    assert len(recorded) == 2
+    assert r.cursor == 2
+    assert r.state is State.DONE
+
+
+def test_scheduler_bounded_max_messages_zero_means_zero():
+    """WR-01: max=0 means ZERO publishes (is-not-None, not truthiness) -> immediate DONE."""
+    items = _items([0, 100, 200])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, max_messages=0)
+    r.play()
+    r.run()
+
+    assert recorded == []
+    assert r.state is State.DONE
+
+
+def test_scheduler_bounded_duration_halts_on_monotonic_clock():
+    """WR-02: a fake monotonic clock + duration=D halts run() once the clock crosses D."""
+    items = _items([i * 100 for i in range(9)])
+    recorded = []
+    # _FakeClock returns 0,1,2,3,... on successive calls (monotonic, NOT wall-clock).
+    # run() samples the clock at entry (0), then once per duration check. With duration=4
+    # the elapsed (clock()-start) crosses 4 only after several publishes -> a bounded,
+    # deterministic halt driven entirely by the INJECTED monotonic clock.
+    clock = _FakeClock(step=1.0)
+    r = Replayer(items, recorded.append, sleep=lambda s: None, clock=clock, duration=4.0)
+    r.play()
+    r.run()
+
+    # The run halts mid-stream (fewer than all 9 published) once the monotonic clock
+    # crosses the deadline; it does NOT run to natural end, and ends DONE.
+    assert 0 < len(recorded) < len(items)
+    assert r.state is State.DONE
+
+
+def test_scheduler_bounded_duration_zero_halts_before_first_publish():
+    """WR-01/WR-02: duration=0 halts immediately (is-not-None, monotonic) -> zero pubs, DONE."""
+    items = _items([0, 100, 200])
+    recorded = []
+    clock = _FakeClock(step=1.0)
+    r = Replayer(items, recorded.append, sleep=lambda s: None, clock=clock, duration=0.0)
+    r.play()
+    r.run()
+
+    assert recorded == []  # duration=0 is a real bound (NOT unbounded via truthiness)
+    assert r.state is State.DONE

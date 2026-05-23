@@ -170,6 +170,14 @@ class Replayer:
         """
         start_clock = self._clock()
         published = 0
+        # A zero-publish bound (max_messages=0, WR-01) or duration<=0 must halt BEFORE the
+        # first publish — check it up front. Also covers seek-past-end (cursor==len below).
+        if self._max_messages is not None and published >= self._max_messages:
+            self._state = State.DONE
+            return
+        if self._duration is not None and (self._clock() - start_clock) >= self._duration:
+            self._state = State.DONE
+            return
         while self._state in (State.PLAYING, State.STEPPING) and self._cursor < len(self._items):
             if self._cursor > 0:
                 dt_ns = self._items[self._cursor].t_ns - self._items[self._cursor - 1].t_ns
@@ -193,3 +201,8 @@ class Replayer:
                     self._cursor = 0  # loop restart (D-09)
                 else:
                     self._state = State.DONE  # clean end (D-09)
+        else:
+            # The while body never ran because the cursor was already at end-of-stream
+            # (e.g. seek-past-end) while PLAYING/STEPPING: reach a clean DONE, no IndexError.
+            if self._state in (State.PLAYING, State.STEPPING) and self._cursor >= len(self._items):
+                self._state = State.DONE
