@@ -46,7 +46,6 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from rosbagger_core.backend.alias import ALIAS_PACK, expand_aliases  # noqa: E402
-
 from rosbagger_core.backend.resolve import parse  # noqa: E402
 from rosbagger_core.schema.flatten import build_table_schema  # noqa: E402
 
@@ -133,3 +132,77 @@ def test_alias_pack_canonical_targets():
     """The pack holds the two SC1 canonical targets keyed by ``pkg/msg/Type``."""
     assert ALIAS_PACK[_TWIST]["vx"] == "linear.x"
     assert ALIAS_PACK[_ODOMETRY]["vx"] == "twist.twist.linear.x"
+
+
+# --- Existence-gate (D-04) -- `-k gate` --------------------------------------
+
+
+def test_gate_target_absent_from_schema_is_noop():
+    """`-k gate`: a real alias whose TARGET is not in the schema is left untouched.
+
+    ``vx`` IS a Twist alias, but if the topic's schema does not contain its target
+    ``linear.x`` (here an empty schema set), the gate (D-04) leaves the original
+    token — a safe no-op that surfaces DuckDB's normal teaching error downstream.
+    """
+    out = expand_aliases(parse("SELECT vx FROM cmd_vel"), _TWIST, set()).sql(dialect="duckdb")
+    assert '"linear.x"' not in out
+    import re
+
+    assert re.search(r"\bvx\b", out) is not None, out
+
+
+def test_gate_unknown_short_token_is_noop(twist_names):
+    """`-k gate`: a short token that is NOT in the pack is never rewritten."""
+    out = expand_aliases(parse("SELECT zz FROM cmd_vel"), _TWIST, twist_names).sql(dialect="duckdb")
+    import re
+
+    assert re.search(r"\bzz\b", out) is not None, out
+    assert '"linear.x"' not in out
+
+
+def test_gate_unknown_msgtype_is_whole_tree_noop(twist_names):
+    """`-k gate`: a msgtype absent from the pack yields ``{}`` — a whole-tree no-op."""
+    out = expand_aliases(parse("SELECT vx FROM unknown"), "std_msgs/msg/String", twist_names).sql(
+        dialect="duckdb"
+    )
+    import re
+
+    assert re.search(r"\bvx\b", out) is not None, out
+
+
+# --- Edge cases -- `-k edge` -------------------------------------------------
+
+
+def test_edge_already_dotted_is_immune(twist_names):
+    """`-k edge`: an already-dotted quoted column is immune (its ``.name`` has dots)."""
+    sql = 'SELECT "linear.x" FROM cmd_vel'
+    out = expand_aliases(parse(sql), _TWIST, twist_names).sql(dialect="duckdb")
+    # Exactly one quoted "linear.x" — not double-expanded into something else.
+    assert out.count('"linear.x"') == 1
+
+
+def test_edge_output_alias_preserved(twist_names):
+    """`-k edge`: ``vx AS speed`` → ``"linear.x" AS speed`` (only exp.Column matched)."""
+    out = expand_aliases(parse("SELECT vx AS speed FROM cmd_vel"), _TWIST, twist_names).sql(
+        dialect="duckdb"
+    )
+    assert '"linear.x"' in out
+    assert "speed" in out  # the user's chosen output name is NOT mangled
+    import re
+
+    assert re.search(r"\bvx\b", out) is None, out
+
+
+def test_edge_qualified_column_not_rewritten(twist_names):
+    """`-k edge`: a TABLE-qualified ``c.vx`` is left alone (rewrite gates on empty .table).
+
+    The orchestrator (Plan 10-03) owns qualified-column handling; this per-schema
+    helper only expands UNQUALIFIED short columns, so ``c.vx`` is a no-op here.
+    """
+    out = expand_aliases(parse("SELECT c.vx FROM cmd_vel AS c"), _TWIST, twist_names).sql(
+        dialect="duckdb"
+    )
+    import re
+
+    assert re.search(r"\bvx\b", out) is not None, out
+    assert '"linear.x"' not in out
