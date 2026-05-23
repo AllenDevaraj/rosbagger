@@ -26,7 +26,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown (completed 2026-05-23)
 - [x] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar (completed 2026-05-23)
 - [x] **Phase 12: Live Record** - live topic discovery + select recording (rclpy) (completed 2026-05-23)
-- [ ] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy)
+- [x] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy) (completed 2026-05-23)
 - [ ] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI)
 
 ## Phase Details
@@ -340,7 +340,7 @@ Plans:
 
 **Wave 3** *(blocked on 13-01 + 13-02)*
 
-- [ ] 13-03-PLAN.md — lazy ROS boundary (`__init__.py`) + the rclpy publish SINK (`replay.py`: `get_message`+`deserialize_message`+`create_publisher().publish`, D-04) + thin `rosbagger-replay` CLI (D-02/D-10) + offline-guard extension + the LIVE SC1 integration test (subscriber receives, actually run in the ROS-sourced lane; D-11/D-12) -> REP-01
+- [x] 13-03-PLAN.md — lazy ROS boundary (`__init__.py`) + the rclpy publish SINK (`replay.py`: `get_message`+`deserialize_message`+`create_publisher().publish`, D-04) + thin `rosbagger-replay` CLI (D-02/D-10) + offline-guard extension + the LIVE SC1 integration test (subscriber receives, actually run in the ROS-sourced lane; D-11/D-12) -> REP-01
 
 ### Phase 14: GUI
 
@@ -374,5 +374,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 10. Query Ergonomics | 4/4 | Complete    | 2026-05-23 |
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
 | 12. Live Record | 3/3 | Complete    | 2026-05-23 |
-| 13. Live Replay | 2/3 | In Progress|  |
+| 13. Live Replay | 3/3 | Built (SC1 live lane pending orchestrator run) | 2026-05-23 |
 | 14. GUI | 0/? | Not started | - |

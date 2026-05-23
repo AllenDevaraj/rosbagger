@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
-stopped_at: Session resumed from HANDOFF.json — proceeding to execute Phase 13 (13-02 next)
-last_updated: "2026-05-23T20:52:09.756Z"
+stopped_at: Phase 13 — 13-03 BUILT (live front door + sink + CLI + SC1 test); SC1 live lane pending orchestrator run
+last_updated: "2026-05-23T21:00:51.587Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 14
-  completed_phases: 12
+  completed_phases: 13
   total_plans: 35
-  completed_plans: 34
-  percent: 86
+  completed_plans: 35
+  percent: 93
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 ## Current Position
 
-Phase: 13 (live-replay) — EXECUTING
-Plan: 2 of 3 (13-02 COMPLETE; 13-03 next)
-Status: Executing Phase 13 — 13-02 done (pure Replayer scheduler), 13-03 next (rclpy publish sink + CLI + live test)
-Last activity: 2026-05-23 -- Phase 13 Plan 02 complete (pure transport scheduler)
+Phase: 13 (live-replay) — 13-03 BUILT (live SC1 lane pending orchestrator run)
+Plan: 3 of 3 (13-01/13-02/13-03 all built)
+Status: Offline tier green; REP-01 live SC1 proof pending the ROS-sourced lane (orchestrator must run it — W4)
+Last activity: 2026-05-23
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -101,6 +101,7 @@ Progress: [██████████] 97%
 | Phase 12 P12-03 | ~10min | 3 tasks | 5 files |
 | Phase 13 P01 | 15min | 3 tasks | 7 files |
 | Phase 13 P02 | ~12min | 2 tasks | 2 files |
+| Phase 13 P03 | ~8min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 12-03]: Shipped the thin rosbagger-record CLI (cli.py: typer app, `list` verb [SC1] + `record` verb over the API; module top ROS-free, package API lazy-imported in command bodies; @_capability_errors presents RosNotAvailableError/McapStorageUnavailableError as a clean Exit(1), no traceback — mirrors bagq teaching_errors). SELECTION THREADING (the plan's choice point): record() stays the SINGLE orchestrator — extended its signature with all_topics/regex/exclude threaded into the one select_topics(discovered, ...) call; the CLI forwards flags only (API-first, D-02), never calling discovery itself. --storage is a str Enum {mcap,sqlite3} (W2) so an invalid value is REJECTED AT PARSE TIME (click usage error, exit 2) before any ROS work — making T-12-02's parse-time-constraint claim real; default Storage.MCAP (D-08 not weakened). Rule 1 fix: `from rosbagger_record import record` resolves to the MODULE (not the function) once `import rosbagger_record.record` (the submodule) runs anywhere in-process — added submodule-shadow-proof aliases record_topics/list_record_topics in __init__.py (point at the FUNCTIONS); the CLI imports those. LIVE LANE RAN ON THIS BOX (ROS-sourced): `source /opt/ros/humble/setup.bash && PYTHONPATH=<record/core/bagq/tests src prepend>:$PYTHONPATH python3 -m pytest tests/test_record_live.py -m live` → 2 passed, 1 skipped (SC1 discovers /telemetry; sqlite3 SC2/SC3 records 5 frames + re-opens via the v1 RosbagsReader(default_typestore=ROS2_HUMBLE), 5 msgs all on /telemetry; the mcap variant SKIPS — plugin absent, skipif on get_registered_writers()). Deterministic across reruns; an actually-passing live run (not collected-and-skipped). Offline: full suite 429 passed, 1 skipped @ 97.37% (test_record_live collected-and-skipped via importorskip, contributes 0 to cov; +8 CLI tests over Plan 02); ruff clean (69 files); offline guard 15 green (core/bagq/record + cli ROS-free); uv sync --locked --dev exit 0 (no re-lock — typer already declared). REC-01 COMPLETE — the offline↔live closing loop is proven. Human follow-up (optional, non-blocking): `sudo apt install ros-humble-rosbag2-storage-mcap` to run the skipped mcap live variant.
 - [Phase ?]: [Phase 13-02] Pure ROS-free Replayer transport scheduler (scheduler.py): State(PLAYING/PAUSED/STEPPING/DONE) + six controls + monotonic pacing scaled by rate over an ordered list of .t_ns items, injectable clock/sleep/sink. No start index ctor param (W3 — seek is the SOLE position-setter; CLI --start maps to seek(int(s*1e9)) in Plan 03). rate>0 validated in __init__ AND set_rate. Bounded stop (max_messages/duration) via is-not-None guards (WR-01) + injected monotonic clock (WR-02); bound check fires BEFORE the loop-reset so DONE wins over loop=True at exact end-of-stream (W4). Module top stdlib-only — NO rclpy/rosbag2_py/rosidl, NO source import (generic over .t_ns).
 - [Phase ?]: [Phase 13-02] Rule-1 fix in run(): up-front bound check (max=0/duration<=0 halt BEFORE first publish — WR-01 truthiness trap) + while/else clean-DONE at seek-past-end (no IndexError). SC2 + SC3 proven by 13 ROS-free unit tests (recording sink + sleep + fake monotonic clock) incl. the W4 loop+max==N exact-end boundary (publishes EXACTLY N then DONE). Full offline suite 452 passed, 1 skipped @ 97.37% (>=80% gate on core+bagq held; rosbagger_replay out of gate per D-12); ruff clean; offline guard intact. Plan 13-03 injects the rclpy sink into this Replayer.
+- [Phase 13-03]: Shipped the live half of REP-01. __init__.py lazy _require_ros boundary (rclpy imported INSIDE the body -> teaching RosNotAvailableError) + replay() lazy delegator + submodule-shadow-proof replay_bag alias; NO top-level rclpy/rosidl import (import rosbagger_replay stays ROS-free, offline-guard-verified). replay.py is the ONLY rclpy module (D-04/Pattern 4 VERIFIED publish path): load_items -> NoMessagesToReplayError BEFORE rclpy.init() on empty (WR-04) -> try/finally owning rclpy.init()/shutdown() + per-topic (cls,publisher) dict + sink (get_message -> create_publisher(cls,topic,10) -> deserialize_message(cdr,cls) -> publish) -> --start SECONDS mapped to replayer.seek(int(start*1e9)) (W3, no scheduler start kwarg) -> drives the pure Replayer -> returns published count. The SINGLE production publish path (CLI + Phase-14 GUI + SC1 live test all call it). Thin rosbagger-replay CLI (cli.py): one typer `replay` verb over replay_bag, @_capability_errors -> clean Exit(1) (RosNotAvailableError/NoMessagesToReplayError, NO bare except Exception), top imports typer-only. D-10 --end FOLDED into --duration (W5 — v1 scheduler bounds on monotonic duration/max_messages, not a bag-timestamp horizon; documented in help text + a module comment, true --end deferred). Single-command typer flattens: invoked as `rosbagger-replay <bag> [opts]`; both `rosbagger-replay --help` and `... replay --help` exit 0. Offline guard extended: test_import_replay_does_not_pull_ros + submodule guard (scheduler/source leak no rclpy/rosbag2_py). LIVE SC1 test (tests/test_replay_live.py): importorskip(rclpy)+live marker; PRODUCTION replay_bag() runs IN-PROCESS (publisher), an EXTERNAL subscriber subprocess (own rclpy context, no double-init) counts /imu + reports on stdout; asserts published==9 + received==3. BLOCKER-1 grep-verified (shows replay_bag(, NO Replayer(/create_publisher in test). Offline: 459 passed, 2 skipped @ 97.37% (>=80% gate on core+bagq; rosbagger_replay out per D-12; live test collected-and-skipped); ruff clean (77 files). DEVIATION (Rule 1, test-only): CLI parse tests invoke the FLAT form (single-command typer collapses the `replay` verb token); production cli.py unchanged. PENDING (SC1 sign-off): the orchestrator MUST actually run `source /opt/ros/humble/setup.bash && PYTHONPATH=<replay/core src prepend>:$PYTHONPATH python3 -m pytest tests/test_replay_live.py -m live -v` and confirm SC1 PASSED (not skipped) — collected-and-skipped is insufficient (W4). REP-01 = Built; live SC1 proof pending the orchestrator run.
 
 ### Pending Todos
 
@@ -214,7 +216,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T20:52:01.020Z
-Stopped at: Phase 13 — 13-02 COMPLETE (pure Replayer transport scheduler); resume at 13-03
+Last session: 2026-05-23T21:00:51.575Z
+Stopped at: Phase 13 — 13-03 BUILT (live front door + sink + CLI + SC1 test); SC1 live lane pending orchestrator run
 Resume file: None
-Next: Phase 13 Plan 02 COMPLETE. Shipped the PURE ROS-free `Replayer` transport scheduler (packages/rosbagger-replay/src/rosbagger_replay/scheduler.py): State(PLAYING/PAUSED/STEPPING/DONE) + the six controls (play/pause/step/seek/set_rate/loop) + monotonic inter-message pacing scaled by rate + an optional bounded stop (max_messages/duration), all over an ordered list of .t_ns items with INJECTABLE clock/sleep/sink. No `start` index ctor param (W3 — seek is the sole position-setter; CLI --start maps to seek(int(s*1e9)) in 13-03). SC2 (six controls) + SC3 (rate=2.0 halves the slept Δt; first publish no pre-sleep; seek lands the first item >= t0+offset, skipped items absent) PROVEN by 13 ROS-free unit tests in tests/test_replay_unit.py (recording sink + recording sleep + fake monotonic clock), incl. the W4 loop+max==N exact-end boundary (publishes EXACTLY N then DONE — bound wins over loop-reset). Rule-1 fix in run(): up-front bound check (max=0/duration<=0 halt before the first publish, WR-01) + while/else clean-DONE at seek-past-end (no IndexError). Offline: 452 passed, 1 skipped @ 97.37% (>=80% gate on core+bagq held; rosbagger_replay out of gate per D-12), ruff clean (74 files), offline guard 15 green (scheduler imports no rclpy/rosbag2_py/rosidl, no source import at top), uv sync --locked --dev exit 0 (no re-lock). Plan 13-03 (next): the ~15-line rclpy publish SINK (raw CDR -> deserialize_message -> create_publisher.publish) injected as the Replayer's sink, the lazy replay() front door, the thin rosbagger-replay CLI (--rate/--loop/--start/--duration/--max-messages/--topics), the offline-guard extension for rosbagger_replay, and the LIVE integration test (SC1: a real rclpy subscriber receives) RUN in the ROS-sourced lane. REP-01 stays In Progress until 13-03's live SC1 proof. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` + observe CI green to finalize v0.1.
+Next: Phase 13 Plan 03 BUILT — the LIVE half of REP-01 is in place and the offline tier is green, but SC1 is NOT yet signed off (the orchestrator must run the live lane — W4). Shipped: __init__.py lazy _require_ros boundary (rclpy imported inside the body -> teaching RosNotAvailableError; replay() lazy delegator + submodule-shadow-proof replay_bag alias; NO top-level rclpy/rosidl), replay.py (the ONLY rclpy module — D-04/Pattern 4 VERIFIED publish path: load_items -> NoMessagesToReplayError before rclpy.init() on empty [WR-04] -> try/finally rclpy.init()/shutdown() + per-topic create_publisher dict + sink [get_message -> create_publisher(cls,topic,10) -> deserialize_message(cdr,cls) -> publish] + --start seconds -> seek(int(s*1e9)) [W3] -> drives the pure Replayer -> returns published count; the SINGLE production publish path), the thin rosbagger-replay CLI (cli.py — one typer replay verb over replay_bag, @_capability_errors -> clean Exit(1), top imports typer-only, D-10 --end FOLDED into --duration [W5] documented in help + module comment; FLAT single-command invocation `rosbagger-replay <bag> [opts]`), the offline-guard extension (test_import_replay_does_not_pull_ros + submodule guard), and the LIVE SC1 test (tests/test_replay_live.py — importorskip(rclpy)+live marker; PRODUCTION replay_bag() IN-PROCESS publisher + an EXTERNAL subscriber subprocess that counts /imu + reports on stdout; asserts published==9 + received==3; BLOCKER-1 grep-verified: replay_bag( present, NO Replayer(/create_publisher in test). Offline: 459 passed, 2 skipped @ 97.37% (>=80% gate on core+bagq held; rosbagger_replay out per D-12; live test collected-and-skipped), ruff clean (77 files), offline guard 17 green. PENDING SC1 SIGN-OFF (W4): the orchestrator MUST run `source /opt/ros/humble/setup.bash && PYTHONPATH="packages/rosbagger-replay/src:packages/rosbagger-core/src:$PYTHONPATH" python3 -m pytest tests/test_replay_live.py -m live -v` and confirm SC1 PASSED (not skipped) — only then is REP-01 fully Complete. After SC1 passes, the next milestone is Phase 14 (GUI) capability-gating over this replay_bag() API. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` + observe CI green to finalize v0.1.

@@ -122,13 +122,14 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | EDIT-01 | Phase 11 | Complete (raw-copy trim/drop/keep/downsample/merge in 11-01: streaming AnyReader→Writer edit_bag, lossless across ROS1+ROS2-sqlite3+MCAP; cross-format convert ROS1↔ROS2 in 11-02 via the rosbags converter factory — is_same_wireformat→memoryview identity / generate_message_converter→migrate_bytes for the Header.seq case, NOT hand-rolled; headered /imu+/image DESERIALIZE after convert both directions; thin bagq edit / bagq convert verbs over the core API) |
 | EVNT-01 | Phase 11 | Complete (sidecar I/O in 11-03: rosbagger_core.events sidecar_path/add_event/list_events over the fixed v1 schema, reusing the locked DuckDB-COPY writer — SC2; reserved `events` query table in 11-04: query() subtracts `events` from topic resolution and registers the sidecar relation via list_events(reader.paths[0]), empty-schema when absent (Open Q3) — a standard BETWEEN interval join works natively across ROS1+ROS2-sqlite3+MCAP, SC3, no special operator; thin bagq events add/list verbs over the core API, SC2 at the CLI; offline invariant held) |
 | REC-01 | Phase 12 | Complete (rosbagger-record live module: package scaffold + lazy ROS boundary + teaching capability errors in 12-01; the verified discover→select→`create_subscription(raw=True)`→`rosbag2_py.SequentialWriter`→bounded/SIGINT stop→finalize record core + MCAP-preferred storage gate in 12-02; the thin `rosbagger-record` CLI [`list` + record verbs, parse-time-constrained `--storage`] + the LIVE integration test in 12-03 — external publisher→bounded record→re-open via the v1 RosbagsReader(default_typestore=ROS2_HUMBLE); the live lane RAN on this box, SC1/SC2/SC3 proven via sqlite3, the MCAP assertion skipif-guarded; offline tier stays ROS-free, guard green) |
+| REP-01 | Phase 13 | Built — live SC1 proof PENDING orchestrator run (rosbagger-replay live module: package scaffold + raw-CDR `source.py` seam [v1 AnyReader + ROS1→CDR bridge] in 13-01; the PURE `Replayer` transport scheduler [play/pause/step/seek/rate/loop + monotonic pacing + bounded stop, SC2/SC3 unit-proven ROS-free] in 13-02; the lazy `_require_ros` boundary + `replay.py` rclpy publish front door [`get_message`+`deserialize_message`+`create_publisher().publish`, D-04 VERIFIED] + thin `rosbagger-replay` CLI [`--rate`/`--loop`/`--start`/`--topics`/`--duration`/`--max-messages`; D-10 `--end` folded into `--duration`] + offline-guard extension + the LIVE SC1 test in 13-03. Offline tier green [459 passed, 2 skipped @ 97.37%; live test collected-and-skipped]. SC1 NOT yet signed off — the orchestrator MUST run `tests/test_replay_live.py -m live` in the ROS-sourced lane [W4]; only then REP-01 = Complete) |
 
 **Coverage:**
 - v1 requirements: 23 total (all Complete)
 - Query-ergonomics additions: QURY-08, QURY-09 (Phase 10; both mapped)
 - Edit/Events additions: EDIT-01, EVNT-01 (Phase 11; both Complete)
-- Live additions: REC-01 (Phase 12; Complete)
-- Mapped to phases: 28
+- Live additions: REC-01 (Phase 12; Complete), REP-01 (Phase 13; Built — live SC1 pending orchestrator run)
+- Mapped to phases: 29
 - Unmapped: 0 ✓
 
 > Phases 1 (Scaffold & Test Harness) and 8 (Packaging, Docs & Release) are infrastructure phases that carry the Definition of Done rather than specific REQ-IDs.
