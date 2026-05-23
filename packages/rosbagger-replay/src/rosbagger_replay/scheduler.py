@@ -71,6 +71,10 @@ class Replayer:
             no-op in tests).
         rate: schedule scale (``> 0``); the slept ``Δt`` is divided by ``rate``. Validated here.
         loop: when ``True`` the cursor restarts at end-of-stream; ``False`` reaches DONE (D-09).
+            NOTE (WR-02): a loop wrap restarts at index ``0`` — NOT at the last :meth:`seek`
+            target. ``seek`` is the sole position-setter for an explicit jump, but the loop
+            reset deliberately rewinds to the start of the stream, so a prior offset-seek is
+            NOT preserved across a wrap (seek to 5s then loop -> wrap restarts at 0, not 5s).
         max_messages: optional bound — halt after exactly this many sink calls (``is not None``
             guard so ``0`` means zero, not unbounded — WR-01).
         duration: optional bound (seconds) — halt once the injected clock has advanced
@@ -198,7 +202,8 @@ class Replayer:
                 return
             if self._cursor >= len(self._items):
                 if self.loop:
-                    self._cursor = 0  # loop restart (D-09)
+                    # loop restart (D-09): rewind to index 0, NOT the last seek target (WR-02).
+                    self._cursor = 0
                 else:
                     self._state = State.DONE  # clean end (D-09)
         else:
