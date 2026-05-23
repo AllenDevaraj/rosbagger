@@ -564,5 +564,140 @@ def tf(
         raise typer.BadParameter(f"Unknown format {fmt!r}; use table|json")
 
 
+def _parse_downsample(specs: list[str]) -> dict[str, int]:
+    """Parse repeatable ``--downsample /topic:N`` flags into a ``{topic: int}`` dict.
+
+    Splits each spec on the LAST ``:`` so topic names containing a ``:`` (rare but
+    legal) survive; the suffix must be a positive integer. A malformed spec (no
+    ``:``, a non-integer, or ``N <= 0``) raises ``typer.BadParameter`` with a clean
+    usage message — the CLI validates the FLAG SYNTAX here (presentation), while the
+    core ``EditOps`` re-validates ``N > 0`` as defense-in-depth (D-08 / V5).
+    """
+    out: dict[str, int] = {}
+    for spec in specs:
+        topic, sep, n_str = spec.rpartition(":")
+        if not sep or not topic:
+            raise typer.BadParameter(f"--downsample expects /topic:N, got {spec!r}")
+        try:
+            n = int(n_str)
+        except ValueError:
+            raise typer.BadParameter(
+                f"--downsample N must be an integer in {spec!r}, got {n_str!r}"
+            ) from None
+        if n <= 0:
+            raise typer.BadParameter(f"--downsample N must be positive in {spec!r}")
+        out[topic] = n
+    return out
+
+
+@app.command()
+@teaching_errors
+def edit(
+    srcs: Annotated[
+        list[Path],
+        typer.Argument(help="One or more SAME-format input bags (multiple = merge)."),
+    ],
+    out: Annotated[
+        Path,
+        typer.Option("-o", "--output", help="Output bag path (.bag / .mcap / ROS 2 dir)."),
+    ],
+    trim: Annotated[
+        tuple[float, float] | None,
+        typer.Option("--trim", help="Keep messages in [START END] bag-relative seconds."),
+    ] = None,
+    drop: Annotated[
+        list[str] | None,
+        typer.Option("--drop", help="Exclude a topic (repeatable; excludes --keep)."),
+    ] = None,
+    keep: Annotated[
+        list[str] | None,
+        typer.Option("--keep", help="Keep only this topic (repeatable; excludes --drop)."),
+    ] = None,
+    downsample: Annotated[
+        list[str] | None,
+        typer.Option("--downsample", help="Keep every Nth message of a topic: /topic:N."),
+    ] = None,
+    fmt: Annotated[
+        str | None,
+        typer.Option("--format", help="Force output format: ros1|mcap|sqlite3."),
+    ] = None,
+) -> None:
+    """Edit one or more bags into a NEW bag (trim/drop/keep/downsample/merge/convert).
+
+    All operations compose in a single read->write pass (D-10). ``--trim START END``
+    keeps messages whose bag-relative time is in ``[START, END]`` seconds (D-06).
+    ``--drop`` / ``--keep`` are repeatable and mutually exclusive (D-07).
+    ``--downsample /topic:N`` keeps every Nth message of that topic (D-08). Multiple
+    input bags are merged in timestamp order (D-09 — same-format inputs only). The
+    output format follows the ``-o`` suffix (``.bag`` -> ROS 1, ``.mcap`` -> ROS 2
+    MCAP, a directory -> ROS 2 sqlite3) or an explicit ``--format``; a cross-format
+    target (ROS 1 <-> ROS 2) converts the messages via the core converter (D-04).
+    The input is never modified and is never overwritten (D-05).
+    """
+    # Import the core API lazily (inside the body) so module import stays light and
+    # `bagq --help` pays no heavy import cost (offline-guard discipline). The CLI
+    # builds NO edit/convert logic — it parses flags into EditOps and calls edit_bag
+    # (API-first, D-02).
+    from rosbagger_core.edit import EditOps, edit_bag
+
+    # D-07 mutual exclusion — surface a clean usage error BEFORE touching the core.
+    # The core EditOps re-validates this as defense-in-depth, but a BadParameter here
+    # gives the cleaner CLI message and guarantees no bag is opened.
+    if drop and keep:
+        raise typer.BadParameter("--drop and --keep are mutually exclusive; use one or the other.")
+
+    ops = EditOps(
+        trim=trim,
+        drop=frozenset(drop or ()),
+        keep=frozenset(keep or ()),
+        downsample=_parse_downsample(downsample or []),
+    )
+    # The core raises ValueError for an overwrite-input attempt (D-05) and for any
+    # spec the CLI did not pre-validate; map it to a clean BadParameter rather than a
+    # traceback (the @teaching_errors tuple does not include the bare ValueError).
+    try:
+        n = edit_bag(srcs, out, ops, fmt=fmt)
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from None
+    typer.echo(f"Wrote {out} ({n} messages)")
+
+
+@app.command()
+@teaching_errors
+def convert(
+    src: Annotated[
+        Path,
+        typer.Argument(help="Input bag to convert (single bag — pure format change)."),
+    ],
+    out: Annotated[
+        Path,
+        typer.Option("-o", "--output", help="Output bag path (.bag / .mcap / ROS 2 dir)."),
+    ],
+    fmt: Annotated[
+        str | None,
+        typer.Option("--format", help="Force output format: ros1|mcap|sqlite3."),
+    ] = None,
+) -> None:
+    """Convert a bag to another format (the pure format-change convenience over ``edit``).
+
+    Reads ``src`` and writes ``out`` in the format chosen by the ``-o`` suffix
+    (``.bag`` -> ROS 1, ``.mcap`` -> ROS 2 MCAP, a directory -> ROS 2 sqlite3) or an
+    explicit ``--format``. Cross-format (ROS 1 <-> ROS 2) conversion is delegated to
+    the core converter; same-format targets (ROS 1 -> ROS 1, ROS 2-sqlite3 <-> MCAP)
+    are a lossless raw copy (D-04). This is exactly ``bagq edit`` with no filters —
+    the SAME core pipeline (D-10) — so the input is never modified (D-05).
+    """
+    # Lazy core import (offline invariant); the CLI builds no conversion logic — it
+    # calls edit_bag with an empty EditOps, and the converter factory engages inside
+    # the pipeline when the destination wireformat differs (D-02 / D-10).
+    from rosbagger_core.edit import EditOps, edit_bag
+
+    try:
+        n = edit_bag([src], out, EditOps(), fmt=fmt)
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from None
+    typer.echo(f"Wrote {out} ({n} messages)")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
