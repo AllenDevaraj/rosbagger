@@ -112,6 +112,12 @@ def replay(
             cls, pub = pubs[item.topic]
             msg = deserialize_message(item.cdr, cls)  # raw CDR -> typed message (VERIFIED)
             pub.publish(msg)  # any subscriber on the topic receives it (VERIFIED)
+            # WR-07: published["n"] is the SOURCE OF TRUTH for the returned count. The
+            # scheduler's own max_messages bound counts SINK INVOCATIONS, not this counter —
+            # the two cannot diverge today because the sink fires exactly once per scheduler
+            # publish (one increment per drive-loop publish). If a future sink ever filtered
+            # or dropped a message, this counter and the scheduler's bound would need to be
+            # reconciled (the bound would over-run); they agree only under the one-fire coupling.
             published["n"] += 1
 
         # The Replayer has NO `start` ctor param (W3): map the --start SECONDS offset onto
