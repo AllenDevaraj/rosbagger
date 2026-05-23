@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "bagq",
     "rosbagger-core",
+    "rosbagger-record",
 ]
 
 [manifest.dependency-groups]
@@ -1251,6 +1252,21 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=18" },
     { name = "rosbags", specifier = ">=0.11,<0.12" },
     { name = "sqlglot", specifier = ">=27,<31" },
+]
+
+[[package]]
+name = "rosbagger-record"
+version = "0.1.0"
+source = { editable = "packages/rosbagger-record" }
+dependencies = [
+    { name = "rosbagger-core" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "rosbagger-core", editable = "packages/rosbagger-core" },
+    { name = "typer", specifier = ">=0.15,<1" },
 ]
 
 [[package]]
