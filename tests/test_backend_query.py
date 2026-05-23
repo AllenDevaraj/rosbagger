@@ -47,7 +47,6 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import make_all_fixtures  # noqa: E402  (after sys.path setup)
 
-from rosbagger_core.backend.base import QueryBackend  # noqa: E402
 from rosbagger_core.backend.duckdb_backend import DuckDBBackend  # noqa: E402  (3rd-party)
 from rosbagger_core.backend.query import (  # noqa: E402
     UnknownColumnError,

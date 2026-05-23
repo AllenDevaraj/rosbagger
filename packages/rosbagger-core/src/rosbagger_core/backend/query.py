@@ -96,6 +96,7 @@ def query(
     sql: str,
     reader: BagReader,
     *,
+    alias: bool = True,
     backend: QueryBackend | None = None,
 ) -> pyarrow.Table:
     """Run ``sql`` over an OPEN ``reader``, returning the result as a ``pyarrow.Table``.
@@ -104,16 +105,33 @@ def query(
     topics are never deserialized — QURY-05), registers each as a relation in the
     swappable ``backend`` (default a fresh in-memory ``DuckDBBackend``), executes,
     and returns Arrow (QURY-06). A ``SELECT *`` materializes a topic's heavy blobs;
-    an explicit projection naming no blob omits them (the QURY-07 lazy default). An
-    unmapped table name raises :class:`UnknownTableError` (listing the available
-    tables) BEFORE anything is loaded.
+    an explicit projection naming no blob omits them (the QURY-07 lazy default), and
+    materializes ONLY the referenced columns ∪ the four standard columns (the QURY-09
+    projection pushdown — Plan 10-03). An unmapped table name raises
+    :class:`UnknownTableError` (listing the available tables) BEFORE anything loads.
+
+    Pipeline (D-02 / 10-RESEARCH Pattern 4): ``parse`` → build per-topic
+    ``TableSchema`` up front (O(1) metadata, no ``reader.read()``) → (if ``alias``)
+    expand the alias pack on the parsed tree, gated to the single-base-topic case
+    (Open Q1) → recompute ``referenced_tables``/``referenced_columns``/``has_star``
+    on the (possibly rewritten) tree → load only referenced topics, materializing
+    per-topic ``include`` (heavy-blob) ∧ ``restrict`` (projection) column sets →
+    forward the REWRITTEN SQL (``tree.sql("duckdb")``) to ``backend.execute``.
 
     Args:
-        sql: the user's SQL — the trusted interface; forwarded to ``execute``
-            as-is (NOT an injection vector; threat T-05-04).
+        sql: the user's SQL — the trusted interface. The orchestrator NEVER builds
+            SQL by string concatenation; when ``alias`` expands a short token it
+            does so inside the ``sqlglot`` AST (quoted identifiers) and forwards
+            ``tree.sql("duckdb")`` — the same trusted-SQL boundary as Phase 5
+            (threat T-05-04 / T-10-07), not an injection vector.
         reader: an ALREADY-OPEN ``BagReader`` (the caller owns the
             ``with RosbagsReader(...) as reader:`` lifecycle — Open Q2). Its
             ``topics``/``typestore`` drive table resolution and schema build.
+        alias: when ``True`` (default, D-11) expand the built-in alias pack
+            (``vx`` → the per-msgtype dotted velocity column) — but ONLY when the
+            query references exactly one distinct base topic (Open Q1), so a
+            JOIN/CTE/multi-topic query is a safe no-op. ``alias=False`` (the
+            ``--no-alias`` escape hatch) disables expansion entirely.
         backend: an optional ``QueryBackend`` (swappable per call). Defaults to a
             fresh ``DuckDBBackend``; entered via ``with`` so its connection is
             released even on error (Open Q3 / 05-RESEARCH Pitfall 5). ``execute``
@@ -130,7 +148,9 @@ def query(
     """
     # Lazy imports (offline invariant): keep this module's top level — and thus
     # `import rosbagger_core.backend` — free of the heavy duckdb/sqlglot/pyarrow
-    # stack. Mirrors inspect.collect_table_schemas.
+    # stack. Mirrors inspect.collect_table_schemas. `expand_aliases` is sqlglot-only
+    # (pure-Python) but is imported HERE all the same to keep the module top stdlib-light.
+    from rosbagger_core.backend.alias import expand_aliases
     from rosbagger_core.backend.resolve import (
         has_star,
         parse,
@@ -139,16 +159,52 @@ def query(
     )
     from rosbagger_core.schema import build_arrow_table, build_table_schema
 
-    # Step 1 — parse ONCE, then derive tables / columns / star from the one tree.
+    # Step 1 — parse ONCE. Resolution (tables/columns/star) is DEFERRED until after
+    # the alias rewrite (Step 4) so the projection + heavy-blob sets see the EXPANDED
+    # dotted names (D-02 — the rewrite MUST precede `referenced_*`).
     tree = parse(sql)
-    tables = referenced_tables_in(tree)
-    columns = referenced_columns(tree)
-    star = has_star(tree)
 
     # Step 2 — build the per-bag topic↔table map and invert it (Pattern 4).
     topic_to_table, table_to_topic, topic_to_msgtype = _topic_table_maps(reader)
 
-    # Step 3 — resolve each referenced table name to a topic; an unmapped name
+    # Step 3 — HOIST schema construction (10-RESEARCH Pattern 4). Build every mapped
+    # topic's TableSchema up front, keyed by its SANITIZED table name. This is O(1)
+    # metadata (no `reader.read()`), so it is cheap to do before resolution — and it
+    # gives the alias existence-gate (D-04) the per-topic column-name sets it needs.
+    # The same schemas are REUSED in the load loop below (no double-build). The
+    # `typestore` binding is hoisted here with it (it was previously bound in Step 4,
+    # AFTER this point — without the move build_table_schema would NameError).
+    typestore = reader.typestore
+    schemas_by_table = {
+        topic_to_table[topic]: build_table_schema(topic_to_msgtype[topic], typestore, topic=topic)
+        for topic in topic_to_table
+    }
+
+    # Step 4 — alias expansion (D-02), gated to the single-base-topic case (Open Q1).
+    # Map the referenced base tables (CTE-subtracted) through to their topics; ignore
+    # names that map to no topic (those raise UnknownTableError below). Only when
+    # EXACTLY ONE distinct base topic resolves do we expand — keyed on that topic's
+    # msgtype and existence-gated on its schema column names. With zero or >1 base
+    # topics (JOIN/CTE/multi-topic) OR `alias=False`, expansion is skipped (safe
+    # no-op, A3 / Pitfall 2) so an ambiguous short token is left for DuckDB to reject.
+    if alias:
+        base_tables = [t for t in referenced_tables_in(tree) if t in table_to_topic]
+        if len(base_tables) == 1:
+            only_table = base_tables[0]
+            schema = schemas_by_table[only_table]
+            tree = expand_aliases(
+                tree,
+                schema.msgtype,
+                {c.name for c in schema.columns},
+            )
+
+    # Step 5 — derive tables / columns / star from the (possibly rewritten) tree
+    # (D-02 — these MUST run after expansion so they see the expanded dotted names).
+    tables = referenced_tables_in(tree)
+    columns = referenced_columns(tree)
+    star = has_star(tree)
+
+    # Step 6 — resolve each referenced table name to a topic; an unmapped name
     # raises a clear error listing the available tables, BEFORE any load
     # (T-05-06: no silent empty result). v1 just lists; Phase 7 owns did-you-mean.
     referenced_topics: list[str] = []
@@ -160,20 +216,20 @@ def query(
             raise UnknownTableError(table, sorted(table_to_topic))
         referenced_topics.append(topic)
 
-    # Step 4 — load only the referenced topics, register, execute. The backend is
+    # Step 7 — load only the referenced topics, register, execute. The backend is
     # entered via `with` so its connection is released even on error; `execute`
     # materializes the Arrow result before close, so the return outlives it.
-    typestore = reader.typestore
     own_backend = backend is None
     backend = backend if backend is not None else _default_backend()
     # Accumulate each referenced table's columns (keyed by the SANITIZED table name
-    # the SQL uses) as we build the per-topic schemas, so an unknown-column error can
-    # list them WITHOUT rebuilding (07-RESEARCH §2 / Open Q2 — all referenced tables'
-    # columns, grouped; the single-FROM case collapses to one entry).
+    # the SQL uses) so an unknown-column error can list them WITHOUT rebuilding
+    # (07-RESEARCH §2 / Open Q2 — all referenced tables' columns, grouped; the
+    # single-FROM case collapses to one entry).
     columns_by_table: dict[str, list[str]] = {}
     try:
         for topic in referenced_topics:
-            schema = build_table_schema(topic_to_msgtype[topic], typestore, topic=topic)
+            # Reuse the hoisted schema (Step 3) — no double-build (Pattern 4).
+            schema = schemas_by_table[topic_to_table[topic]]
             columns_by_table[topic_to_table[topic]] = [c.name for c in schema.columns]
             # Heavy-blob include set: the referenced columns that are heavy blobs,
             # OR ALL of this topic's heavy blobs when the SQL is a SELECT *
@@ -184,20 +240,25 @@ def query(
             arrow = build_arrow_table(msgs, schema, include=include)
             # Register under the SANITIZED table name — the name the SQL references.
             backend.register_table(topic_to_table[topic], arrow)
-        # Step 5 — forward the user's SQL as-is (trusted interface; T-05-04). An
-        # unknown column surfaces as duckdb.BinderException; catch it by TYPE (robust),
-        # then NARROW to the unknown-column case by message before re-mapping (CR-01).
-        # duckdb.BinderException is NOT specific to unknown columns — DuckDB raises the
-        # SAME type for GROUP BY / HAVING / other binder-stage errors. Only when the
-        # `_BINDER_COL` regex matches ('Referenced column "X" not found') is it truly an
-        # unknown column: raise the typed UnknownColumnError carrying the referenced
-        # tables' columns (CLI-03). On a NON-match (GROUP BY/HAVING/other), re-raise the
-        # ORIGINAL BinderException unchanged so the real DuckDB error surfaces verbatim
-        # instead of a misleading "Unknown column '?'". duckdb is imported LAZILY here —
-        # it is already pulled in via _default_backend(), but the explicit import keeps
-        # the catch local and the module top stdlib-light (offline; 07-RESEARCH §2 / Pitfall 6).
+        # Step 8 — forward the REWRITTEN SQL (`tree.sql("duckdb")`, D-02): when alias
+        # expansion ran, `tree` carries the expanded dotted columns, so the regenerated
+        # SQL is what must reach DuckDB; when it did not, `tree` is the parsed original,
+        # so this round-trips the user's SQL unchanged. The string is sqlglot-rendered
+        # from the AST (never hand-concatenated), preserving the trusted-SQL boundary
+        # (T-05-04 / T-10-07). An unknown column surfaces as duckdb.BinderException;
+        # catch it by TYPE (robust), then NARROW to the unknown-column case by message
+        # before re-mapping (CR-01). duckdb.BinderException is NOT specific to unknown
+        # columns — DuckDB raises the SAME type for GROUP BY / HAVING / other binder-stage
+        # errors. Only when the `_BINDER_COL` regex matches ('Referenced column "X" not
+        # found') is it truly an unknown column: raise the typed UnknownColumnError
+        # carrying the referenced tables' columns (CLI-03). On a NON-match
+        # (GROUP BY/HAVING/other), re-raise the ORIGINAL BinderException unchanged so the
+        # real DuckDB error surfaces verbatim. The catch inspects the EXCEPTION, not the
+        # SQL string, so forwarding the rewritten SQL does not affect it. duckdb is
+        # imported LAZILY here — already pulled in via _default_backend(), but the explicit
+        # import keeps the module top stdlib-light (offline; 07-RESEARCH §2 / Pitfall 6).
         try:
-            return backend.execute(sql)
+            return backend.execute(tree.sql("duckdb"))
         except duckdb_binder_exception() as e:
             m = _BINDER_COL.search(str(e))
             if m is None:
