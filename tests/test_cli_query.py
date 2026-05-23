@@ -157,9 +157,7 @@ def test_query_no_alias_flag_disables_expansion(ros1_bag: Path) -> None:
     Mirrors the 07/09 no-traceback convention: a clean ``typer.Exit(1)`` reaches CliRunner
     as ``SystemExit`` (NOT a raw ``ValueError``); the message names the unknown column.
     """
-    result = runner.invoke(
-        app, ["query", "--no-alias", "SELECT vx FROM cmd_vel", str(ros1_bag)]
-    )
+    result = runner.invoke(app, ["query", "--no-alias", "SELECT vx FROM cmd_vel", str(ros1_bag)])
     assert result.exit_code == 1, result.output
     assert "vx" in result.output  # the teaching message names the unknown column
     # No traceback escaped: a clean Exit(1) is SystemExit, and the raw typed error did not
