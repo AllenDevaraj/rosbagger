@@ -73,7 +73,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 - **GUI-01**: Five capability-gated panels (record/inspect/query/tf/replay) over module APIs
 
 ### Edit / Events
-- **EDIT-01**: Trim / drop / merge / downsample / convert (ROS1↔ROS2↔MCAP)
+- [x] **EDIT-01**: Trim / drop / merge / downsample / convert (ROS1↔ROS2↔MCAP)
 - **EVNT-01**: Event sidecar exposed as a queryable `events` table
 
 ### Query ergonomics
@@ -119,6 +119,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | TF-01 | Phase 9 | Complete |
 | QURY-08 | Phase 10 | Complete (mechanism in 10-01: backend/alias.py + expand_aliases; WIRED into query() in 10-03 with the single-base-topic gate + alias=True keyword — SC1 `vx`→dotted proven end-to-end across ROS1+ROS2-sqlite+MCAP; the thin `bagq query --no-alias` CLI surface is the final 10-04 polish) |
 | QURY-09 | Phase 10 | Complete (materialization in 10-02: restrict= projection filter; WIRED into query() in 10-03 — per-topic restrict=(columns & schema_names)|STANDARD when not star, restrict=None under SELECT*; SC2/SC3 proven across ROS1+ROS2-sqlite+MCAP via a recording backend observing query()'s registered table) |
+| EDIT-01 | Phase 11 | Complete (raw-copy trim/drop/keep/downsample/merge in 11-01: streaming AnyReader→Writer edit_bag, lossless across ROS1+ROS2-sqlite3+MCAP; cross-format convert ROS1↔ROS2 in 11-02 via the rosbags converter factory — is_same_wireformat→memoryview identity / generate_message_converter→migrate_bytes for the Header.seq case, NOT hand-rolled; headered /imu+/image DESERIALIZE after convert both directions; thin bagq edit / bagq convert verbs over the core API) |
 
 **Coverage:**
 - v1 requirements: 23 total (all Complete)
