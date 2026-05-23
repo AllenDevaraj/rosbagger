@@ -4,13 +4,13 @@ milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
 stopped_at: Phase 11 context gathered
-last_updated: "2026-05-23T09:04:23.103Z"
-last_activity: 2026-05-23 -- Phase 11 planning complete
+last_updated: "2026-05-23T09:13:54.629Z"
+last_activity: 2026-05-23
 progress:
   total_phases: 14
   completed_phases: 10
   total_plans: 29
-  completed_plans: 25
+  completed_plans: 26
   percent: 71
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 11 — edit & events
+**Current focus:** Phase 11 — Edit & Events
 
 ## Current Position
 
-Phase: 11
-Plan: Not started
+Phase: 11 (Edit & Events) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-05-23 -- Phase 11 planning complete
+Last activity: 2026-05-23
 
-Progress: [██████████] 100%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -90,6 +90,7 @@ Progress: [██████████] 100%
 | Phase 10 P10-02 | 5min | 3 tasks | 3 files |
 | Phase 10 P10-03 | 5min | 2 tasks | 2 files |
 | Phase 10 P10-04 | 2min | 2 tasks | 2 files |
+| Phase 11 P11-01 | 6min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 10-03] Single-base-topic alias gate LOCKED (Open Q1/A3): orchestrator counts CTE-subtracted base topics (referenced_tables_in mapped through table_to_topic, unmapped dropped) and calls expand_aliases ONLY when exactly one resolves, keyed on its msgtype + existence-gated on its schema names. JOIN/CTE/multi-topic + alias=False = safe no-op (DuckDB rejects the unresolved token) — this is what protects the existing JOIN test (test_query_alias_join_no_op pins it).
 - [Phase ?]: [Phase 10-03] Projection wired (D-06/07/08/09): _STANDARD_COLUMNS frozenset (stdlib, offline-safe at module top); per topic in the load loop — star -> include=heavy, restrict=None (D-08, full materialization, Pitfall 4 short-circuit incl. o.*); else include=heavy&columns, restrict=(columns & schema_names)|STANDARD (D-06+D-07). Applied per-topic against that topic's schema_names -> over-include on JOIN never under-include (D-09). Threaded into build_arrow_table(include=, restrict=). SC3 proven by a _RecordingBackend (wraps real DuckDBBackend, captures register_table table) asserting column_names=={linear.x,t,t_ns,stamp,topic} x3 formats (W2 fix — observe, not re-derive). QURY-08+QURY-09 traceable end-to-end. Full suite 313 passed 97.73%; offline guard 10/10; ruff clean.
 - [Phase 10-04]: PHASE 10 COMPLETE (4/4). bagq query gained a --no-alias boolean (default False=aliases ON, D-11), declared in the existing Annotated[bool, typer.Option("--no-alias", ...)] idiom after --plot; the body forwards alias=not no_alias on the single run_query(sql, reader) call — a thin pass-through (decision 1, API-first): the CLI builds no SQL, adds no module-top import, and run_query stays lazy-imported (importing bagq.cli pulls no rosbags/pyarrow/duckdb, verified). _PlotCommand/--plot, -o/--format routing all untouched. Projection pushdown gets NO flag (D-11 — transparent). --no-alias "SELECT vx FROM cmd_vel" -> clean UnknownColumnError teaching line via the existing @teaching_errors (Exit 1, no traceback: CliRunner sees SystemExit, not ValueError; real binary prints "Unknown column 'vx'. Columns in cmd_vel: ..."); default-on renders linear.x [0,1,2]. TDD (RED 4ed0e76 -> GREEN cd32af2); the gate's ruff format collapsed the test's multi-line invoke (style 41e037c). Phase gate green: full suite 316 passed @ 97.73% (>=80%; 313 baseline + 3 CLI tests; cli.py fully covered), ruff check+format clean (53 files), offline-guard 10 passed; SC1 (alias resolves) + SC2/SC3 (projection loads only referenced cols) confirmed (18 alias/projection/star integration tests + real-shell smoke). QURY-08+QURY-09 delivered end-to-end. DEVIATION: none (the docstring note was plan-mandated; the format fix is a style fix on this plan's own edit, not behavioral).
+- [Phase ?]: 11-01: edit pipeline opens AnyReader directly in edit_bag (reader.py untouched); keys source->writer connections by id(conn) and dedupes add_connection per (topic,msgtype) so merge works (ROS2 Connection unhashable); empty result writes an empty bag and edit_bag returns the written count
 
 ### Pending Todos
 
@@ -194,7 +196,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T08:35:04.368Z
+Last session: 2026-05-23T09:13:43.384Z
 Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-edit-events/11-CONTEXT.md
+Resume file: None
 Next: Phase 10 is complete and ready for verification (verifier agent not installed — verified inline this session: gate green, SC1/SC2/SC3 confirmed). Phase 10 was the last query-ergonomics phase of milestone v0.2. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).

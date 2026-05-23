@@ -279,7 +279,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md — Edit core: streaming `AnyReader → filter → rosbags Writer` pipeline (`rosbagger_core/edit/`) with raw-copy trim/drop/keep/downsample/merge + format selection; round-trip (re-open + deserialize) tests across ROS1/ROS2-sqlite3/MCAP + offline-guard extension -> EDIT-01
+- [x] 11-01-PLAN.md — Edit core: streaming `AnyReader → filter → rosbags Writer` pipeline (`rosbagger_core/edit/`) with raw-copy trim/drop/keep/downsample/merge + format selection; round-trip (re-open + deserialize) tests across ROS1/ROS2-sqlite3/MCAP + offline-guard extension -> EDIT-01
 - [ ] 11-03-PLAN.md — Events sidecar I/O (`rosbagger_core/events.py`): file-vs-dir-aware `sidecar_path` + `add_event`/`list_events` over `<bag>.events.parquet` (fixed v1 schema), reusing the locked DuckDB-COPY writer; SC2 write/read/append tests -> EVNT-01
 
 **Wave 2** *(blocked on 11-01)*
@@ -346,7 +346,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
 | 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
 | 10. Query Ergonomics | 4/4 | Complete    | 2026-05-23 |
-| 11. Edit & Events | 0/? | Not started | - |
+| 11. Edit & Events | 1/4 | In Progress|  |
 | 12. Live Record | 0/? | Not started | - |
 | 13. Live Replay | 0/? | Not started | - |
 | 14. GUI | 0/? | Not started | - |
