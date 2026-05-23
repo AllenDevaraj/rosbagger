@@ -699,5 +699,119 @@ def convert(
     typer.echo(f"Wrote {out} ({n} messages)")
 
 
+# The `bagq events` sub-group (D-02 / D-13): two THIN verbs over the
+# ``rosbagger_core.events`` sidecar API (``add_event`` / ``list_events`` from Plan
+# 11-03). A nested ``typer.Typer`` so the design's ``bagq events add`` /
+# ``bagq events list`` resolve as a sub-command group (the closest match to the spec).
+# The verbs build no logic: they parse flags, convert the start/end SECONDS to ns
+# (the ergonomic match for ``--trim``, D-06), call the core API, and render — every
+# Parquet sidecar operation stays in ``rosbagger_core.events`` (the CLI never touches
+# the file itself). Each lazy-imports the core API inside its body so ``import bagq`` /
+# ``bagq --help`` stay rosbags-free (offline-guard discipline; the events module is
+# itself stdlib-light at import time).
+events_app = typer.Typer(
+    add_completion=False,
+    help="Annotate spans of bag time with events (a queryable `events` sidecar table).",
+    no_args_is_help=True,
+)
+app.add_typer(events_app, name="events")
+
+
+@events_app.command("add")
+@teaching_errors
+def events_add(
+    bag: Annotated[
+        Path,
+        typer.Argument(help="The bag to annotate (a .bag/.mcap file or a ROS 2 directory)."),
+    ],
+    start: Annotated[
+        float,
+        typer.Option(
+            "--start", help="Event start time in SECONDS (a point event has start == end)."
+        ),
+    ],
+    end: Annotated[
+        float,
+        typer.Option("--end", help="Event end time in SECONDS."),
+    ],
+    label: Annotated[
+        str,
+        typer.Option("--label", help="A short event label (e.g. 'turn', 'dropout')."),
+    ],
+    note: Annotated[
+        str | None,
+        typer.Option("--note", help="An optional free-text note."),
+    ] = None,
+) -> None:
+    """Append an event to the bag's ``<bag>.events.parquet`` sidecar (D-13, SC2).
+
+    ``--start`` / ``--end`` are in SECONDS (converted to nanoseconds internally to line
+    up with the topic tables' ``t_ns``); a point/instant event has ``--start == --end``.
+    The event is appended to the sidecar (created on first add). This is a thin verb over
+    ``rosbagger_core.events.add_event`` (API-first, D-02) — the CLI builds no I/O.
+    """
+    # Lazy core import (offline invariant) — keeps cli.py top level rosbags/pyarrow-free.
+    # The CLI only converts the SECONDS flags to ns and calls add_event; the sidecar
+    # write (the DuckDB-COPY reuse, T-06-01) lives entirely in core (D-02 / D-13).
+    from rosbagger_core.events import add_event
+
+    path = add_event(
+        bag,
+        t_start_ns=int(start * 1e9),
+        t_end_ns=int(end * 1e9),
+        label=label,
+        note=note,
+    )
+    typer.echo(f"Added event {label!r} to {path}")
+
+
+@events_app.command("list")
+@teaching_errors
+def events_list(
+    bag: Annotated[
+        Path,
+        typer.Argument(help="The bag whose events to list (reads <bag>.events.parquet)."),
+    ],
+) -> None:
+    """List the bag's events from its sidecar as a rich table (D-13, SC2).
+
+    Reads ``<bag>.events.parquet`` back via ``rosbagger_core.events.list_events`` and
+    renders the four fixed-v1 columns (``t_start_ns`` / ``t_end_ns`` / ``label`` /
+    ``note``). A bag with no sidecar (or an empty one) prints a "no events" line rather
+    than an empty table (mirrors ``_render_result``'s 0-row handling). Thin verb over the
+    core API (D-02) — no sidecar I/O in the CLI.
+    """
+    # Lazy core import (offline invariant). list_events returns the sidecar rows when
+    # present and an empty 4-column table when absent — both render uniformly below.
+    from rosbagger_core.events import list_events
+
+    table = list_events(bag)
+    _render_events(table)
+
+
+def _render_events(table: pyarrow.Table, console: Console | None = None) -> None:
+    """Render an events ``pyarrow.Table`` (the fixed v1 schema) as a rich table.
+
+    A 0-row result (no sidecar, or an empty one) prints a "no events" line instead of an
+    empty table — the same clean-empty handling as ``_render_result``. Otherwise builds a
+    ``rich.table.Table`` from :func:`rosbagger_core.output.rows_for_display` (the
+    temporal-safe coercion; the ``_ns`` columns are plain ``int64`` and render as their
+    integer nanoseconds — sufficient and simplest for v1). Presentation only.
+    """
+    from rosbagger_core.output import rows_for_display
+
+    console = console or Console()
+    if table.num_rows == 0:
+        console.print("no events")
+        return
+    names, rows = rows_for_display(table)
+    rt = Table(title="Events")
+    for name in names:
+        rt.add_column(name)
+    for row in rows:
+        rt.add_row(*row)
+    console.print(rt)
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
