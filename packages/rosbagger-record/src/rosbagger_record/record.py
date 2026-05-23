@@ -200,6 +200,9 @@ def record(
     topics: list[str],
     out: str,
     *,
+    all_topics: bool = False,
+    regex: str | None = None,
+    exclude: str | None = None,
     storage: str = "mcap",
     max_messages: int | None = None,
     duration: float | None = None,
@@ -211,16 +214,24 @@ def record(
     stop → finalize (D-04/D-05/D-09). MCAP is the preferred default ``storage`` (D-08);
     pass ``storage="sqlite3"`` for the capability escape on this box.
 
+    SELECTION (D-07): ``record()`` is the SINGLE orchestrator of discover→select. The
+    selection knobs — positional ``topics``, ``all_topics`` (record everything
+    published), ``regex`` (include filter), ``exclude`` (drop filter) — are threaded
+    straight into the one :func:`~rosbagger_record.discovery.select_topics` call so the
+    thin CLI (Plan 03) only forwards flags and never re-implements selection nor calls
+    discovery itself (API-first, D-02 — the Phase-14 GUI is the other thin face). The
+    precedence (base set → regex include → exclude) lives entirely in ``select_topics``.
+
     Order of operations (each step matters):
 
     1. Lazy ``import rclpy``; :func:`_check_storage` FIRST so an unavailable storage
        raises the teaching error BEFORE any ROS graph spins up (cheap fail).
     2. ``rclpy.init()`` + create the recorder node.
     3. ``discover_topics(node)`` (settle so external publishers appear — Pattern 3),
-       then ``select_topics(discovered, topics=topics)`` (delegated to Plan 01's pure
-       filter — selection is NOT re-implemented here). If the selection is EMPTY,
-       raise a teaching ``ValueError`` BEFORE opening the writer rather than silently
-       recording an empty bag.
+       then ``select_topics(discovered, topics=topics, all_topics=..., regex=...,
+       exclude=...)`` (delegated to Plan 01's pure filter — selection is NOT
+       re-implemented here). If the selection is EMPTY, raise a teaching ``ValueError``
+       BEFORE opening the writer rather than silently recording an empty bag.
     4. Open the writer; subscribe + ``create_topic`` for each selected topic; run the
        bounded-stop loop. ``writer.close()`` is in a ``finally`` so the bag is
        finalized on EVERY exit path — including an exception in the loop (SC3 / T-12-05;
@@ -239,10 +250,17 @@ def record(
     try:
         node = rclpy.create_node("rosbagger_recorder")
         discovered = discover_topics(node)
-        selected = select_topics(discovered, topics=topics)
+        selected = select_topics(
+            discovered,
+            topics=topics,
+            all_topics=all_topics,
+            regex=regex,
+            exclude=exclude,
+        )
         if not selected:
             raise ValueError(
-                f"No live topics matched {topics!r}. Currently discoverable: "
+                f"No live topics matched (topics={topics!r}, all={all_topics}, "
+                f"regex={regex!r}, exclude={exclude!r}). Currently discoverable: "
                 f"{sorted(discovered) or '(none)'}. "
                 "Run `rosbagger-record list` to see what is being published, "
                 "or pass --all to record everything."

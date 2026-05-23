@@ -321,3 +321,95 @@ def test_record_empty_selection_raises_before_opening_writer(monkeypatch, mocked
 
     writer.open.assert_not_called()  # bailed out before opening the writer
     writer.close.assert_not_called()  # nothing to finalize — writer never opened
+
+
+# --------------------------------------------------------------------------- #
+# cli — the thin rosbagger-record CLI (Plan 03), via typer's CliRunner (ENV=offline)
+# --------------------------------------------------------------------------- #
+#
+# These run in the ROS-free uv venv. `--help` for the app + both verbs must exit 0
+# (help text is built from the typer decorators, NO ROS import). Invoking `list` /
+# `record` with ROS absent must surface the package's RosNotAvailableError as a CLEAN
+# Exit(1) (the @_capability_errors wrapper) — CliRunner sees a SystemExit, NOT the raw
+# RosNotAvailableError escaping. We pair CliRunner with the `no_ros` meta-path blocker so
+# the lazy `import rclpy` inside record.py raises ImportError (which _require_ros turns
+# into the teaching error) deterministically, regardless of the host's ROS-on-PYTHONPATH.
+
+from typer.testing import CliRunner  # noqa: E402
+
+from rosbagger_record.cli import Storage, app  # noqa: E402
+
+_runner = CliRunner()
+
+
+def test_cli_app_help_exits_zero():
+    """``rosbagger-record --help`` exits 0 and shows the app help (no ROS import)."""
+    result = _runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    # both verbs are advertised in the top-level help
+    assert "list" in result.output
+    assert "record" in result.output
+
+
+def test_cli_list_help_exits_zero():
+    """``rosbagger-record list --help`` exits 0 (help builds without ROS)."""
+    result = _runner.invoke(app, ["list", "--help"])
+    assert result.exit_code == 0
+
+
+def test_cli_record_help_exits_zero_and_shows_storage_mcap_default():
+    """``record --help`` exits 0 and shows ``--storage`` with the mcap default (D-08)."""
+    result = _runner.invoke(app, ["record", "--help"])
+    assert result.exit_code == 0
+    assert "--storage" in result.output
+    # the default is mcap (D-08 not weakened) — typer renders the default in the help
+    assert "mcap" in result.output
+
+
+def test_cli_record_storage_rejects_invalid_choice_at_parse_time():
+    """``--storage bogus`` is REJECTED AT PARSE TIME (W2): a constrained choice, not a bare str.
+
+    No ROS is touched — the Enum-backed choice fails during click parsing (exit code 2,
+    the usage-error code), proving the parse-time constraint the threat model claims
+    (T-12-02). A bare ``str`` option would have accepted ``bogus`` and only failed later.
+    """
+    result = _runner.invoke(app, ["record", "/telemetry", "-o", "/tmp/out", "--storage", "bogus"])
+    assert result.exit_code == 2  # click usage error (invalid choice), before any ROS work
+    # Either the bad value or the allowed set is named in the parse-error message.
+    assert "bogus" in result.output or "mcap" in result.output
+
+
+def test_cli_record_requires_output_option():
+    """``record`` with no ``-o`` is a parse error (the output is required), no ROS touched."""
+    result = _runner.invoke(app, ["record", "/telemetry"])
+    assert result.exit_code == 2  # missing required option -> click usage error
+
+
+def test_cli_list_ros_absent_exits_one_cleanly(no_ros):
+    """``list`` with ROS absent exits 1 via Exit(1) — SystemExit, NOT a raw RuntimeError.
+
+    The `no_ros` blocker makes the lazy `import rclpy` fail; `_require_ros()` raises the
+    teaching ``RosNotAvailableError``; ``@_capability_errors`` catches it and raises
+    ``typer.Exit(1)``. CliRunner surfaces that as a ``SystemExit`` with code 1 — assert the
+    raw ``RosNotAvailableError`` did NOT escape (no traceback for a capability error).
+    """
+    result = _runner.invoke(app, ["list"])
+    assert result.exit_code == 1
+    # The exception that reached CliRunner (if any) is a clean SystemExit from typer.Exit,
+    # never the raw RosNotAvailableError (which would mean a traceback leaked).
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert not isinstance(result.exception, RosNotAvailableError)
+
+
+def test_cli_record_ros_absent_exits_one_cleanly(no_ros):
+    """``record`` with ROS absent exits 1 cleanly (SystemExit), no raw RuntimeError escapes."""
+    result = _runner.invoke(app, ["record", "/telemetry", "-o", "/tmp/rec"])
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert not isinstance(result.exception, RosNotAvailableError)
+
+
+def test_cli_storage_enum_values_are_mcap_and_sqlite3():
+    """The ``--storage`` choice set is exactly {mcap, sqlite3} (D-08 + the sqlite3 escape)."""
+    assert {s.value for s in Storage} == {"mcap", "sqlite3"}
+    assert Storage.MCAP.value == "mcap"  # the default

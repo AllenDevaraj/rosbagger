@@ -36,8 +36,10 @@ __all__ = [
     "McapStorageUnavailableError",
     "RosNotAvailableError",
     "discover_topics",
+    "list_record_topics",
     "list_topics",
     "record",
+    "record_topics",
     "select_topics",
 ]
 
@@ -83,3 +85,18 @@ def list_topics(*args: object, **kwargs: object) -> object:
     from .record import list_topics as _list_topics
 
     return _list_topics(*args, **kwargs)
+
+
+# Submodule-shadow-proof aliases to the lazy front-door FUNCTIONS above.
+#
+# WHY: ``rosbagger_record`` exposes both a ``record`` FUNCTION (this module) and a
+# ``record`` SUBMODULE (``record.py``). Importing the submodule anywhere in the process
+# (e.g. ``import rosbagger_record.record``) rebinds the ``rosbagger_record.record``
+# ATTRIBUTE to the MODULE, so a later ``from rosbagger_record import record`` resolves to
+# the module (not callable) — a latent footgun for any caller (the CLI, the Phase-14 GUI,
+# a user script) that happens to import the submodule first. ``list_topics`` has no such
+# collision (no ``list_topics`` submodule), but we alias it too for symmetry. Callers that
+# need the guaranteed-callable front door import these names; ``record`` / ``list_topics``
+# stay the documented public API for the common case where the submodule is not pre-imported.
+record_topics = record
+list_record_topics = list_topics
