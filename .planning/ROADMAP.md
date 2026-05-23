@@ -247,7 +247,21 @@ Plans:
   2. Column projection pushdown loads only referenced columns (not whole topics)
   3. Verifiable: a single-column query does not materialize unreferenced/heavy columns
 
-**Plans**: TBD (set at plan-phase)
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 10-01-PLAN.md — Built-in alias pack + `expand_aliases` sqlglot-AST rewrite in new `backend/alias.py` (existence-gated, offline-safe) + offline-guard extension -> QURY-08
+- [ ] 10-02-PLAN.md — Projection `restrict=` filter generalized onto `arrow_schema`/`column_names`/`build_arrow_table`/`flatten_message` (the skipped-read pushdown) -> QURY-09
+
+**Wave 2** *(blocked on 10-01 + 10-02)*
+
+- [ ] 10-03-PLAN.md — Wire both into `query()`: hoist per-topic schema build, single-base-topic alias gate (Open Q1), compute+thread the restrict set (D-06/07/08), forward rewritten SQL; SC3 proof across all three formats -> QURY-08/09
+
+**Wave 3** *(blocked on 10-03)*
+
+- [ ] 10-04-PLAN.md — `bagq query --no-alias` surface (aliases on by default, projection transparent; D-11) + full-suite/ruff/offline-guard phase gate -> QURY-08
 
 ### Phase 11: Edit & Events
 
