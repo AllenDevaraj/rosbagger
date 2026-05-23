@@ -257,7 +257,7 @@ Plans:
 
 **Wave 2** *(blocked on 10-01 + 10-02)*
 
-- [ ] 10-03-PLAN.md — Wire both into `query()`: hoist per-topic schema build, single-base-topic alias gate (Open Q1), compute+thread the restrict set (D-06/07/08), forward rewritten SQL; SC3 proof across all three formats -> QURY-08/09
+- [x] 10-03-PLAN.md — Wire both into `query()`: hoist per-topic schema build, single-base-topic alias gate (Open Q1), compute+thread the restrict set (D-06/07/08), forward rewritten SQL; SC3 proof across all three formats -> QURY-08/09
 
 **Wave 3** *(blocked on 10-03)*
 
@@ -331,7 +331,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
 | 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
-| 10. Query Ergonomics | 2/4 | In Progress|  |
+| 10. Query Ergonomics | 3/4 | In Progress|  |
 | 11. Edit & Events | 0/? | Not started | - |
 | 12. Live Record | 0/? | Not started | - |
 | 13. Live Replay | 0/? | Not started | - |

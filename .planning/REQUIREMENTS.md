@@ -117,8 +117,8 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | CLI-03 | Phase 7 | Complete |
 | CLI-04 | Phase 7 | Complete |
 | TF-01 | Phase 9 | Complete |
-| QURY-08 | Phase 10 | In Progress (mechanism shipped in 10-01: backend/alias.py + expand_aliases; orchestrator wiring + `--no-alias` land in 10-03) |
-| QURY-09 | Phase 10 | In Progress (materialization mechanism shipped in 10-02: restrict= projection filter on arrow_schema/column_names/flatten_message/build_arrow_table — the skipped-read pushdown; orchestrator wiring + SC3 land in 10-03) |
+| QURY-08 | Phase 10 | Complete (mechanism in 10-01: backend/alias.py + expand_aliases; WIRED into query() in 10-03 with the single-base-topic gate + alias=True keyword — SC1 `vx`→dotted proven end-to-end across ROS1+ROS2-sqlite+MCAP; the thin `bagq query --no-alias` CLI surface is the final 10-04 polish) |
+| QURY-09 | Phase 10 | Complete (materialization in 10-02: restrict= projection filter; WIRED into query() in 10-03 — per-topic restrict=(columns & schema_names)|STANDARD when not star, restrict=None under SELECT*; SC2/SC3 proven across ROS1+ROS2-sqlite+MCAP via a recording backend observing query()'s registered table) |
 
 **Coverage:**
 - v1 requirements: 23 total (all Complete)

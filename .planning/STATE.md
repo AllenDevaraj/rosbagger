@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
-stopped_at: Phase 10 Plan 01 complete (alias pack + expand_aliases; 287 passed 97.35%)
-last_updated: "2026-05-23T05:13:38.455Z"
+stopped_at: Phase 10 Plan 03 complete (orchestrator wiring — alias expansion + projection pushdown; QURY-08+QURY-09 traceable; 313 passed 97.73%)
+last_updated: "2026-05-23T05:24:07.056Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 14
   completed_phases: 9
   total_plans: 25
-  completed_plans: 23
-  percent: 92
+  completed_plans: 25
+  percent: 96
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 10 (Query Ergonomics) — EXECUTING
-Plan: 3 of 4
-Status: 10-02 complete (restrict= projection filter / QURY-09 mechanism); next is 10-03 (orchestrator wiring + SC3) then 10-04
-Last activity: 2026-05-23 -- Phase 10 Plan 02 complete
+Plan: 4 of 4
+Status: 10-03 complete; 10-04 (bagq query --no-alias CLI surface) is the last plan
+Last activity: 2026-05-23
 
-Progress: [█████████░] 92%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 28
+- Total plans completed: 25
 - Average duration: ~5 min
 - Total execution time: ~1.1 hours
 
@@ -54,11 +54,11 @@ Progress: [█████████░] 92%
 | 7 | 2 | - | - |
 | 8 | 1 | - | - |
 | 09 | 3 | - | - |
-| 10 | 1/4 | 8min | 8min |
+| 10 | 3/4 | 18min | 6min |
 
 **Recent Trend:**
 
-- Last 5 plans: 10min, 7min, 12min, 3min, 8min
+- Last 5 plans: 3min, 5min, 8min, 5min, 5min
 - Trend: steady (~3-12 min/plan)
 
 *Updated after each plan completion*
@@ -88,6 +88,7 @@ Progress: [█████████░] 92%
 | Phase 09 P03 | 5min | 2 tasks | 3 files |
 | Phase 10 P10-01 | 8min | 3 tasks | 3 files |
 | Phase 10 P10-02 | 5min | 3 tasks | 3 files |
+| Phase 10 P10-03 | 5min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 10-01]: backend/alias.py ships ALIAS_PACK (6 msgtypes: Twist/TwistStamped/Odometry/Imu/PoseStamped/Pose, dotted targets re-verified vs the live ROS2 Humble typestore) + expand_aliases(tree, msgtype, schema_names) — a PURE sqlglot tree.transform (D-01): each unqualified short exp.Column whose .name is a pack alias AND whose dotted target is in the topic's TableSchema names (D-04 existence-gate) is replaced by exp.column(target, quoted=True); everything else (unknown tokens, wrong-topic aliases, already-dotted "linear.x", output exp.Alias, qualified c.vx) is a safe no-op. Canonical SC1: Twist vx->"linear.x", Odometry vx->"twist.twist.linear.x". Returns a NEW tree (input unmutated), reaches all clauses + function args. NEVER an f-string/regex (T-10-01, grep-gated). Chose a NEW module over extending resolve.py (keeps it single-purpose; 10-RESEARCH primary rec). Module top imports ONLY __future__ + sqlglot.exp (offline-safe, mirrors resolve.py) — no pyarrow/duckdb/rosbagger_core; offline guard extended with a duckdb/pyarrow-ONLY assertion (sqlglot at top is allowed, the resolve.py precedent). JOIN/CTE single-base-topic guard + --no-alias DEFERRED to orchestrator Plan 10-03 (Open Q1) — this helper is per-msgtype/per-schema. QURY-08 mechanism half DONE (orchestrator wiring is 10-03); QURY-08 traceability = In Progress. Full suite 287 passed 97.35% (>=80% gate); alias.py 95% (1 trivially-defensive _normalize fall-through line, no pragma — tf.py/types.py precedent). DEVIATION (test-only): added test_edge_msgtype_normalization to cover the _normalize defensive pkg/Type path (79%->95%); production code unchanged. ruff clean.
 - [Phase 10-02]: QURY-09 materialization mechanism — restrict= projection filter generalized across the FOUR schema functions (arrow_schema/column_names in model.py; flatten_message/build_arrow_table in flatten.py), keyword-only, default None. Composed (ANDed) WITH the existing heavy-blob include= filter, never replacing it: keep iff (not heavy or name in include) AND (restrict is None or name in restrict) (D-06) — a heavy blob in restrict but NOT include is still dropped. flatten_message SKIPS reduce(getattr, col.ros_path, msg) for any non-restricted data column — the literal pushdown (the value is never read off the message), proven by a spy whose .angular raises yet flatten_message(stub, restrict={linear.x}) does not. build_arrow_table threads the ONE restrict into BOTH schema.arrow_schema(include=, restrict=) (kept-column single source of truth) AND flatten_message(..., restrict=) so the schema + value arrays can't drift. Standard cols (t/t_ns/stamp/topic) NOT special-cased here — D-07's always-materialized guarantee is the orchestrator's job (10-03 unions them into restrict); a bare restrict={linear.x} yields EXACTLY [linear.x]. NO post-build drop_columns/.select (skip the read, not a post-hoc drop that would still read — grep-gated absent, T-10-05). restrict=None is byte-for-byte today's behavior so collect_table_schemas / bagq tables are provably untouched (dedicated regression test_tables_path_unaffected_by_restrict_param + column_names()==column_names(restrict=None) per topic). pyarrow stays imported INSIDE arrow_schema (offline invariant; no module-top heavy import). Full suite 297 passed 97.69% (>=80% gate); model.py 100%; offline guard 10/10; ruff clean. DEVIATION (Rule 1, test-only): the pushdown spy stub initially exposed only .x, so the no-restrict CONTROL raised on linear.y before reaching angular — gave _Linear x/y/z so the control reaches+raises on angular (production unchanged). QURY-09 mechanism DONE; orchestrator wiring (referenced_columns -> restrict, D-07 std-col union, D-08 star->None, D-09 over-include) + SC3 fixture assertion = Plan 10-03. QURY-09 traceability = In Progress until wired.
 - [Phase 09-03]: PHASE 9 COMPLETE (3/3); TF-01 DONE. bagq tf subcommand added to bagq/cli.py (Decision 1 — no new package, no pyproject/uv.lock/addopts/console-script edits; auto-covered by --cov=bagq + --cov=rosbagger_core). Thin rich renderer over collect_tf_report: a header line + a "TF edges" summary table (parent/child/kind/count/rate(Hz)/max gap/gaps, em-dash for missing) + a "TF gaps" dropout timeline (parent → child / gap / at (bag t) / at (abs ns)); the 09-01 seeded 800ms odom->base_link gap renders as a row (_human_dur renders 800_000_000 ns exactly as "800ms"). --gap-multiplier/--gap-ms/--format table|json (json = dataclasses.asdict with frames frozenset->sorted list). teaching_errors widened by ONE (NoTransformsError in the lazy import + except tuple; NO except Exception added) -> a non-TF bag exits 1 cleanly (no traceback). Empty gaps -> "no gaps detected" line, not an empty table. tests/test_tf.py (self-contained harness, per-format session fixtures) proves SC1 (frames {map,odom,base_link,laser}; map->odom static, odom->base_link/base_link->laser dynamic) + SC2 (exactly one ~800ms gap +/-1ns, expected_ns==100_000_000, zero on clean, none on static; at_rel==at-start; --gap-ms=300 flags / --gap-multiplier=100 suppresses) PARAMETRIZED over ROS 1 + ROS 2 sqlite3 + ROS 2 MCAP; + NoTransformsError, single-sample + all-duplicate-timestamp edge guards, CLI table/json/no-TF-error/no-gaps/bad-format (-k cli). test_offline_guard.py extended: import rosbagger_core.tf pulls no heavy stack + no rosbags. Suite 274 passed 97.76% (>=80% gate); tf.py 97% (3 unreachable defensive lines, no pragma — consistent w/ 09-02); ruff check + format --check clean. DEVIATION (Rule 1, test-only): an all-duplicate-timestamp coverage test first used a backwards stamp whose first sorted delta was positive (expected_ns!=None) — fixed to four IDENTICAL stamps (genuine empty diffs); production code unchanged.
+- [Phase ?]: [Phase 10-03] PHASE-10 INTEGRATION CRUX: query() reordered per D-02/Pattern 4 — parse -> HOIST typestore + per-topic TableSchema (schemas_by_table, O(1) no reader.read(), W3 fix moved typestore up) -> single-base-topic-gated expand_aliases -> referenced_*/has_star on the REWRITTEN tree -> load (reusing hoisted schemas, build_table_schema appears exactly once) -> backend.execute(tree.sql('duckdb')). alias: bool = True keyword added (D-11; --no-alias hatch), expand_aliases lazy-imported (offline). SC1: SELECT vx FROM cmd_vel -> linear.x [0,1,2] x3 formats; alias=False raises UnknownColumnError; AS speed preserved.
+- [Phase ?]: [Phase 10-03] Single-base-topic alias gate LOCKED (Open Q1/A3): orchestrator counts CTE-subtracted base topics (referenced_tables_in mapped through table_to_topic, unmapped dropped) and calls expand_aliases ONLY when exactly one resolves, keyed on its msgtype + existence-gated on its schema names. JOIN/CTE/multi-topic + alias=False = safe no-op (DuckDB rejects the unresolved token) — this is what protects the existing JOIN test (test_query_alias_join_no_op pins it).
+- [Phase ?]: [Phase 10-03] Projection wired (D-06/07/08/09): _STANDARD_COLUMNS frozenset (stdlib, offline-safe at module top); per topic in the load loop — star -> include=heavy, restrict=None (D-08, full materialization, Pitfall 4 short-circuit incl. o.*); else include=heavy&columns, restrict=(columns & schema_names)|STANDARD (D-06+D-07). Applied per-topic against that topic's schema_names -> over-include on JOIN never under-include (D-09). Threaded into build_arrow_table(include=, restrict=). SC3 proven by a _RecordingBackend (wraps real DuckDBBackend, captures register_table table) asserting column_names=={linear.x,t,t_ns,stamp,topic} x3 formats (W2 fix — observe, not re-derive). QURY-08+QURY-09 traceable end-to-end. Full suite 313 passed 97.73%; offline guard 10/10; ruff clean.
 
 ### Pending Todos
 
@@ -188,7 +192,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T05:12:08Z
-Stopped at: Phase 10 Plan 02 complete (restrict= projection filter / QURY-09 mechanism; 297 passed 97.69%)
+Last session: 2026-05-23T05:24:07.056Z
+Stopped at: Phase 10 Plan 03 complete (orchestrator wiring — alias expansion + projection pushdown both wired into query(); QURY-08 + QURY-09 traceable end-to-end; SC1/SC2/SC3 proven across ROS1+ROS2-sqlite+MCAP; 313 passed 97.73%)
 Resume file: None
-Next: Execute the remaining Phase 10 plans — 10-03 (orchestrator wiring: thread the restrict set from referenced_columns into build_arrow_table at backend/query.py:184, union the four standard columns per D-07, pass restrict=None under SELECT * per D-08, over-include on JOINs per D-09, plus wire expand_aliases + `--no-alias` — completes BOTH QURY-08 and QURY-09 incl. the SC3 fixture assertion D-10) then 10-04. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
+Next: Execute the LAST Phase 10 plan — 10-04 (the `bagq query` CLI surface: add a `--no-alias` boolean to the query command and forward `alias=not no_alias` through to query(); projection needs no flag — D-11). The orchestrator keyword (alias=True) the CLI threads onto is in place and tested. After 10-04, Phase 10 is complete. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
