@@ -1,0 +1,29 @@
+# rosbagger-replay — the SECOND live (ROS-requiring) module. Publishes a bag's
+# messages to real ROS 2 topics with transport controls (play/pause/step/seek/
+# rate/loop), mirroring the rosbagger-record package boundary.
+#
+# RUNTIME REQUIREMENT: a sourced ROS 2 environment (e.g.
+# `source /opt/ros/humble/setup.bash`). rclpy / rosidl_runtime_py are
+# ENVIRONMENT-provided by the ROS distro on disk — they are DELIBERATELY
+# NOT listed in [project] dependencies so `uv sync` never tries to fetch
+# nonexistent PyPI wheels (D-03). They are lazy-imported inside function bodies,
+# so this package imports cleanly even in the ROS-free uv venv; the offline
+# bagq / inspect / query tools (and this package's pure source + scheduler) need
+# NO ROS at all.
+[project]
+name = "rosbagger-replay"
+version = "0.1.0"
+requires-python = ">=3.10"
+# ONLY rosbagger-core (the v1 reader contract, resolved via the root
+# [tool.uv.sources] workspace source) and typer (the thin-CLI face, mirroring
+# bagq) are uv-resolved. NOTHING ROS goes here (D-03).
+dependencies = ["rosbagger-core", "typer>=0.15,<1"]
+
+[project.scripts]
+# cli.py lands in Plan 03; declaring the entry point now is fine — hatchling
+# does not import it at build time.
+rosbagger-replay = "rosbagger_replay.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

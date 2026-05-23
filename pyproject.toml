@@ -35,6 +35,7 @@ src = [
     "packages/rosbagger-core/src",
     "packages/bagq/src",
     "packages/rosbagger-record/src",
+    "packages/rosbagger-replay/src",
     "tools",
     "tests",
 ]

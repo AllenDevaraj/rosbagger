@@ -11,6 +11,7 @@ members = [
     "bagq",
     "rosbagger-core",
     "rosbagger-record",
+    "rosbagger-replay",
 ]
 
 [manifest.dependency-groups]
@@ -1258,6 +1259,21 @@ requires-dist = [
 name = "rosbagger-record"
 version = "0.1.0"
 source = { editable = "packages/rosbagger-record" }
+dependencies = [
+    { name = "rosbagger-core" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "rosbagger-core", editable = "packages/rosbagger-core" },
+    { name = "typer", specifier = ">=0.15,<1" },
+]
+
+[[package]]
+name = "rosbagger-replay"
+version = "0.1.0"
+source = { editable = "packages/rosbagger-replay" }
 dependencies = [
     { name = "rosbagger-core" },
     { name = "typer" },
