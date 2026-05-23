@@ -233,3 +233,43 @@ def test_import_edit_does_not_pull_rosbags():
     )
     leaked = [m for m in result.stdout.strip().split(",") if m]
     assert leaked == [], f"import rosbagger_core.edit pulled in rosbags: {leaked}"
+
+
+def test_import_events_does_not_pull_heavy_query_stack():
+    """`import rosbagger_core.events` must NOT load duckdb/sqlglot/pyarrow (Pitfall 5).
+
+    The Phase 11 event sidecar (``events.py``) keeps its top level stdlib-only
+    (``pathlib``): ``pyarrow``/``pyarrow.parquet`` and the ``output.export`` writer
+    are imported INSIDE the function bodies (``add_event``/``list_events``/the
+    ``_event_schema`` builder), and ``sidecar_path`` is pure ``pathlib``. So
+    ``import rosbagger_core.events`` pulls in none of the heavy query stack — the same
+    discipline as the ``tf`` / ``edit`` / ``output`` guards above. Regression test for
+    the 11-RESEARCH offline invariant (Pitfall 5).
+    """
+    leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.events")
+    assert leaked == [], f"import rosbagger_core.events leaked the heavy stack: {leaked}"
+
+
+def test_import_events_does_not_pull_rosbags():
+    """`import rosbagger_core.events` must NOT pull ``rosbags`` either (no ROS, Pitfall 5).
+
+    A fresh subprocess (empty PYTHONPATH neutralizes the host ROS leak) asserts no
+    ``rosbags`` module lands in ``sys.modules`` after ``import rosbagger_core.events`` —
+    the events sidecar reads/writes Parquet (``pyarrow``/the DuckDB-COPY writer), never
+    a ROS bag, so it imports no ``rosbags`` at all (mirrors the tf/edit-module checks
+    above).
+    """
+    code = (
+        "import sys; import rosbagger_core.events; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] == 'rosbags']; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"import rosbagger_core.events pulled in rosbags: {leaked}"
