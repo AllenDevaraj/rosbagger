@@ -1,13 +1,22 @@
-"""The streaming same-format edit driver (Plan 11-01, D-03/04/05/09/10).
+"""The streaming edit + convert driver (Plan 11-01 + 11-02, D-03/04/05/09/10).
 
 :func:`edit_bag` is the single read->filter->write pass: it opens an ``AnyReader``
 over one or more SAME-format input paths (D-09 merge is implicit — ``AnyReader``
 yields the combined stream time-ordered), re-registers ONLY the kept topics'
 connections on a freshly-chosen output Writer (no orphan connections — 11-RESEARCH
 Anti-Pattern), then streams the raw ``(connection, t_ns, rawdata)`` tuples,
-applying the trim/drop/downsample filters and writing the UNMODIFIED ``rawdata``
-losslessly (D-04 raw-copy half — the bytes are NOT decoded/re-encoded this plan;
-cross-format CONVERT lands in Plan 11-02).
+applying the trim/drop/downsample filters and writing the payload.
+
+D-04 split (the key architectural decision). When the SOURCE and DESTINATION
+wireformats MATCH (ROS 1 -> ROS 1, or ROS 2-sqlite3 <-> MCAP — both CDR), the
+``rawdata`` is written UNMODIFIED — a lossless raw byte copy (the Plan 11-01 path).
+When they DIFFER (ROS 1 <-> ROS 2 — ros1 vs cdr), each message's byte payload is
+CONVERTED per message type by the ``rosbags`` converter factory (see
+``edit/convert.py`` — Plan 11-02): the library picks ``cdr_to_ros1`` / ``ros1_to_cdr``
+(byte-level) or ``migrate_bytes`` (the deserialize->migrate-fields->reserialize path
+that fills the ROS 1 ``Header.seq`` field ROS 2 dropped — 11-RESEARCH Pitfall 1).
+Filters + conversion compose in the SAME loop (D-10), and the convert path is NEVER
+hand-rolled — the byte migration is entirely the library's (Don't-Hand-Roll).
 
 The output Writer is chosen by output FORMAT via :func:`make_writer` using the
 rosbags rule ``is2 = dst.suffix != '.bag'`` (D-10 / 11-RESEARCH Pattern 3): a
@@ -41,12 +50,35 @@ from pathlib import Path
 from .operations import EditOps
 
 
+def _validate_fmt(fmt: str | None) -> None:
+    """Raise ``ValueError`` on an unknown explicit ``fmt`` (the single check both
+    :func:`dst_is_ros2` and :func:`make_writer` rely on)."""
+    if fmt is not None and fmt not in {"ros1", "mcap", "sqlite3"}:
+        raise ValueError(f"unknown output format {fmt!r}; expected ros1, mcap, or sqlite3.")
+
+
+def dst_is_ros2(dst: Path | str, fmt: str | None = None) -> bool:
+    """Is the destination a ROS 2 bag (the rosbags ``is2 = dst.suffix != '.bag'`` rule)?
+
+    An explicit ``fmt`` overrides the suffix: ``"ros1"`` -> ROS 1 (``False``),
+    ``"mcap"`` / ``"sqlite3"`` -> ROS 2 (``True``). This is the SAME decision
+    :func:`make_writer` makes about which Writer to build, factored out so
+    :func:`edit_bag` can compute ``dst_is2`` for the converter factory (D-04) without
+    reconstructing the Writer's branch — the two can never disagree.
+    """
+    _validate_fmt(fmt)
+    if fmt is not None:
+        return fmt != "ros1"
+    return Path(dst).suffix.lower() != ".bag"
+
+
 def make_writer(dst: Path | str, fmt: str | None = None):
     """Construct the output Writer chosen by output FORMAT (D-10 / Pattern 3).
 
-    The rosbags rule ``is2 = dst.suffix != '.bag'`` decides ROS 1 vs ROS 2; for
-    ROS 2 the storage plugin is MCAP for a ``.mcap`` dest else SQLITE3. An explicit
-    ``fmt`` (``"ros1"`` / ``"mcap"`` / ``"sqlite3"``) overrides the suffix.
+    The rosbags rule ``is2 = dst.suffix != '.bag'`` decides ROS 1 vs ROS 2 (see
+    :func:`dst_is_ros2`); for ROS 2 the storage plugin is MCAP for a ``.mcap`` dest
+    else SQLITE3. An explicit ``fmt`` (``"ros1"`` / ``"mcap"`` / ``"sqlite3"``)
+    overrides the suffix.
 
     Returns an unopened Writer (a context manager); the caller drives its lifecycle.
     The ``rosbags`` import is lazy here so importing the edit module stays light.
@@ -54,9 +86,7 @@ def make_writer(dst: Path | str, fmt: str | None = None):
     """
     dst = Path(dst)
     suffix = dst.suffix.lower()
-
-    if fmt is not None and fmt not in {"ros1", "mcap", "sqlite3"}:
-        raise ValueError(f"unknown output format {fmt!r}; expected ros1, mcap, or sqlite3.")
+    _validate_fmt(fmt)
 
     if fmt == "ros1" or (fmt is None and suffix == ".bag"):
         from rosbags.rosbag1 import Writer as Ros1Writer
@@ -132,6 +162,29 @@ def edit_bag(
     written = 0
     try:
         trim_window = ops.trim_window_ns(reader.start_time)
+
+        # D-04 split: when the SOURCE and DESTINATION wireformats differ (ROS 1 <->
+        # ROS 2 — ros1 vs cdr), the byte payload must be CONVERTED per message type;
+        # when they match (ROS 1 -> ROS 1, or ROS 2-sqlite3 <-> MCAP, both CDR), the
+        # bytes are raw-copied losslessly. src_is2 comes from the reader; dst_is2 from
+        # the SAME is2 = suffix != '.bag' rule make_writer uses (factored into
+        # dst_is_ros2 so they can never disagree). The per-msgtype raw-copy-vs-migrate
+        # decision itself is made INSIDE make_payload_converters via is_same_wireformat
+        # (a same-wireformat msgtype gets the memoryview identity = raw copy).
+        from . import convert as _convert
+
+        src_is2 = reader.is2
+        dst_is2 = dst_is_ros2(dst, fmt)
+        converting = src_is2 != dst_is2
+
+        # The destination connections (and thus the output msgdefs/md5/RIHS) must be
+        # generated from the DESTINATION typestore when converting — add_connection(
+        # ..., typestore=dst_ts) derives the right target message definition for the
+        # built-in fixture types (11-RESEARCH Don't-Hand-Roll, verified). When the
+        # wireformats match the SOURCE typestore is used (the raw bytes already match
+        # it, and the converters are all the identity).
+        write_ts = _convert.dst_typestore(dst_is2) if converting else reader.typestore
+
         with make_writer(dst, fmt) as writer:
             # Re-register ONLY kept connections (drop/keep at the connection layer):
             # a dropped topic is simply never added, so the output has no orphan
@@ -151,17 +204,24 @@ def edit_bag(
             # whole loop, so their ids are stable and never recycled mid-stream.
             wconns: dict[int, object] = {}  # id(source Connection) -> writer Connection
             registered: dict[tuple[str, str], object] = {}  # (topic, msgtype) -> writer conn
-            for conn in reader.connections:
-                if not ops.keeps_topic(conn.topic):
-                    continue
+            kept_conns = [c for c in reader.connections if ops.keeps_topic(c.topic)]
+            for conn in kept_conns:
                 key = (conn.topic, conn.msgtype)
                 wconn = registered.get(key)
                 if wconn is None:
-                    wconn = writer.add_connection(
-                        conn.topic, conn.msgtype, typestore=reader.typestore
-                    )
+                    wconn = writer.add_connection(conn.topic, conn.msgtype, typestore=write_ts)
                     registered[key] = wconn
                 wconns[id(conn)] = wconn
+
+            # Per-kept-connection payload converter (the D-04 split, implemented once
+            # in make_payload_converters): a same-wireformat msgtype gets the
+            # memoryview IDENTITY (raw copy — bytes unchanged), a differing one gets
+            # the rosbags factory's cdr_to_ros1 / ros1_to_cdr / migrate_bytes callable
+            # (the seq-field case goes through migrate_bytes — Pitfall 1). The hard
+            # byte migration is the LIBRARY's, never hand-rolled here (Don't-Hand-Roll).
+            payload_converters = _convert.make_payload_converters(
+                kept_conns, reader.typestore, write_ts, src_is2=src_is2, dst_is2=dst_is2
+            )
 
             # Downsample counts per TOPIC (not per source connection) so merged
             # bags share one every-Nth sequence across the combined time-ordered
@@ -179,7 +239,10 @@ def edit_bag(
                     counters[conn.topic] = seen + 1
                     if seen % n != 0:
                         continue  # not the Nth message of this topic (D-08)
-                writer.write(wconn, t_ns, rawdata)  # RAW copy of the bytes (D-04, lossless)
+                # Identity for a matching wireformat (raw copy, D-04), or the library
+                # converter for a differing one — selected per msgtype above.
+                payload = payload_converters[id(conn)](rawdata)
+                writer.write(wconn, t_ns, payload)
                 written += 1
     finally:
         reader.close()
