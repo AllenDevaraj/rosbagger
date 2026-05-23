@@ -159,7 +159,10 @@ def replay(
 
     n = replay_api(
         bag,
-        topics=set(topics) if topics else None,
+        # WR-06: explicit `is not None` (matches the scheduler's is-not-None discipline) — an
+        # omitted --topics is None ("publish everything"); a truthiness test would conflate
+        # None with an empty selection. Behavior for omitted --topics is unchanged.
+        topics=set(topics) if topics is not None else None,
         rate=rate,
         loop=loop,
         start=start,
