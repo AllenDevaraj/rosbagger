@@ -386,3 +386,75 @@ def test_importing_schema_subpackage_is_allowed_to_pull_pyarrow() -> None:
 
     mod = importlib.import_module("rosbagger_core.schema")
     assert mod.build_arrow_table is build_arrow_table
+
+
+# ---------------------------------------------------------------------------
+# Phase 10 / QURY-09 — projection ``restrict=`` filter, composed (ANDed) with the
+# heavy-blob ``include=`` filter (D-06). The four standard columns are NOT
+# auto-added by these functions: D-07's always-materialized guarantee is enforced
+# UPSTREAM by the orchestrator (Plan 10-03) unioning {t,t_ns,stamp,topic} into the
+# restrict set. A bare ``restrict={"linear.x"}`` here legitimately yields exactly
+# ``["linear.x"]``. ``restrict=None`` is byte-for-byte today's behavior.
+# Run locally with the host ROS leak neutralized:
+#   PYTHONPATH="" .venv/bin/python -m pytest tests/test_schema_arrow.py -k restrict -x
+# ---------------------------------------------------------------------------
+
+
+# --- Task 1: restrict= on TableSchema.arrow_schema + column_names -------------
+
+
+def test_arrow_schema_restrict_keeps_only_named_data_column(typestore) -> None:
+    """arrow_schema(restrict={"linear.x"}) yields EXACTLY ["linear.x"] (no auto std cols)."""
+    schema = build_table_schema("geometry_msgs/msg/Twist", typestore, topic="/cmd_vel")
+    arrow = schema.arrow_schema(restrict={"linear.x"})
+    # The standard cols (t/t_ns/stamp/topic) are NOT auto-added here — the
+    # orchestrator (Plan 10-03) unions them into restrict (D-07). With a bare
+    # {"linear.x"} ONLY linear.x survives.
+    assert arrow.names == ["linear.x"]
+    assert isinstance(arrow, pa.Schema)
+
+
+def test_arrow_schema_restrict_none_is_todays_default(typestore) -> None:
+    """arrow_schema(restrict=None) is byte-identical to today's arrow_schema()."""
+    schema = build_table_schema("geometry_msgs/msg/Twist", typestore, topic="/cmd_vel")
+    assert schema.arrow_schema(restrict=None).equals(schema.arrow_schema())
+    # And declared order is preserved (std cols first, then the body cols).
+    assert schema.arrow_schema(restrict=None).names == [
+        "t",
+        "t_ns",
+        "stamp",
+        "topic",
+        "linear.x",
+        "linear.y",
+        "linear.z",
+        "angular.x",
+        "angular.y",
+        "angular.z",
+    ]
+
+
+def test_arrow_schema_restrict_and_include_compose_for_heavy_blob(typestore) -> None:
+    """The two filters AND: a heavy blob needs BOTH include AND restrict to survive (D-06)."""
+    schema = build_table_schema("sensor_msgs/msg/Image", typestore, topic="/image")
+    # data (heavy) in BOTH include and restrict -> kept; t in restrict (light) -> kept.
+    both = schema.arrow_schema(include={"data"}, restrict={"data", "t"})
+    assert set(both.names) == {"data", "t"}
+    # data heavy + NOT in include -> dropped, EVEN THOUGH it is in restrict (ANDed).
+    light_only = schema.arrow_schema(include=set(), restrict={"data", "t"})
+    assert light_only.names == ["t"]
+    assert "data" not in light_only.names
+
+
+def test_column_names_restrict_mirrors_arrow_schema_names(typestore) -> None:
+    """column_names(restrict=...) mirrors arrow_schema(restrict=...).names for the same args."""
+    schema = build_table_schema("sensor_msgs/msg/Image", typestore, topic="/image")
+    for include, restrict in (
+        (None, {"linear.x"}),  # a name absent from Image -> empty
+        (None, {"height", "width"}),
+        (None, None),  # the default path
+        ({"data"}, {"data", "t", "height"}),
+        (set(), {"data", "t"}),  # heavy dropped (not included)
+    ):
+        names = schema.column_names(include=include, restrict=restrict)
+        arrow_names = schema.arrow_schema(include=include, restrict=restrict).names
+        assert names == arrow_names, (include, restrict)
