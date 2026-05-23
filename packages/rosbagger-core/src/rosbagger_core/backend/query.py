@@ -76,6 +76,16 @@ _BINDER_COL = re.compile(r'Referenced column "([^"]+)" not found')
 # at this module's top level does not pull the heavy stack (offline invariant).
 _STANDARD_COLUMNS: frozenset[str] = frozenset({"t", "t_ns", "stamp", "topic"})
 
+# The RESERVED table name for the per-bag event sidecar (D-14). When the SQL
+# references `events`, query() registers `<bag>.events.parquet` (loaded via
+# `rosbagger_core.events.list_events`) under this name instead of resolving it as a
+# topic — so a standard `BETWEEN` interval join (`... ON data.t_ns BETWEEN
+# events.t_start_ns AND events.t_end_ns`) works natively (D-15). It is SUBTRACTED from
+# the topic-resolution set so it never raises `UnknownTableError`; when no sidecar
+# exists an EMPTY-schema relation is registered (Open Q3). A plain stdlib str constant —
+# no offline-invariant impact.
+_EVENTS_TABLE = "events"
+
 
 def _topic_table_maps(reader: BagReader) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     """Build ``(topic_to_table, table_to_topic, topic_to_msgtype)`` from the reader.
@@ -118,6 +128,16 @@ def query(
     materializes ONLY the referenced columns ∪ the four standard columns (the QURY-09
     projection pushdown — Plan 10-03). An unmapped table name raises
     :class:`UnknownTableError` (listing the available tables) BEFORE anything loads.
+
+    ``events`` is a RESERVED table name (D-14): when the SQL references it, query()
+    SUBTRACTS it from the topic-resolution set (so it never raises
+    :class:`UnknownTableError`) and registers the per-bag sidecar
+    (``<bag>.events.parquet``, loaded via ``rosbagger_core.events.list_events`` next to
+    the single ``reader.paths[0]``) under the name ``events``. A standard SQL ``BETWEEN``
+    interval join (``... ON data.t_ns BETWEEN events.t_start_ns AND events.t_end_ns``)
+    then runs natively against it (D-15, no special operator). When no sidecar exists an
+    EMPTY-schema ``events`` relation is registered, so a SELECT/join yields zero rows
+    rather than erroring (Open Q3). v1 is single-bag; multi-bag events are deferred.
 
     Pipeline (D-02 / 10-RESEARCH Pattern 4): ``parse`` → build per-topic
     ``TableSchema`` up front (O(1) metadata, no ``reader.read()``) → (if ``alias``)
@@ -233,11 +253,24 @@ def query(
     columns = referenced_columns(tree)
     star = has_star(tree)
 
-    # Step 6 — resolve each referenced table name to a topic; an unmapped name
-    # raises a clear error listing the available tables, BEFORE any load
+    # Step 5b — the RESERVED `events` table (D-14 / 11-RESEARCH Pattern 5). `events`
+    # is NOT a topic: it is the per-bag event sidecar (`<bag>.events.parquet`). SUBTRACT
+    # it from the topic-resolution set so it is NEVER resolved as a topic (it maps to
+    # none → would raise UnknownTableError; 11-RESEARCH Anti-Pattern "Forwarding events
+    # into the topic-resolution loop"). The topic-resolution loop (Step 6) and the load
+    # loop (Step 7) therefore iterate `data_tables`, not `tables`. When `events_referenced`
+    # the sidecar relation is registered AFTER the topic tables (Step 7b), and a standard
+    # `BETWEEN` interval join then runs natively (D-15, no special operator). The alias
+    # gate above is unaffected: it already filters `t in table_to_topic`, so `events`
+    # (no topic) never counts toward the single-base-topic total.
+    events_referenced = _EVENTS_TABLE in tables
+    data_tables = tables - {_EVENTS_TABLE}
+
+    # Step 6 — resolve each referenced (non-`events`) table name to a topic; an unmapped
+    # name raises a clear error listing the available tables, BEFORE any load
     # (T-05-06: no silent empty result). v1 just lists; Phase 7 owns did-you-mean.
     referenced_topics: list[str] = []
-    for table in tables:
+    for table in data_tables:
         topic = table_to_topic.get(table)
         if topic is None:
             # The constructor now owns the message + the difflib did-you-mean (CLI-02);
@@ -284,6 +317,19 @@ def query(
             arrow = build_arrow_table(msgs, schema, include=include, restrict=restrict)
             # Register under the SANITIZED table name — the name the SQL references.
             backend.register_table(topic_to_table[topic], arrow)
+        # Step 7b — register the reserved `events` relation (D-14), AFTER the topic
+        # tables and BEFORE `backend.execute`, so the interval join below sees it.
+        # v1 is single-bag (D-14; multi-bag events deferred — CONTEXT Deferred Ideas):
+        # the sidecar sits next to `reader.paths[0]`. `list_events` returns the sidecar
+        # table when `<bag>.events.parquet` exists and the fixed-v1 EMPTY table when
+        # absent — so a missing sidecar yields a registered EMPTY-schema relation
+        # (SELECT/joins return zero rows, never a DuckDB "table does not exist"; Open Q3
+        # LOCKED). `list_events` is imported LAZILY here to keep this module's top level —
+        # and `import rosbagger_core.backend` — free of pyarrow (offline invariant).
+        if events_referenced:
+            from rosbagger_core.events import list_events
+
+            backend.register_table(_EVENTS_TABLE, list_events(reader.paths[0]))
         # Step 8 — forward the SQL to the backend. WR-01: forward the user's RAW `sql`
         # VERBATIM unless alias expansion actually rewrote the tree (`expanded`). Only
         # the alias path round-trips through sqlglot's renderer (`tree.sql("duckdb")`),

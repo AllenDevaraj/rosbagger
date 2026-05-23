@@ -571,10 +571,7 @@ def test_query_events_join_returns_windowed_rows(tmp_path: Path, fmt: str) -> No
 
     bag = _WRITERS[fmt](tmp_path / fmt)
     add_event(bag, t_start_ns=1_000_000_000, t_end_ns=1_100_000_000, label="window")
-    sql = (
-        "SELECT i.t_ns FROM imu i "
-        "JOIN events e ON i.t_ns BETWEEN e.t_start_ns AND e.t_end_ns"
-    )
+    sql = "SELECT i.t_ns FROM imu i JOIN events e ON i.t_ns BETWEEN e.t_start_ns AND e.t_end_ns"
     with RosbagsReader(bag) as reader:
         result = query(sql, reader)
     assert isinstance(result, pa.Table)
@@ -621,18 +618,19 @@ def test_query_events_join_does_not_break_aliasing(tmp_path: Path) -> None:
 
     `events` maps to no topic, so the alias gate's `t in table_to_topic` filter
     leaves exactly ONE mapped base topic (`cmd_vel`) — aliasing is unaffected, and
-    the `vx` alias still expands to `linear.x` while `events` is subtracted from
-    topic resolution. The window `[1.0s, 1.1s]` selects the 1.0s + 1.1s /cmd_vel
-    rows, whose linear.x (== vx, == float(i)) are 0.0 and 1.0.
+    the unqualified `vx` alias STILL expands to `linear.x` (the existence-gate keys
+    on cmd_vel's Twist pack) while `events` is subtracted from topic resolution. The
+    window `[1.0s, 1.1s]` selects the 1.0s + 1.1s /cmd_vel rows, whose linear.x
+    (== vx == float(i)) are 0.0 and 1.0. (Per the plan: a qualified `c.vx` is
+    deliberately NOT expanded by the alias rewrite — `expand_aliases` only rewrites
+    UNqualified short columns; so this positive assertion uses bare `vx`, which the
+    JOIN does not make ambiguous because `events` has no `vx` column.)
     """
     from rosbagger_core.events import add_event
 
     bag = write_ros1_bag(tmp_path / "alias")
     add_event(bag, t_start_ns=1_000_000_000, t_end_ns=1_100_000_000, label="window")
-    sql = (
-        "SELECT c.vx FROM cmd_vel c "
-        "JOIN events e ON c.t_ns BETWEEN e.t_start_ns AND e.t_end_ns"
-    )
+    sql = "SELECT vx FROM cmd_vel JOIN events e ON t_ns BETWEEN e.t_start_ns AND e.t_end_ns"
     with RosbagsReader(bag) as reader:
         result = query(sql, reader)
     # vx expands to linear.x; the result column is the dotted expanded name.
