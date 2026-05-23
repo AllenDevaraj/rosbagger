@@ -35,8 +35,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 # Repo root on sys.path so `from tools.make_fixtures import ...` resolves under
 # pytest's default import mode (mirrors tests/test_tf.py); scoped to this file.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
