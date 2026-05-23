@@ -99,7 +99,7 @@ def test_sidecar_file_is_written_next_to_bag(tmp_path: Path) -> None:
 
 
 def test_append_grows_row_count_in_insertion_order(tmp_path: Path) -> None:
-    """A second ``add_event`` grows the sidecar to 2 rows in insertion order (read->concat->rewrite)."""
+    """A second ``add_event`` grows the sidecar to 2 rows in order (read->concat->rewrite)."""
     bag = tmp_path / "run.bag"
     add_event(bag, t_start_ns=1_000_000_000, t_end_ns=1_100_000_000, label="first", note="a")
     add_event(bag, t_start_ns=2_000_000_000, t_end_ns=2_200_000_000, label="second", note="b")
