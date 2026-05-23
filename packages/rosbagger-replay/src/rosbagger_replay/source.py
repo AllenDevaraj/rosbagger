@@ -90,7 +90,11 @@ def load_items(
     and is bridged via ``deserialize -> serialize_cdr`` (Pitfall 2). The reader is
     always closed in a ``finally``.
     """
+    # Lazy ROS-free imports (offline invariant — rosbags only, never at module top, never
+    # rclpy/rosbag2_py). ConnectionExtRosbag1 is the rosbags ROS 1 connection-extension type
+    # used for the IN-01 isinstance detection below.
     from rosbags.highlevel import AnyReader
+    from rosbags.interfaces import ConnectionExtRosbag1
 
     items: list[ReplayItem] = []
     reader = AnyReader(_as_path_list(bag_paths), default_typestore=default_typestore)
@@ -106,7 +110,9 @@ def load_items(
                 return []
         for conn, t_ns, rawdata in reader.messages(connections=conns):
             ext = getattr(conn, "ext", None)
-            is_ros1 = type(ext).__name__ == "ConnectionExtRosbag1"
+            # IN-01: detect ROS 1 connections via isinstance against the imported rosbags type
+            # (robust to a class rename/relocate) rather than a fragile class-name string compare.
+            is_ros1 = isinstance(ext, ConnectionExtRosbag1)
             if is_ros1:
                 # ROS 1 raw bytes are ROS 1 wire format, NOT CDR — bridge to CDR.
                 obj = reader.deserialize(rawdata, conn.msgtype)
