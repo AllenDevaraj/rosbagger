@@ -206,3 +206,16 @@ def test_edge_qualified_column_not_rewritten(twist_names):
 
     assert re.search(r"\bvx\b", out) is not None, out
     assert '"linear.x"' not in out
+
+
+def test_edge_msgtype_normalization(twist_names):
+    """`-k edge`: a defensive ``pkg/Type`` msgtype normalizes to the packed key (A2).
+
+    ``rosbags`` already hands us ``pkg/msg/Type``, but ``_normalize`` is cheap
+    insurance for an exotic two-segment ``pkg/Type`` form — it inserts ``/msg/`` so
+    the pack lookup still resolves and ``vx`` expands to ``"linear.x"``.
+    """
+    out = expand_aliases(parse("SELECT vx FROM cmd_vel"), "geometry_msgs/Twist", twist_names).sql(
+        dialect="duckdb"
+    )
+    assert '"linear.x"' in out
