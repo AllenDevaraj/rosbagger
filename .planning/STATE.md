@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-05-23T11:43:23.811Z"
-last_activity: 2026-05-23 -- Phase 12 plan 01 complete (rosbagger-record scaffold + offline boundary)
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-05-23T11:53:31.895Z"
+last_activity: 2026-05-23
 progress:
   total_phases: 14
   completed_phases: 11
   total_plans: 32
-  completed_plans: 30
-  percent: 94
+  completed_plans: 31
+  percent: 79
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 12 (Live Record) — EXECUTING
-Plan: 2 of 3
-Status: Executing Phase 12 (12-01 complete; 12-02 next)
-Last activity: 2026-05-23 -- Phase 12 plan 01 complete (rosbagger-record scaffold + offline boundary)
+Plan: 3 of 3
+Status: Ready to execute
+Last activity: 2026-05-23
 
-Progress: [█████████░] 94%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -96,6 +96,7 @@ Progress: [█████████░] 94%
 | Phase 11 P11-02 | 9min | 2 tasks | 5 files |
 | Phase 11 P11-04 | ~22min | 3 tasks | 6 files |
 | Phase 12 P01 | 8min | 3 tasks | 8 files |
+| Phase 12 P12-02 | ~12min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -185,6 +186,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 11-03]: rosbagger_core.events sidecar I/O — sidecar_path file-vs-dir-aware (.bag/.mcap strip via with_suffix, ROS2 dir appends to full name so dotted v1.2/ keeps .2; D-11/Pitfall 7) + add_event/list_events over the fixed v1 schema (t_start_ns/t_end_ns BIGINT, label/note VARCHAR nullable; point event t_start==t_end; D-12). Append = read existing -> pa.concat_tables -> rewrite whole file (events tiny; D-13). Write REUSES output.export.write_table (DuckDB COPY, T-06-01 quote-escape) — NO 2nd hand-built COPY (grep-gated 0). list_events on absent sidecar -> empty 4-column table. Offline invariant: import rosbagger_core.events leaks none of duckdb/sqlglot/pyarrow/rosbags (fresh-interp verified); pyarrow/export imports lazy in fn bodies, sidecar_path stdlib-only. SC2 proven (write->read-back values + int64 _ns, append grows to 2, point/null-note round-trip). Full suite 357 passed 97.45% (>=80%); events.py 100%; ruff clean. The 11-04 events offline-guard + bagq events add/list verbs + reserved-name query hook (SC3) build on sidecar_path.
 - [Phase 11-04]: PHASE 11 COMPLETE (4/4); EVNT-01 DONE end-to-end. query() reserved `events` table (D-14/RESEARCH Pattern 5): after Step 5 derives `tables`, events_referenced = 'events' in tables; data_tables = tables - {'events'}; the topic-resolution + load loops iterate data_tables so `events` is NEVER resolved as a topic and NEVER raises UnknownTableError (Anti-Pattern). After topic tables register (inside the try, before backend.execute), if events_referenced: lazy-import list_events + backend.register_table('events', list_events(reader.paths[0])) — single-bag v1, multi-bag deferred. list_events returns the sidecar table when present and the fixed-v1 EMPTY table when absent, so an absent sidecar = a 0-row events relation (Open Q3 LOCKED — never a DuckDB 'table does not exist'). Standard BETWEEN interval join runs natively (D-15, no special operator). SC3 VERIFIED across ROS1 + ROS2-sqlite3 + MCAP: SELECT i.t_ns FROM imu i JOIN events e ON i.t_ns BETWEEN e.t_start_ns AND e.t_end_ns over a [1.0,1.1]s window returns {1_000_000_000,1_100_000_000} (the 3-msg fixture logs /imu at 1.0/1.1/1.2s). NO regression: alias gate (already filters t in table_to_topic, so events never counts toward the single-base-topic total), projection restrict, WR-01 verbatim forwarding, UnknownColumnError/UnknownTableError for REAL unknown topics, try/finally lifecycle all intact (full test_backend_query.py 42 green). bagq events add/list (D-02/D-13): an events_app sub-Typer (app.add_typer(name='events')); add converts --start/--end SECONDS->ns (int(S*1e9), --trim ergonomic match, point event start==end), --label required, --note optional, calls add_event; list renders the 4 fixed-v1 cols via rows_for_display (0 rows -> 'no events'). Thin (no sidecar I/O in the events verbs — all Parquet I/O in core); both @teaching_errors + lazy core import (import bagq leaks no rosbags/pyarrow/duckdb). Offline guard extended: import rosbagger_core.events leaks none of duckdb/sqlglot/pyarrow + no rosbags (mirrors tf/edit pairs). TDD on Task 1 (RED d1191b3 -> GREEN 05f2caa, no REFACTOR). Phase gate: full suite 387 passed @ 97.23% (>=80%), ruff check+format clean (62 files). DEVIATION: none (the events_alias test using bare vx not c.vx is a test-assumption correction the plan's <behavior> anticipated; expand_aliases only rewrites unqualified columns by design).
 - [Phase 12-01]: Scaffolded packages/rosbagger-record/ (uv workspace member; only uv-resolved deps rosbagger-core + typer>=0.15,<1 — rclpy/rosbag2_py environment-provided, NOT declared, D-03). Lazy ROS boundary in __init__.py (verified RESEARCH Pattern 1): _require_ros() imports rclpy+rosbag2_py INSIDE its body and raises the teaching RosNotAvailableError from the ImportError; record()/list_topics() are lazy delegators to .record (Plan 02); NO top-level ROS import — `import rosbagger_record` is ROS-free in the uv venv (verified, no rclpy/rosbag2_py in sys.modules). errors.py: RosNotAvailableError + McapStorageUnavailableError as RuntimeError subclasses (capability/env conditions, distinct from core's ValueError data errors), stdlib-only top. discovery.py: discover_topics(node, settle_iters=30, settle_dt=0.02) lazy-imports rclpy, spins to settle DDS discovery, returns {topic: types[0]} (typeless dropped); select_topics is PURE (no ROS) with precedence base(all_topics OR positional-present) -> regex include -> exclude, deterministic over discovered order, re.search only (no shell/eval, T-12-02). console script rosbagger-record declared (cli.py Plan 03). uv.lock RE-LOCKED (members=[packages/*] globs the new member; --locked failed until `uv lock` added rosbagger-record v0.1.0; sync then exit 0, 42 pkgs). tests/test_record_unit.py: 11 mocked unit tests (selection matrix + mocked discover_topics via monkeypatch.setitem(sys.modules,'rclpy',MagicMock) — NOT mock.patch string targets, Pitfall 6 — + no_ros capability error). Offline guard EXTENDED: test_import_record_does_not_pull_ros (fresh subprocess, plain env PYTHONPATH=''; the .pth-installed member resolves while host ROS stays hidden — W3) asserts no rclpy/rosbag2_py leaked; core/bagq stay ROS-free with the live member installed (existing 14 guard tests green). `live` marker registered (silences Plan 03's unknown-marker warning); rosbagger-record/src added to ruff src. rosbagger_record kept OUT of the --cov gate (gate stays --cov=rosbagger_core --cov=bagq) so the >=80% holds without weakening — the irreducibly-live record core can't be covered offline. Full offline suite 414 passed @ 97.37% (>=80% gate); ruff check+format clean (66 files). DEVIATION: [Rule 2] added rosbagger-record/src to ruff src for workspace-lint consistency (addopts/--cov untouched per plan). TDD note: Task 3 is tdd=true but a characterization suite over Tasks 1+2 code (plan-anticipated GREEN-on-first-run); feat commits precede the test commit by plan design, all GREEN first run (no Task 1/2 contract bug). REC-01 mechanism foundation DONE; record core (12-02) + CLI/live test (12-03) build on _require_ros + discovery.
+- [Phase ?]: Phase 12-02: kept rosbagger_record OUT of the --cov gate (gate stays --cov=rosbagger_core --cov=bagq); the pure pieces (_should_stop/_check_storage/empty-selection+finalize control flow) are unit-covered with ROS mocked, the irreducible rclpy wiring (init/spin loop body/create_subscription/shutdown) is the only uncovered part and is live-only (12-03). Full offline suite 421 passed @ 97.37% (>=80% gate not weakened).
+- [Phase ?]: Phase 12-02: NO auto-fallback exposed — record() default storage stays mcap (D-08 not weakened); sqlite3 is only an EXPLICIT --storage escape. _check_storage gates on rosbag2_py.get_registered_writers() and raises the teaching McapStorageUnavailableError(requested, sorted(available)) BEFORE rclpy.init(), never silently downgrading.
 
 ### Pending Todos
 
@@ -204,7 +207,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T11:43:00.869Z
-Stopped at: Completed 12-01-PLAN.md
-Resume file: .planning/phases/12-live-record/12-02-PLAN.md
+Last session: 2026-05-23T11:51:51.781Z
+Stopped at: Completed 12-02-PLAN.md
+Resume file: None
 Next: Phase 12 plan 01 COMPLETE (rosbagger-record scaffolded; lazy ROS boundary + teaching errors + pure-Python discovery/selection + offline-guard extension; full offline suite 414 passed @ 97.37%, ruff clean, `import rosbagger_record` ROS-free verified). Next is 12-02 (the rclpy/rosbag2_py record core — record.py: generic raw=True subscription -> SequentialWriter, bounded stop, Pattern 5 storage gate; reuses _require_ros + discovery + McapStorageUnavailableError). Then 12-03 (cli.py + test_record_live.py using the now-registered `live` marker). REC-01 stays in-progress until the recording path lands (Plans 02/03). Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
