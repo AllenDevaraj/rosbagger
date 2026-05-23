@@ -87,6 +87,25 @@ def test_import_backend_subpackage_does_not_pull_heavy_query_stack():
     assert leaked == [], f"import rosbagger_core.backend leaked the heavy stack: {leaked}"
 
 
+def test_import_alias_does_not_pull_heavy_data_stack():
+    """`import rosbagger_core.backend.alias` must NOT load duckdb/pyarrow (Pitfall 6).
+
+    The Phase 10 alias rewrite (``backend/alias.py``) is a pure ``sqlglot`` AST
+    transform plus a dict literal. UNLIKE the other guards in this file, it
+    LEGITIMATELY imports ``sqlglot`` at module top — ``sqlglot`` is a pure-Python
+    locked dependency, NOT a ROS/data module, exactly like ``backend/resolve.py``
+    and ``schema/identifiers.py`` (which already import it eagerly). So this guard
+    asserts only that the HEAVY DATA stack — ``duckdb`` and ``pyarrow`` — does not
+    leak; ``sqlglot`` appearing in the leak list is expected and fine. The pack is
+    a plain dict, so importing the module pulls in neither the query engine
+    (``duckdb``) nor the materialization layer (``pyarrow``). Regression test for
+    10-RESEARCH Pitfall 6.
+    """
+    leaked = _heavy_modules_after_import("rosbagger_core", "rosbagger_core.backend.alias")
+    assert "duckdb" not in leaked, f"import rosbagger_core.backend.alias leaked duckdb: {leaked}"
+    assert "pyarrow" not in leaked, f"import rosbagger_core.backend.alias leaked pyarrow: {leaked}"
+
+
 def test_import_output_subpackage_does_not_pull_heavy_query_stack():
     """`import rosbagger_core.output` must NOT load duckdb/sqlglot/pyarrow either.
 
