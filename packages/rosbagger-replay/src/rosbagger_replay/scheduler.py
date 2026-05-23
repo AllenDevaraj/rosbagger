@@ -172,18 +172,23 @@ class Replayer:
         fire BEFORE the end-of-stream loop-reset, so a bound landing exactly on the last item
         wins over ``loop`` (DONE wins over loop-reset — the W4 boundary).
         """
-        start_clock = self._clock()
+        # A zero/negative bound (max_messages<=0, WR-01; duration<=0, WR-02) must halt BEFORE
+        # the first publish. Special-case it up front WITHOUT re-reading the clock (WR-03): the
+        # bound is then independent of how many times _clock() is called (a _FakeClock tick is
+        # not consumed by this guard). The clock is read exactly once, after these guards.
         published = 0
-        # A zero-publish bound (max_messages=0, WR-01) or duration<=0 must halt BEFORE the
-        # first publish — check it up front. Also covers seek-past-end (cursor==len below).
-        if self._max_messages is not None and published >= self._max_messages:
+        if self._max_messages is not None and self._max_messages <= 0:
             self._state = State.DONE
             return
-        if self._duration is not None and (self._clock() - start_clock) >= self._duration:
+        if self._duration is not None and self._duration <= 0:
             self._state = State.DONE
             return
+        start_clock = self._clock()
         while self._state in (State.PLAYING, State.STEPPING) and self._cursor < len(self._items):
-            if self._cursor > 0:
+            # Pace ONLY while PLAYING (WR-01): a STEPPING single-advance publishes the next
+            # item IMMEDIATELY (no pre-sleep of the inter-message Δt) — stepping across a long
+            # gap must not block the caller for that gap. Pacing is a play-mode concern (D-08).
+            if self._cursor > 0 and self._state is State.PLAYING:
                 dt_ns = self._items[self._cursor].t_ns - self._items[self._cursor - 1].t_ns
                 self._sleep(max(0.0, dt_ns / 1e9 / self._rate))
             stepping = self._state is State.STEPPING

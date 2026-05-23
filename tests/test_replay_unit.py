@@ -212,6 +212,37 @@ def test_scheduler_step_one_then_paused():
     assert r.state is State.PAUSED
 
 
+def test_scheduler_step_does_not_pace_inter_message_gap():
+    """WR-01: a STEPPING advance publishes IMMEDIATELY — it must NOT pre-sleep the Δt gap.
+
+    A step is an interactive single-advance (D-09): stepping across a long inter-message
+    gap must not block the caller for that gap. Pacing is a PLAYING-only concern. We craft
+    a 5-second gap between items, then step from index 0 to index 1: the step at cursor>0
+    must record NO sleep of the inter-message Δt (5s/rate). (PLAYING the same stream WOULD
+    sleep ~5s — proven below — so this is a genuine control-correctness lock, not a no-op.)
+    """
+    five_s_ns = 5_000_000_000  # 5 s between item[0] and item[1]
+    items = _items([0, five_s_ns])
+
+    # Step from index 0 -> 1 across the 5s gap; record every sleep call.
+    slept_step = []
+    r = Replayer(items, lambda i: None, sleep=slept_step.append)
+    r.step()
+    r.run()  # publishes items[0]; cursor 0 -> 1, no pre-sleep (cursor was 0)
+    r.step()
+    r.run()  # publishes items[1] from cursor 1 — a STEP must NOT pace the 5s gap
+    # No sleep ever paced the 5s inter-message Δt during stepping (the pre-step at cursor>0).
+    assert all(s < 1.0 for s in slept_step), f"step paced an inter-message gap: {slept_step}"
+    assert five_s_ns / 1e9 not in slept_step
+
+    # Contrast: PLAYING the SAME two-item stream DOES pace the 5s gap (one inter-message sleep).
+    slept_play = []
+    r2 = Replayer(items, lambda i: None, sleep=slept_play.append)
+    r2.play()
+    r2.run()
+    assert slept_play == [pytest.approx(5.0)]  # play paces; step (above) did not
+
+
 def test_scheduler_pause_holds_cursor():
     """SC2 pause: play to max=2, pause() holds cursor 2; resume continues from 2 (no re-publish)."""
     items = _items([0, 100, 200, 300])
