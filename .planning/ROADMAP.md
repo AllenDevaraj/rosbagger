@@ -284,7 +284,7 @@ Plans:
 
 **Wave 2** *(blocked on 11-01)*
 
-- [ ] 11-02-PLAN.md — Cross-format convert via the `rosbags` converter factory (`is_same_wireformat`/`generate_message_converter`, no hand-rolled migration) wired into `edit_bag` + thin `bagq edit`/`bagq convert` verbs; convert round-trip (deserialize headered msgs) tests both directions -> EDIT-01
+- [x] 11-02-PLAN.md — Cross-format convert via the `rosbags` converter factory (`is_same_wireformat`/`generate_message_converter`, no hand-rolled migration) wired into `edit_bag` + thin `bagq edit`/`bagq convert` verbs; convert round-trip (deserialize headered msgs) tests both directions -> EDIT-01
 
 **Wave 3** *(blocked on 11-02 + 11-03)*
 
