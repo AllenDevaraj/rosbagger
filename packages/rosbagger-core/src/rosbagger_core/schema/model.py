@@ -87,33 +87,76 @@ class TableSchema:
     msgtype: str
     columns: list[ColumnDef]
 
-    def column_names(self, include: set[str] | None = None) -> list[str]:
-        """Return column names in declared order, applying the heavy-blob filter.
+    def column_names(
+        self,
+        include: set[str] | None = None,
+        restrict: set[str] | None = None,
+    ) -> list[str]:
+        """Return column names in declared order, applying two orthogonal filters.
 
-        By default (``include=None``) heavy-blob columns (``is_heavy_blob`` is
-        ``True``) are omitted — the QURY-07 lazy-materialization default. A
-        heavy-blob column is re-included only when its ``name`` appears in
-        ``include``.
+        Two independent, ANDed name-set filters select the surviving columns
+        (QURY-09 / D-06). A column is kept iff::
 
-        The ``include`` keys are the **dotted column name** (the same string as
-        ``ColumnDef.name`` and the downstream Arrow column name — research Open
-        Question 2). Phase 5 computes this set from the columns a parsed SQL
-        query references; for the standard blobs it is simply ``{"data"}``.
+            (not col.is_heavy_blob or col.name in include)   # heavy-blob filter
+            and (restrict is None or col.name in restrict)    # projection filter
 
-        Non-heavy columns are always included regardless of ``include``.
+        * ``include`` — the original QURY-07 heavy-blob filter. By default
+          (``include=None``) heavy-blob columns (``is_heavy_blob`` is ``True``)
+          are omitted; a heavy-blob column is re-included only when its ``name``
+          appears in ``include``. Non-heavy columns ignore ``include``.
+        * ``restrict`` — the orthogonal **projection** filter (QURY-09 column
+          projection pushdown, D-06). When it is a set, ONLY columns whose
+          ``name`` is in it survive — composed WITH, never replacing, the
+          heavy-blob filter (so a heavy blob in ``restrict`` but not ``include``
+          is still dropped). When ``restrict=None`` (the default) it is a pure
+          no-op: behavior is byte-for-byte today's, leaving every existing caller
+          (e.g. ``inspect.collect_table_schemas`` / ``bagq tables``, which never
+          passes ``restrict``) completely unaffected.
+
+        Both ``include`` and ``restrict`` keys are the **dotted column name** (the
+        same string as ``ColumnDef.name`` and the downstream Arrow column name —
+        research Open Question 2). Phase 5 computes ``include`` from the heavy
+        blobs a parsed SQL query references; the orchestrator (Plan 10-03)
+        computes ``restrict`` from ALL referenced columns. The four standard
+        columns (``t``/``t_ns``/``stamp``/``topic``) are NOT special-cased here —
+        D-07's always-materialized guarantee is the orchestrator's job (it unions
+        ``{t,t_ns,stamp,topic}`` into ``restrict``), so a bare
+        ``restrict={"linear.x"}`` legitimately yields only ``["linear.x"]``.
         """
         allowed = include or set()
-        return [col.name for col in self.columns if not col.is_heavy_blob or col.name in allowed]
+        return [
+            col.name
+            for col in self.columns
+            if (not col.is_heavy_blob or col.name in allowed)
+            and (restrict is None or col.name in restrict)
+        ]
 
-    def arrow_schema(self, include: set[str] | None = None) -> object:
+    def arrow_schema(
+        self,
+        include: set[str] | None = None,
+        restrict: set[str] | None = None,
+    ) -> object:
         """Build the ``pyarrow.Schema`` for this table (the Phase 5 ingest seam).
 
         Returns a ``pyarrow.Schema`` of ``(column_name, arrow_type)`` for every
-        column that survives the heavy-blob filter: a column is kept iff it is
-        NOT a heavy blob, OR its ``name`` is in ``include``. The default
-        (``include=None``) omits every heavy blob (the QURY-07 lazy-blob
-        default); Phase 5 passes ``include`` (e.g. ``{"data"}``) computed from
-        the columns a parsed SQL query references.
+        column that survives the two orthogonal, ANDed name-set filters (the
+        exact same predicate as :meth:`column_names`): a column is kept iff::
+
+            (not col.is_heavy_blob or col.name in include)   # heavy-blob filter
+            and (restrict is None or col.name in restrict)    # projection filter
+
+        * ``include`` — the QURY-07 heavy-blob filter. The default
+          (``include=None``) omits every heavy blob; Phase 5 passes ``include``
+          (e.g. ``{"data"}``) computed from the heavy columns a parsed SQL query
+          references.
+        * ``restrict`` — the orthogonal QURY-09 **projection** filter (column
+          projection pushdown, D-06). When it is a set, ONLY columns whose
+          ``name`` is in it survive — composed WITH, not replacing, the
+          heavy-blob filter (a heavy blob in ``restrict`` but not ``include`` is
+          still dropped). ``restrict=None`` (the default) is byte-for-byte
+          today's behavior, leaving every existing caller (notably
+          ``inspect.collect_table_schemas`` / ``bagq tables``, which never passes
+          ``restrict``) completely unaffected.
 
         The field order matches the declared column order (the four standard
         columns first), so it lines up with the parallel column arrays
@@ -121,9 +164,12 @@ class TableSchema:
         nullable (headerless topics like ``/cmd_vel`` yield an all-NULL
         ``stamp``); all other fields take pyarrow's default nullability.
 
-        The ``include`` keys are the **dotted column name** (the same string as
-        ``ColumnDef.name`` and the Arrow column name — research Open Question 2),
-        matching :meth:`column_names`.
+        Both ``include`` and ``restrict`` keys are the **dotted column name** (the
+        same string as ``ColumnDef.name`` and the Arrow column name — research
+        Open Question 2), matching :meth:`column_names`. The four standard
+        columns are NOT special-cased here — D-07's always-materialized guarantee
+        is enforced upstream by the orchestrator unioning them into ``restrict``
+        (Plan 10-03), so a bare ``restrict={"linear.x"}`` yields only that column.
 
         ``pyarrow`` is imported INSIDE the method on purpose: this module stays
         importable without the heavy stack (``import rosbagger_core`` must not
@@ -132,8 +178,9 @@ class TableSchema:
         the ``schema.flatten`` / ``schema.types`` builders.
 
         Returns:
-            A ``pyarrow.Schema`` honoring ``include`` (typed ``object`` so the
-            signature does not name ``pyarrow`` at module level).
+            A ``pyarrow.Schema`` honoring ``include`` AND ``restrict`` (typed
+            ``object`` so the signature does not name ``pyarrow`` at module
+            level).
         """
         import pyarrow as pa
 
@@ -143,6 +190,7 @@ class TableSchema:
         fields = [
             pa.field(col.name, col.arrow_type, nullable=True)
             for col in self.columns
-            if not col.is_heavy_blob or col.name in allowed
+            if (not col.is_heavy_blob or col.name in allowed)
+            and (restrict is None or col.name in restrict)
         ]
         return pa.schema(fields)
