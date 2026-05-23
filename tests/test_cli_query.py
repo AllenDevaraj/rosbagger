@@ -134,6 +134,47 @@ def test_help_lists_query_subcommand() -> None:
     assert "query" in result.stdout
 
 
+def test_query_no_alias_default_expands_vx(ros1_bag: Path) -> None:
+    """Aliases ON by default (D-11): ``SELECT vx FROM cmd_vel`` exits 0 and renders rows.
+
+    ``/cmd_vel`` is a ``geometry_msgs/msg/Twist`` (no header), so the built-in alias pack
+    expands ``vx`` -> the dotted ``linear.x``; the query resolves and prints the result.
+    Asserts a stable signal (the value ``0.0`` of the first ``linear.x`` row), NOT rich
+    box-drawing — mirroring ``test_query_default_prints_table``'s data-only style.
+    """
+    result = runner.invoke(app, ["query", "SELECT vx FROM cmd_vel", str(ros1_bag)])
+    assert result.exit_code == 0, result.output
+    assert "linear.x" in result.stdout  # the expanded dotted column header
+    assert "0.0" in result.stdout  # the first cmd_vel linear.x value (proves a row rendered)
+
+
+def test_query_no_alias_flag_disables_expansion(ros1_bag: Path) -> None:
+    """``--no-alias`` disables the pack: ``vx`` is no longer a column -> a clean Exit(1).
+
+    With expansion off, ``vx`` is not a real column of the Twist schema, so DuckDB's
+    binder rejects it and ``query()`` re-maps it to ``UnknownColumnError`` — surfaced by
+    ``@teaching_errors`` as a single stderr teaching line + ``Exit(1)`` with NO traceback.
+    Mirrors the 07/09 no-traceback convention: a clean ``typer.Exit(1)`` reaches CliRunner
+    as ``SystemExit`` (NOT a raw ``ValueError``); the message names the unknown column.
+    """
+    result = runner.invoke(
+        app, ["query", "--no-alias", "SELECT vx FROM cmd_vel", str(ros1_bag)]
+    )
+    assert result.exit_code == 1, result.output
+    assert "vx" in result.output  # the teaching message names the unknown column
+    # No traceback escaped: a clean Exit(1) is SystemExit, and the raw typed error did not
+    # leak through @teaching_errors (07/09 convention).
+    assert isinstance(result.exception, SystemExit)
+    assert not isinstance(result.exception, ValueError)
+
+
+def test_query_help_lists_no_alias_option() -> None:
+    """``bagq query --help`` lists the ``--no-alias`` option (it is registered)."""
+    result = runner.invoke(app, ["query", "--help"])
+    assert result.exit_code == 0
+    assert "--no-alias" in result.stdout
+
+
 def test_render_result_zero_rows_prints_shape(capsys) -> None:
     """``_render_result`` on a 0-row table prints ``(0 rows)`` + the column names.
 
