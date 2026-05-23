@@ -74,7 +74,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 
 ### Edit / Events
 - [x] **EDIT-01**: Trim / drop / merge / downsample / convert (ROS1↔ROS2↔MCAP)
-- **EVNT-01**: Event sidecar exposed as a queryable `events` table
+- [x] **EVNT-01**: Event sidecar exposed as a queryable `events` table
 
 ### Query ergonomics
 - **QURY-08**: Alias pack (`vx` → `"twist.twist.linear.x"`) for common message types
@@ -120,11 +120,13 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | QURY-08 | Phase 10 | Complete (mechanism in 10-01: backend/alias.py + expand_aliases; WIRED into query() in 10-03 with the single-base-topic gate + alias=True keyword — SC1 `vx`→dotted proven end-to-end across ROS1+ROS2-sqlite+MCAP; the thin `bagq query --no-alias` CLI surface is the final 10-04 polish) |
 | QURY-09 | Phase 10 | Complete (materialization in 10-02: restrict= projection filter; WIRED into query() in 10-03 — per-topic restrict=(columns & schema_names)|STANDARD when not star, restrict=None under SELECT*; SC2/SC3 proven across ROS1+ROS2-sqlite+MCAP via a recording backend observing query()'s registered table) |
 | EDIT-01 | Phase 11 | Complete (raw-copy trim/drop/keep/downsample/merge in 11-01: streaming AnyReader→Writer edit_bag, lossless across ROS1+ROS2-sqlite3+MCAP; cross-format convert ROS1↔ROS2 in 11-02 via the rosbags converter factory — is_same_wireformat→memoryview identity / generate_message_converter→migrate_bytes for the Header.seq case, NOT hand-rolled; headered /imu+/image DESERIALIZE after convert both directions; thin bagq edit / bagq convert verbs over the core API) |
+| EVNT-01 | Phase 11 | Complete (sidecar I/O in 11-03: rosbagger_core.events sidecar_path/add_event/list_events over the fixed v1 schema, reusing the locked DuckDB-COPY writer — SC2; reserved `events` query table in 11-04: query() subtracts `events` from topic resolution and registers the sidecar relation via list_events(reader.paths[0]), empty-schema when absent (Open Q3) — a standard BETWEEN interval join works natively across ROS1+ROS2-sqlite3+MCAP, SC3, no special operator; thin bagq events add/list verbs over the core API, SC2 at the CLI; offline invariant held) |
 
 **Coverage:**
 - v1 requirements: 23 total (all Complete)
 - Query-ergonomics additions: QURY-08, QURY-09 (Phase 10; both mapped)
-- Mapped to phases: 25
+- Edit/Events additions: EDIT-01, EVNT-01 (Phase 11; both Complete)
+- Mapped to phases: 27
 - Unmapped: 0 ✓
 
 > Phases 1 (Scaffold & Test Harness) and 8 (Packaging, Docs & Release) are infrastructure phases that carry the Definition of Done rather than specific REQ-IDs.

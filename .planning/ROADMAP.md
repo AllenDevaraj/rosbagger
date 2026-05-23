@@ -24,7 +24,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 
 - [x] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand) (completed 2026-05-22)
 - [x] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown (completed 2026-05-23)
-- [ ] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar
+- [x] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar (completed 2026-05-23)
 - [ ] **Phase 12: Live Record** - live topic discovery + select recording (rclpy)
 - [ ] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy)
 - [ ] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI)
@@ -288,7 +288,7 @@ Plans:
 
 **Wave 3** *(blocked on 11-02 + 11-03)*
 
-- [ ] 11-04-PLAN.md — Reserved `events`-table hook in `query()` (subtract from topic resolution, register sidecar relation, native `BETWEEN` interval join — SC3) + thin `bagq events add`/`list` verbs (SC2 at the CLI) + events offline-guard extension -> EVNT-01
+- [x] 11-04-PLAN.md — Reserved `events`-table hook in `query()` (subtract from topic resolution, register sidecar relation, native `BETWEEN` interval join — SC3) + thin `bagq events add`/`list` verbs (SC2 at the CLI) + events offline-guard extension -> EVNT-01
 
 ### Phase 12: Live Record
 
@@ -346,7 +346,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
 | 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
 | 10. Query Ergonomics | 4/4 | Complete    | 2026-05-23 |
-| 11. Edit & Events | 2/4 | In Progress|  |
+| 11. Edit & Events | 4/4 | Complete   | 2026-05-23 |
 | 12. Live Record | 0/? | Not started | - |
 | 13. Live Replay | 0/? | Not started | - |
 | 14. GUI | 0/? | Not started | - |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: executing
+status: verifying
 stopped_at: Completed 11-03-PLAN.md (event sidecar I/O)
-last_updated: "2026-05-23T09:31:42.592Z"
+last_updated: "2026-05-23T09:44:40.944Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 14
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 29
-  completed_plans: 27
-  percent: 71
+  completed_plans: 29
+  percent: 79
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 Phase: 11 (Edit & Events) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-23
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [█████████░] 93%
 | 8 | 1 | - | - |
 | 09 | 3 | - | - |
 | 10 | 4 | - | - |
+| 11 | 4 | ~49min | ~12min |
 
 **Recent Trend:**
 
@@ -93,6 +94,7 @@ Progress: [█████████░] 93%
 | Phase 11 P11-01 | 6min | 2 tasks | 5 files |
 | Phase 11 P11-03 | 12min | 1 tasks | 2 files |
 | Phase 11 P11-02 | 9min | 2 tasks | 5 files |
+| Phase 11 P11-04 | ~22min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -180,6 +182,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 10-04]: PHASE 10 COMPLETE (4/4). bagq query gained a --no-alias boolean (default False=aliases ON, D-11), declared in the existing Annotated[bool, typer.Option("--no-alias", ...)] idiom after --plot; the body forwards alias=not no_alias on the single run_query(sql, reader) call — a thin pass-through (decision 1, API-first): the CLI builds no SQL, adds no module-top import, and run_query stays lazy-imported (importing bagq.cli pulls no rosbags/pyarrow/duckdb, verified). _PlotCommand/--plot, -o/--format routing all untouched. Projection pushdown gets NO flag (D-11 — transparent). --no-alias "SELECT vx FROM cmd_vel" -> clean UnknownColumnError teaching line via the existing @teaching_errors (Exit 1, no traceback: CliRunner sees SystemExit, not ValueError; real binary prints "Unknown column 'vx'. Columns in cmd_vel: ..."); default-on renders linear.x [0,1,2]. TDD (RED 4ed0e76 -> GREEN cd32af2); the gate's ruff format collapsed the test's multi-line invoke (style 41e037c). Phase gate green: full suite 316 passed @ 97.73% (>=80%; 313 baseline + 3 CLI tests; cli.py fully covered), ruff check+format clean (53 files), offline-guard 10 passed; SC1 (alias resolves) + SC2/SC3 (projection loads only referenced cols) confirmed (18 alias/projection/star integration tests + real-shell smoke). QURY-08+QURY-09 delivered end-to-end. DEVIATION: none (the docstring note was plan-mandated; the format fix is a style fix on this plan's own edit, not behavioral).
 - [Phase ?]: 11-01: edit pipeline opens AnyReader directly in edit_bag (reader.py untouched); keys source->writer connections by id(conn) and dedupes add_connection per (topic,msgtype) so merge works (ROS2 Connection unhashable); empty result writes an empty bag and edit_bag returns the written count
 - [Phase 11-03]: rosbagger_core.events sidecar I/O — sidecar_path file-vs-dir-aware (.bag/.mcap strip via with_suffix, ROS2 dir appends to full name so dotted v1.2/ keeps .2; D-11/Pitfall 7) + add_event/list_events over the fixed v1 schema (t_start_ns/t_end_ns BIGINT, label/note VARCHAR nullable; point event t_start==t_end; D-12). Append = read existing -> pa.concat_tables -> rewrite whole file (events tiny; D-13). Write REUSES output.export.write_table (DuckDB COPY, T-06-01 quote-escape) — NO 2nd hand-built COPY (grep-gated 0). list_events on absent sidecar -> empty 4-column table. Offline invariant: import rosbagger_core.events leaks none of duckdb/sqlglot/pyarrow/rosbags (fresh-interp verified); pyarrow/export imports lazy in fn bodies, sidecar_path stdlib-only. SC2 proven (write->read-back values + int64 _ns, append grows to 2, point/null-note round-trip). Full suite 357 passed 97.45% (>=80%); events.py 100%; ruff clean. The 11-04 events offline-guard + bagq events add/list verbs + reserved-name query hook (SC3) build on sidecar_path.
+- [Phase 11-04]: PHASE 11 COMPLETE (4/4); EVNT-01 DONE end-to-end. query() reserved `events` table (D-14/RESEARCH Pattern 5): after Step 5 derives `tables`, events_referenced = 'events' in tables; data_tables = tables - {'events'}; the topic-resolution + load loops iterate data_tables so `events` is NEVER resolved as a topic and NEVER raises UnknownTableError (Anti-Pattern). After topic tables register (inside the try, before backend.execute), if events_referenced: lazy-import list_events + backend.register_table('events', list_events(reader.paths[0])) — single-bag v1, multi-bag deferred. list_events returns the sidecar table when present and the fixed-v1 EMPTY table when absent, so an absent sidecar = a 0-row events relation (Open Q3 LOCKED — never a DuckDB 'table does not exist'). Standard BETWEEN interval join runs natively (D-15, no special operator). SC3 VERIFIED across ROS1 + ROS2-sqlite3 + MCAP: SELECT i.t_ns FROM imu i JOIN events e ON i.t_ns BETWEEN e.t_start_ns AND e.t_end_ns over a [1.0,1.1]s window returns {1_000_000_000,1_100_000_000} (the 3-msg fixture logs /imu at 1.0/1.1/1.2s). NO regression: alias gate (already filters t in table_to_topic, so events never counts toward the single-base-topic total), projection restrict, WR-01 verbatim forwarding, UnknownColumnError/UnknownTableError for REAL unknown topics, try/finally lifecycle all intact (full test_backend_query.py 42 green). bagq events add/list (D-02/D-13): an events_app sub-Typer (app.add_typer(name='events')); add converts --start/--end SECONDS->ns (int(S*1e9), --trim ergonomic match, point event start==end), --label required, --note optional, calls add_event; list renders the 4 fixed-v1 cols via rows_for_display (0 rows -> 'no events'). Thin (no sidecar I/O in the events verbs — all Parquet I/O in core); both @teaching_errors + lazy core import (import bagq leaks no rosbags/pyarrow/duckdb). Offline guard extended: import rosbagger_core.events leaks none of duckdb/sqlglot/pyarrow + no rosbags (mirrors tf/edit pairs). TDD on Task 1 (RED d1191b3 -> GREEN 05f2caa, no REFACTOR). Phase gate: full suite 387 passed @ 97.23% (>=80%), ruff check+format clean (62 files). DEVIATION: none (the events_alias test using bare vx not c.vx is a test-assumption correction the plan's <behavior> anticipated; expand_aliases only rewrites unqualified columns by design).
 
 ### Pending Todos
 
@@ -199,7 +202,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T09:19:57.319Z
-Stopped at: Completed 11-03-PLAN.md (event sidecar I/O)
+Last session: 2026-05-23T10:00:00Z
+Stopped at: Completed 11-04-PLAN.md (reserved events-table query hook + bagq events add/list verbs + events offline-guard)
 Resume file: None
-Next: Phase 10 is complete and ready for verification (verifier agent not installed — verified inline this session: gate green, SC1/SC2/SC3 confirmed). Phase 10 was the last query-ergonomics phase of milestone v0.2. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
+Next: Phase 11 (Edit & Events) is COMPLETE (4/4 plans); EVNT-01 + EDIT-01 delivered. Ready for verification (verifier agent not installed — verified inline this session: full suite 387 passed @ 97.23%, ruff clean, SC2/SC3 confirmed, offline invariant held). Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).
