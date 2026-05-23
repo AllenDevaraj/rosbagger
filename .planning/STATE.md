@@ -4,13 +4,13 @@ milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
 stopped_at: Phase 10 context gathered
-last_updated: "2026-05-23T01:13:26.213Z"
-last_activity: 2026-05-23 -- Phase 10 planning complete
+last_updated: "2026-05-23T05:04:29.802Z"
+last_activity: 2026-05-23
 progress:
   total_phases: 14
   completed_phases: 9
   total_plans: 25
-  completed_plans: 21
+  completed_plans: 22
   percent: 64
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 10 — query ergonomics
+**Current focus:** Phase 10 — Query Ergonomics
 
 ## Current Position
 
-Phase: 10
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-23 -- Phase 10 planning complete
+Phase: 10 (Query Ergonomics) — EXECUTING
+Plan: 2 of 4
+Status: 10-01 complete (alias pack + expand_aliases); next is 10-02/10-03
+Last activity: 2026-05-23 -- Phase 10 Plan 01 complete
 
-Progress: [██████████] 100%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -54,10 +54,11 @@ Progress: [██████████] 100%
 | 7 | 2 | - | - |
 | 8 | 1 | - | - |
 | 09 | 3 | - | - |
+| 10 | 1/4 | 8min | 8min |
 
 **Recent Trend:**
 
-- Last 5 plans: 5min, 10min, 7min, 12min, 3min
+- Last 5 plans: 10min, 7min, 12min, 3min, 8min
 - Trend: steady (~3-12 min/plan)
 
 *Updated after each plan completion*
@@ -85,6 +86,7 @@ Progress: [██████████] 100%
 | Phase 09 P01 | 3min | 1 tasks | 1 files |
 | Phase 09 P02 | 3min | 2 tasks | 2 files |
 | Phase 09 P03 | 5min | 2 tasks | 3 files |
+| Phase 10 P10-01 | 8min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -163,6 +165,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08-01]: SC3 SPLIT honestly — autonomous half (local gate + local v0.1.0 tag) DONE here; the SOLE human follow-up is `git push origin main && git push origin v0.1.0` then observe GitHub Actions go green, BLOCKED by no gh CLI / no push credential (standing blocker). Recorded in 08-01-SUMMARY as a known gap, NOT a stalling checkpoint (plan stayed autonomous:true). Note: STATE.md's Phase-7 continuity text said "254 passed"; the actual current suite is 255 passed at 97.82% (observed during this plan's local gate) — no code change needed.
 - [Phase ?]: [Phase 09-01] write_tf_bag(dest_dir, *, ros1, storage='sqlite3') added to tools/make_fixtures.py: /tf_static (one latched map->odom) + dynamic /tf (odom->base_link with ONE seeded 800_000_000 ns gap by omitting ticks 8..14 of 24; base_link->laser clean) in all three formats. ROS 1 registers tf2_msgs/msg/TFMessage via get_types_from_msg (absent from ROS1_NOETIC, verified); ROS 2 uses the built-in type. One /tf TFMessage per tick co-bundles present edges (analyzer keys by (parent,child)). make_all_fixtures untouched; offline invariant held; suite 255 passed 97.82%. TF-01 NOT marked complete (fixture only; analyzer lands in 09-02/03).
 - [Phase 09-02]: rosbagger_core/tf.py ships the entire TF-01 domain logic: collect_tf_report(reader, *, gap_multiplier=5.0, gap_ms=None) -> frozen TfReport. Streams /tf + /tf_static off the PASSED-IN v1 reader (Decision 2 — NOT the query layer that flattens /tf to one LIST-of-STRUCT col), keys edges by (parent,child), times by m.t_ns (TFMessage has no top-level header so Message.stamp is None — Decision 3), tags static by TOPIC NAME (Decision 4). Gap = median(inter-arrival diffs) x multiplier OR absolute gap_ms; deltas <=0 dropped before median, expected<=0 short-circuits (no ZeroDivision/false gap, T-09-03). Edge cases all guarded: static skip, single/zero-sample skip, MIXED /tf+/tf_static tie-break (static in graph yet gap-checked), no synthetic boundary gaps (A4), distinct series for self-edge/multi-parent (T-09-07). NoTransformsError (stdlib-only ValueError, .available) for the empty case (Decision 7). tf.py stdlib-only top (dataclasses, statistics), NOT in __init__, imports no ROS; __init__ untouched; offline guard held both ways. Suite 255 passed 85.46% (tf.py 0% BY DESIGN — tests land in 09-03). Lint fix: zip(..., strict=False) (Rule 3, bugbear B905). TF-01 NOT marked complete (spans 09-01/02/03; CLI+test in 09-03).
+- [Phase 10-01]: backend/alias.py ships ALIAS_PACK (6 msgtypes: Twist/TwistStamped/Odometry/Imu/PoseStamped/Pose, dotted targets re-verified vs the live ROS2 Humble typestore) + expand_aliases(tree, msgtype, schema_names) — a PURE sqlglot tree.transform (D-01): each unqualified short exp.Column whose .name is a pack alias AND whose dotted target is in the topic's TableSchema names (D-04 existence-gate) is replaced by exp.column(target, quoted=True); everything else (unknown tokens, wrong-topic aliases, already-dotted "linear.x", output exp.Alias, qualified c.vx) is a safe no-op. Canonical SC1: Twist vx->"linear.x", Odometry vx->"twist.twist.linear.x". Returns a NEW tree (input unmutated), reaches all clauses + function args. NEVER an f-string/regex (T-10-01, grep-gated). Chose a NEW module over extending resolve.py (keeps it single-purpose; 10-RESEARCH primary rec). Module top imports ONLY __future__ + sqlglot.exp (offline-safe, mirrors resolve.py) — no pyarrow/duckdb/rosbagger_core; offline guard extended with a duckdb/pyarrow-ONLY assertion (sqlglot at top is allowed, the resolve.py precedent). JOIN/CTE single-base-topic guard + --no-alias DEFERRED to orchestrator Plan 10-03 (Open Q1) — this helper is per-msgtype/per-schema. QURY-08 mechanism half DONE (orchestrator wiring is 10-03); QURY-08 traceability = In Progress. Full suite 287 passed 97.35% (>=80% gate); alias.py 95% (1 trivially-defensive _normalize fall-through line, no pragma — tf.py/types.py precedent). DEVIATION (test-only): added test_edge_msgtype_normalization to cover the _normalize defensive pkg/Type path (79%->95%); production code unchanged. ruff clean.
 - [Phase 09-03]: PHASE 9 COMPLETE (3/3); TF-01 DONE. bagq tf subcommand added to bagq/cli.py (Decision 1 — no new package, no pyproject/uv.lock/addopts/console-script edits; auto-covered by --cov=bagq + --cov=rosbagger_core). Thin rich renderer over collect_tf_report: a header line + a "TF edges" summary table (parent/child/kind/count/rate(Hz)/max gap/gaps, em-dash for missing) + a "TF gaps" dropout timeline (parent → child / gap / at (bag t) / at (abs ns)); the 09-01 seeded 800ms odom->base_link gap renders as a row (_human_dur renders 800_000_000 ns exactly as "800ms"). --gap-multiplier/--gap-ms/--format table|json (json = dataclasses.asdict with frames frozenset->sorted list). teaching_errors widened by ONE (NoTransformsError in the lazy import + except tuple; NO except Exception added) -> a non-TF bag exits 1 cleanly (no traceback). Empty gaps -> "no gaps detected" line, not an empty table. tests/test_tf.py (self-contained harness, per-format session fixtures) proves SC1 (frames {map,odom,base_link,laser}; map->odom static, odom->base_link/base_link->laser dynamic) + SC2 (exactly one ~800ms gap +/-1ns, expected_ns==100_000_000, zero on clean, none on static; at_rel==at-start; --gap-ms=300 flags / --gap-multiplier=100 suppresses) PARAMETRIZED over ROS 1 + ROS 2 sqlite3 + ROS 2 MCAP; + NoTransformsError, single-sample + all-duplicate-timestamp edge guards, CLI table/json/no-TF-error/no-gaps/bad-format (-k cli). test_offline_guard.py extended: import rosbagger_core.tf pulls no heavy stack + no rosbags. Suite 274 passed 97.76% (>=80% gate); tf.py 97% (3 unreachable defensive lines, no pragma — consistent w/ 09-02); ruff check + format --check clean. DEVIATION (Rule 1, test-only): an all-duplicate-timestamp coverage test first used a backwards stamp whose first sorted delta was positive (expected_ns!=None) — fixed to four IDENTICAL stamps (genuine empty diffs); production code unchanged.
 
 ### Pending Todos
@@ -183,7 +186,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T00:38:54.972Z
-Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-query-ergonomics/10-CONTEXT.md
-Next: HUMAN — push `main` + `v0.1.0` tag and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git). The v0.2 TF debugger (Phase 9) is now built locally.
+Last session: 2026-05-23T05:04:29.793Z
+Stopped at: Phase 10 Plan 01 complete (alias pack + expand_aliases; 287 passed 97.35%)
+Resume file: None
+Next: Execute the remaining Phase 10 plans — 10-02 (projection pushdown / QURY-09) and 10-03 (orchestrator wiring of expand_aliases + `--no-alias`, which completes QURY-08). Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git).

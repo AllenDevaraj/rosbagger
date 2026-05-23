@@ -252,7 +252,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 10-01-PLAN.md — Built-in alias pack + `expand_aliases` sqlglot-AST rewrite in new `backend/alias.py` (existence-gated, offline-safe) + offline-guard extension -> QURY-08
+- [x] 10-01-PLAN.md — Built-in alias pack + `expand_aliases` sqlglot-AST rewrite in new `backend/alias.py` (existence-gated, offline-safe) + offline-guard extension -> QURY-08
 - [ ] 10-02-PLAN.md — Projection `restrict=` filter generalized onto `arrow_schema`/`column_names`/`build_arrow_table`/`flatten_message` (the skipped-read pushdown) -> QURY-09
 
 **Wave 2** *(blocked on 10-01 + 10-02)*
@@ -331,7 +331,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
 | 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
 | 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
-| 10. Query Ergonomics | 0/? | Not started | - |
+| 10. Query Ergonomics | 1/4 | In Progress|  |
 | 11. Edit & Events | 0/? | Not started | - |
 | 12. Live Record | 0/? | Not started | - |
 | 13. Live Replay | 0/? | Not started | - |

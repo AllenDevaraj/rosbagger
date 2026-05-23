@@ -117,10 +117,13 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 | CLI-03 | Phase 7 | Complete |
 | CLI-04 | Phase 7 | Complete |
 | TF-01 | Phase 9 | Complete |
+| QURY-08 | Phase 10 | In Progress (mechanism shipped in 10-01: backend/alias.py + expand_aliases; orchestrator wiring + `--no-alias` land in 10-03) |
+| QURY-09 | Phase 10 | Planned |
 
 **Coverage:**
-- v1 requirements: 23 total
-- Mapped to phases: 23
+- v1 requirements: 23 total (all Complete)
+- Query-ergonomics additions: QURY-08, QURY-09 (Phase 10; both mapped)
+- Mapped to phases: 25
 - Unmapped: 0 ✓
 
 > Phases 1 (Scaffold & Test Harness) and 8 (Packaging, Docs & Release) are infrastructure phases that carry the Definition of Done rather than specific REQ-IDs.
