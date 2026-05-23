@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: ready_to_plan
-stopped_at: Phase 09 complete (3/3) — ready to discuss Phase 10
-last_updated: 2026-05-23T00:08:35.188Z
-last_activity: 2026-05-22
+status: planning
+stopped_at: Phase 10 context gathered
+last_updated: "2026-05-23T00:38:54.979Z"
+last_activity: 2026-05-23
 progress:
   total_phases: 14
   completed_phases: 9
@@ -183,7 +183,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-22T23:56:56.821Z
-Stopped at: Completed 09-03-PLAN.md (Phase 9 plan 3/3): bagq tf subcommand (thin rich renderer over collect_tf_report — "TF edges" summary + "TF gaps" dropout timeline; the seeded 800ms odom->base_link gap shown as a row) + --gap-multiplier/--gap-ms/--format table|json; teaching_errors widened by one (NoTransformsError) for a clean Exit(1); tests/test_tf.py proves SC1/SC2/SC3 across ROS 1 + ROS 2 sqlite3 + ROS 2 MCAP; offline guard extended for rosbagger_core.tf. Suite 274 passed 97.76%; tf.py 97%. PHASE 9 COMPLETE (3/3); TF-01 DONE. NO deviations of substance (one test-only Rule 1 fix). Next: Phase 9 verification / Phase 10.
-Resume file: None
+Last session: 2026-05-23T00:38:54.972Z
+Stopped at: Phase 10 context gathered
+Resume file: .planning/phases/10-query-ergonomics/10-CONTEXT.md
 Next: HUMAN — push `main` + `v0.1.0` tag and observe GitHub Actions green to finalize the v0.1 release (origin=https://github.com/AllenDevaraj/rosbagger.git). The v0.2 TF debugger (Phase 9) is now built locally.
