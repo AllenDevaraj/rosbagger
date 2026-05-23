@@ -22,21 +22,23 @@ interpreter that does ``import rosbagger_record`` leaks no ``rclpy`` / ``rosbag2
 
 from __future__ import annotations
 
+from .discovery import discover_topics, select_topics
 from .errors import McapStorageUnavailableError, RosNotAvailableError
 
 __version__ = "0.1.0"
 
-# Public API: the teaching capability errors and the lazy ROS-bound entry points
-# (record / list_topics — impl in .record, Plan 02). The pure-Python discovery +
-# selection helpers (discover_topics / select_topics) are re-exported below, once
-# .discovery exists (added in this plan's Task 2). Re-exporting them binds NO ROS:
-# discovery.py imports rclpy only inside discover_topics' body, and select_topics
-# is pure.
+# Public API: the teaching capability errors, the lazy ROS-bound entry points
+# (record / list_topics — impl in .record, Plan 02), and the pure-Python discovery
+# + selection helpers (discover_topics / select_topics). Re-exporting the discovery
+# helpers binds NO ROS — discovery.py imports rclpy only inside discover_topics'
+# body, and select_topics is pure.
 __all__ = [
     "McapStorageUnavailableError",
     "RosNotAvailableError",
+    "discover_topics",
     "list_topics",
     "record",
+    "select_topics",
 ]
 
 
