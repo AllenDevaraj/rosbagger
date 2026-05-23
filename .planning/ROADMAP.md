@@ -327,7 +327,20 @@ Plans:
   2. Transport controls work: play/pause/step/seek/rate/loop
   3. Rate scaling and seek land at the expected message/timestamp
 
-**Plans**: TBD (set at plan-phase)
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 13-01-PLAN.md — `rosbagger-replay` package scaffold (uv member, console script, no ROS deps; D-01/D-03) + teaching capability errors + the PURE raw-CDR source seam (`source.py`: v1 `AnyReader` raw bytes + ROS1→CDR bridge, D-05) with source unit tests over real fixtures -> REP-01
+
+**Wave 2** *(blocked on 13-01)*
+
+- [ ] 13-02-PLAN.md — the PURE `Replayer` transport scheduler (`scheduler.py`: play/pause/step/seek/rate/loop state machine + monotonic pacing + bounded stop, ROS-free; D-06..D-09) + SC2/SC3 unit tests (fake clock + recording sink) -> REP-01
+
+**Wave 3** *(blocked on 13-01 + 13-02)*
+
+- [ ] 13-03-PLAN.md — lazy ROS boundary (`__init__.py`) + the rclpy publish SINK (`replay.py`: `get_message`+`deserialize_message`+`create_publisher().publish`, D-04) + thin `rosbagger-replay` CLI (D-02/D-10) + offline-guard extension + the LIVE SC1 integration test (subscriber receives, actually run in the ROS-sourced lane; D-11/D-12) -> REP-01
 
 ### Phase 14: GUI
 
