@@ -483,7 +483,11 @@ def test_flatten_message_restrict_skips_the_read_proven_by_spy() -> None:
     """
 
     class _Linear:
-        x = 7.0  # only linear.x is reachable
+        # All three linear scalars are reachable (the Twist schema reads
+        # linear.x/y/z BEFORE angular.* in declared order).
+        x = 7.0
+        y = 8.0
+        z = 9.0
 
     class _SpyMsg:
         linear = _Linear()

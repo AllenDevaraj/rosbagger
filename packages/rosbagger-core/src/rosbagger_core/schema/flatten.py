@@ -171,7 +171,13 @@ def _is_data_column(col: ColumnDef) -> bool:
     return bool(col.ros_path)
 
 
-def flatten_message(msg, schema: TableSchema, *, include: set[str] | None = None) -> dict:
+def flatten_message(
+    msg,
+    schema: TableSchema,
+    *,
+    include: set[str] | None = None,
+    restrict: set[str] | None = None,
+) -> dict:
     """Extract ``{dotted_col_name: value}`` for a message's body columns.
 
     Walks the schema's **data** columns (those with a non-empty ``ros_path`` —
@@ -182,15 +188,33 @@ def flatten_message(msg, schema: TableSchema, *, include: set[str] | None = None
     ``numpy.ndarray`` and are passed through unchanged (NOT ``.tolist()``'d —
     Pitfall 2) for ``pyarrow`` to ingest directly.
 
-    Heavy byte blobs (``is_heavy_blob``) are omitted unless their dotted ``name``
-    is in ``include`` (the QURY-07 lazy seam, keyed on the dotted column name —
-    research Open Question 2). The standard columns are never part of the body
-    extraction; ``build_arrow_table`` sources them from the ``Message`` record.
+    Two orthogonal, ANDed name-set filters select which data columns are read:
+
+    * ``include`` — heavy byte blobs (``is_heavy_blob``) are omitted unless their
+      dotted ``name`` is in ``include`` (the QURY-07 lazy seam, keyed on the
+      dotted column name — research Open Question 2).
+    * ``restrict`` — the QURY-09 **projection** filter (column projection
+      pushdown, D-06). When it is a set, a data column whose ``name`` is NOT in
+      it is never iterated, so its ``reduce(getattr, col.ros_path, msg)`` **never
+      runs** — that skipped read is the literal "pushdown" (an unreferenced /
+      heavy value is never read off the message). When ``restrict=None`` (the
+      default), every data column is extracted exactly as today.
+
+    The two filters compose (AND): a heavy blob must be in ``include`` AND (if
+    ``restrict`` is set) in ``restrict`` to be read. The four standard columns are
+    never part of the body extraction (``build_arrow_table`` sources them from the
+    ``Message`` record); D-07's "standard columns always materialized" guarantee
+    is enforced upstream by the orchestrator unioning them into ``restrict``
+    (Plan 10-03), not here. The per-topic over-include applied on JOIN ambiguity
+    (D-09) is likewise the orchestrator's job.
 
     Args:
         msg: a deserialized ``rosbags`` message object (the ``Message.msg`` body).
         schema: the :class:`TableSchema` for this topic (its columns drive the walk).
         include: dotted column names of heavy blobs to re-include (default: none).
+        restrict: dotted column names to materialize; ``None`` (default) keeps
+            every column (today's behavior). A data column absent from a non-None
+            ``restrict`` has its value-read SKIPPED — the pushdown.
 
     Returns:
         A dict mapping each extracted column's dotted name to its raw value.
@@ -199,7 +223,9 @@ def flatten_message(msg, schema: TableSchema, *, include: set[str] | None = None
     return {
         col.name: reduce(getattr, col.ros_path, msg)
         for col in schema.columns
-        if _is_data_column(col) and (not col.is_heavy_blob or col.name in allowed)
+        if _is_data_column(col)
+        and (not col.is_heavy_blob or col.name in allowed)
+        and (restrict is None or col.name in restrict)
     }
 
 
@@ -208,6 +234,7 @@ def build_arrow_table(
     schema: TableSchema,
     *,
     include: set[str] | None = None,
+    restrict: set[str] | None = None,
 ) -> pa.Table:
     """Build a typed ``pyarrow.Table`` for one topic from a stream of Messages.
 
@@ -216,7 +243,8 @@ def build_arrow_table(
     per-column value lists, then builds each column array with its explicit
     ``ColumnDef.arrow_type`` (``pa.array(values, type=...)`` — never inferred, so
     an empty ``SEQUENCE`` cannot destabilize the type; Pitfall 1) and assembles a
-    ``pyarrow.Table`` whose schema is exactly ``schema.arrow_schema(include=include)``.
+    ``pyarrow.Table`` whose schema is exactly
+    ``schema.arrow_schema(include=include, restrict=restrict)``.
 
     Column sourcing:
 
@@ -227,24 +255,42 @@ def build_arrow_table(
     * Data columns come from :func:`flatten_message` (ndarrays passed straight
       through — Pitfall 2).
 
-    Heavy byte blobs are skipped unless named in ``include`` (the QURY-07 lazy
-    seam Phase 5 drives from parsed SQL). A zero-message stream still returns a
-    Table carrying the full typed schema (RESEARCH §7).
+    Two orthogonal, ANDed filters select the materialized columns:
 
-    Does NOT ``import duckdb`` or run SQL — it emits backend-neutral Arrow that
-    Phase 5 registers zero-copy.
+    * ``include`` — heavy byte blobs are skipped unless named here (the QURY-07
+      lazy seam Phase 5 drives from parsed SQL).
+    * ``restrict`` — the QURY-09 **projection** filter (column projection
+      pushdown, D-06). When it is a set, only columns whose dotted ``name`` is in
+      it are materialized; :func:`flatten_message` SKIPS the value-read for the
+      rest (the pushdown). ``restrict=None`` (the default) materializes every
+      non-heavy column exactly as today. The single ``restrict`` value is threaded
+      into BOTH ``schema.arrow_schema(...)`` (so the kept-column set + the value
+      arrays are driven by the same single source of truth and cannot drift) AND
+      :func:`flatten_message` (so the skipped read actually happens). The four
+      standard columns' always-present guarantee (D-07) and the per-topic
+      over-include on JOINs (D-09) are the orchestrator's job (Plan 10-03), folded
+      into the ``restrict`` set it passes — not hard-coded here.
+
+    A zero-message stream still returns a Table carrying the (filtered) typed
+    schema (RESEARCH §7). Does NOT ``import duckdb`` or run SQL — it emits
+    backend-neutral Arrow that Phase 5 registers zero-copy.
 
     Args:
         messages: an iterable of ``Message`` records (consumed once).
         schema: the :class:`TableSchema` for this topic.
         include: dotted column names of heavy blobs to materialize (default: none).
+        restrict: dotted column names to materialize; ``None`` (default) keeps
+            every non-heavy column (today's behavior). Composed (ANDed) with
+            ``include``.
 
     Returns:
-        A ``pyarrow.Table`` matching ``schema.arrow_schema(include=include)``.
+        A ``pyarrow.Table`` matching
+        ``schema.arrow_schema(include=include, restrict=restrict)``.
     """
-    arrow_schema = schema.arrow_schema(include=include)
+    arrow_schema = schema.arrow_schema(include=include, restrict=restrict)
     # The kept columns, in declared order, are exactly the fields of arrow_schema
-    # (it applies the same heavy-blob filter) — drive off it to stay in lockstep.
+    # (it applies the same composed include+restrict filter) — drive off it to
+    # stay in lockstep (single source of truth for the kept-column set).
     kept = [col for col in schema.columns if col.name in arrow_schema.names]
     # This name-keyed dict relies on the UNIQUE-NAME invariant build_table_schema
     # guarantees (WR-01 fix): colliding body columns are pre-renamed there, so no
@@ -254,7 +300,7 @@ def build_arrow_table(
     values: dict[str, list] = {col.name: [] for col in kept}
 
     for msg in messages:
-        body = flatten_message(msg.msg, schema, include=include)
+        body = flatten_message(msg.msg, schema, include=include, restrict=restrict)
         for col in kept:
             # Data columns come from the message body; the standard columns
             # (empty ros_path) come off the Message record by the same name.
