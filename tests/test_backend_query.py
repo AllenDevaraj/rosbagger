@@ -47,8 +47,13 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import make_all_fixtures  # noqa: E402  (after sys.path setup)
 
+from rosbagger_core.backend.base import QueryBackend  # noqa: E402
 from rosbagger_core.backend.duckdb_backend import DuckDBBackend  # noqa: E402  (3rd-party)
-from rosbagger_core.backend.query import UnknownTableError, query  # noqa: E402
+from rosbagger_core.backend.query import (  # noqa: E402
+    UnknownColumnError,
+    UnknownTableError,
+    query,
+)
 from rosbagger_core.reader import RosbagsReader  # noqa: E402
 
 FORMATS = ("ros1", "ros2_sqlite", "ros2_mcap")
@@ -264,3 +269,76 @@ def test_import_backend_package_does_not_pull_heavy_stack() -> None:
     )
     leaked = [m for m in result.stdout.strip().split(",") if m]
     assert leaked == [], f"import rosbagger_core.backend leaked the heavy stack: {leaked}"
+
+
+# ---------------------------------------------------------------------------
+# QURY-08 — alias expansion wired into query() (Plan 10-03 Task 1 / SC1).
+#
+# The /cmd_vel fixture is geometry_msgs/msg/Twist, whose pack maps `vx`->`linear.x`
+# (the shallowest velocity path). These prove the alias half end-to-end: the short
+# token is expanded BEFORE resolution (D-02), gated to the single-base-topic case
+# (Open Q1), the `alias=False` escape hatch threads through, and the REWRITTEN SQL
+# (output aliases preserved) is what reaches the backend.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_query_alias_vx_resolves_end_to_end(fixture_bags: dict[str, Path], fmt: str) -> None:
+    """SC1: `SELECT vx FROM cmd_vel` returns the linear.x series across all 3 formats.
+
+    Proves `vx` expanded to the Twist `linear.x` dotted column and the query ran:
+    the fixture's linear.x series is (0.0, 1.0, 2.0).
+    """
+    with RosbagsReader(fixture_bags[fmt]) as reader:
+        result = query("SELECT vx FROM cmd_vel", reader)
+    # The expanded column surfaces under its dotted name `linear.x`.
+    assert result.column("linear.x").to_pylist() == [0.0, 1.0, 2.0]
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_query_alias_disabled_raises_unknown_column(
+    fixture_bags: dict[str, Path], fmt: str
+) -> None:
+    """`alias=False` disables expansion, so `vx` (not a real column) is rejected.
+
+    With expansion off the rewritten tree is unchanged, so DuckDB's binder sees the
+    bare `vx` token and raises — surfaced as the typed UnknownColumnError teaching
+    path. Proves the `--no-alias`/`alias=False` flag threads through query().
+    """
+    with (
+        RosbagsReader(fixture_bags[fmt]) as reader,
+        pytest.raises(UnknownColumnError),
+    ):
+        query("SELECT vx FROM cmd_vel", reader, alias=False)
+
+
+def test_query_alias_join_no_op_leaves_short_token_untouched(
+    fixture_bags: dict[str, Path],
+) -> None:
+    """A JOIN of two distinct base topics is OUTSIDE the single-base-topic gate.
+
+    `vx` resolves on the Twist /cmd_vel topic, but with a second base topic (/imu)
+    referenced, the gate skips expansion (Open Q1) — so the unqualified `vx` is left
+    untouched and DuckDB's binder rejects it (UnknownColumnError). This pins the
+    no-expansion-on-multi-topic safety property that protects the existing JOIN test.
+    """
+    sql = "SELECT vx FROM cmd_vel AS c JOIN imu AS i ON c.t_ns = i.t_ns"
+    with (
+        RosbagsReader(fixture_bags["ros2_sqlite"]) as reader,
+        pytest.raises(UnknownColumnError),
+    ):
+        query(sql, reader)
+
+
+def test_query_alias_rewritten_sql_preserves_output_alias(
+    fixture_bags: dict[str, Path],
+) -> None:
+    """The REWRITTEN SQL is forwarded: `vx AS speed` keeps `speed` as the output name.
+
+    `vx` (an exp.Column) expands to `"linear.x"`; `speed` (an exp.Alias) is untouched
+    — so the result column is named `speed` (D-02 forwards `tree.sql("duckdb")`).
+    """
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader:
+        result = query("SELECT vx AS speed FROM cmd_vel", reader)
+    assert result.schema.names == ["speed"]
+    assert result.column("speed").to_pylist() == [0.0, 1.0, 2.0]
