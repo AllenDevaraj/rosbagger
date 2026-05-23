@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: executing
-stopped_at: Phase 13 — 13-03 BUILT (live front door + sink + CLI + SC1 test); SC1 live lane pending orchestrator run
-last_updated: "2026-05-23T21:00:51.587Z"
+status: ready_to_plan
+stopped_at: Phase 13 complete (3/3) — ready to discuss Phase 14
+last_updated: 2026-05-23T21:13:50.811Z
 last_activity: 2026-05-23
 progress:
   total_phases: 14
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 13 — live-replay
+**Current focus:** Phase 14 — gui
 
 ## Current Position
 
-Phase: 13 (live-replay) — 13-03 BUILT (live SC1 lane pending orchestrator run)
-Plan: 3 of 3 (13-01/13-02/13-03 all built)
-Status: Offline tier green; REP-01 live SC1 proof pending the ROS-sourced lane (orchestrator must run it — W4)
+Phase: 14
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-23
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 37
+- Total plans completed: 40
 - Average duration: ~5 min
 - Total execution time: ~1.1 hours
 
@@ -57,6 +57,7 @@ Progress: [██████████] 100%
 | 10 | 4 | - | - |
 | 11 | 4 | - | - |
 | 12 | 3 | - | - |
+| 13 | 3 | - | - |
 
 **Recent Trend:**
 
