@@ -20,12 +20,13 @@ Query and understand the data inside any ROS bag from one command — without wr
 - [x] Resolve referenced topics from the SQL (sqlglot) and load only those — *Validated in Phase 5 (QURY-05): sqlglot resolver + connection-filtered `read(topics=)`*
 - [x] Export query results to CSV and Parquet; minimal `--plot` — *Validated in Phase 6 (OUT-01..04): `bagq query` stdout table + CSV/Parquet via DuckDB COPY + headless `--plot`*
 - [x] Teaching errors: unknown table/column → suggestions; unresolvable custom msg → registration guidance — *Validated in Phase 7 (CLI-01..04): `bagq` CLI + did-you-mean / column listing / msg-registration guidance, clean Exit(1)*
+- [x] Offline TF dropout/timeline report from `/tf` + `/tf_static` — *Validated in Phase 9 (TF-01): `bagq tf` + `rosbagger_core.tf.collect_tf_report` — parent→child graph + per-edge median×multiplier gap detection, rich table + `--format json`, 274 ROS-free tests across ROS 1 / ROS 2 sqlite3 / MCAP*
 
 ### Active
 
-<!-- v1 = rosbagger-core + bagq. Hypotheses until shipped. -->
+<!-- v0.2 "Modular cockpit" (Phases 9–14). Hypotheses until shipped. -->
 
-- *(none — all v1 feature requirements validated; Phase 8 = packaging, docs & release)*
+- *v0.2 "Modular cockpit" milestone in progress — Phase 9 (TF debugger) ✓ validated above; Phases 10–14 pending (query ergonomics, edit/events, live record/replay, GUI).*
 
 ### Out of Scope
 
@@ -81,4 +82,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 — **v0.1 MILESTONE COMPLETE** (all 8 phases). `bagq` v0.1.0 ships: read ROS1/ROS2/MCAP → inspect → SQL-query via DuckDB → export CSV/Parquet/plot, with errors that teach — all with no ROS install. 255 ROS-free tests at ~98% coverage; pip-installable; MIT-licensed; `v0.1.0` tagged locally. Sole remaining maintainer step: `git push origin main && git push origin v0.1.0` + confirm CI green (no push credential in the build environment). Next milestones (deferred): TF debugger, live record/replay, GUI.*
+*Last updated: 2026-05-23 — **v0.2 "Modular cockpit" — Phase 9 (TF Debugger) complete.** `bagq tf` ships: load `/tf` + `/tf_static` → build the parent→child transform graph → report per-edge dropouts on a timeline (median×multiplier, `--gap-multiplier`/`--gap-ms`), rich table + `--format json`, no ROS install. 274 ROS-free tests at ~98% coverage across ROS 1 / ROS 2 sqlite3 / MCAP. Code review logged 4 non-blocking warnings (see `09-REVIEW.md`). Remaining v0.2 phases: 10 query-ergonomics, 11–14 edit/events, live record/replay, GUI.*
+*v0.1 (complete, all 8 phases): `bagq` v0.1.0 — read ROS1/ROS2/MCAP → inspect → SQL via DuckDB → export CSV/Parquet/plot, errors that teach, no ROS install; pip-installable, MIT, `v0.1.0` tagged locally. **Standing maintainer step:** `git push origin main && git push origin v0.1.0` + confirm CI green (no push credential in the build environment).*
