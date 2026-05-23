@@ -32,6 +32,7 @@ override (it is a run-time prefix only, never committed code).
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -342,6 +343,91 @@ def test_query_alias_rewritten_sql_preserves_output_alias(
         result = query("SELECT vx AS speed FROM cmd_vel", reader)
     assert result.schema.names == ["speed"]
     assert result.column("speed").to_pylist() == [0.0, 1.0, 2.0]
+
+
+# ---------------------------------------------------------------------------
+# WR-01 — the user's RAW SQL is forwarded VERBATIM unless alias expansion ran.
+#
+# Phase 5's trusted-SQL-as-is boundary (T-05-04) means a query that triggers NO
+# alias rewrite must reach the backend BYTE-FOR-BYTE — never round-tripped through
+# sqlglot's renderer (which rewrites surface syntax, e.g. `x::INTEGER` ->
+# `CAST(x AS INT)`). These observe the EXACT string handed to `backend.execute`
+# via a recording spy (the existing `backend=` seam), proving:
+#   * a `--no-alias` query is executed verbatim (no sqlglot normalization), and
+#   * an alias-EXPANDED query DOES forward the re-rendered (dotted) SQL.
+# `t_ns` is a real standard column, so `SELECT t_ns::INTEGER FROM cmd_vel` runs for
+# real; sqlglot would re-render `::INTEGER` to `CAST(... AS INT)` if the orchestrator
+# normalized it — so an unchanged capture is a sharp proof of verbatim forwarding.
+# ---------------------------------------------------------------------------
+
+
+class _SQLCapturingBackend(QueryBackend):
+    """A QueryBackend spy that records the EXACT SQL string passed to `execute`.
+
+    Wraps a real DuckDBBackend so the query runs end-to-end (register/execute/close
+    forward), while capturing every string handed to `execute` in `executed_sql`.
+    The WR-01 assertions read `executed_sql[-1]` — the literal text query() forwarded
+    to the backend, NOT a value re-derived in the test.
+    """
+
+    def __init__(self) -> None:
+        self._inner = DuckDBBackend()
+        self.executed_sql: list[str] = []
+
+    def register_table(self, name: str, table: object) -> None:
+        self._inner.register_table(name, table)
+
+    def execute(self, sql: str) -> object:
+        self.executed_sql.append(sql)  # the capture — the WR-01 proof reads this
+        return self._inner.execute(sql)
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+def test_query_no_alias_forwards_raw_sql_verbatim(fixture_bags: dict[str, Path]) -> None:
+    """WR-01: `alias=False` forwards the user's SQL byte-for-byte (no sqlglot re-render).
+
+    `SELECT t_ns::INTEGER FROM cmd_vel` would re-render to
+    `SELECT CAST(t_ns AS INT) FROM cmd_vel` if normalized through sqlglot. With the
+    raw-SQL fallback, the spy captures the ORIGINAL `::INTEGER` text unchanged — the
+    `--no-alias` escape hatch is a true verbatim bypass again.
+    """
+    raw = "SELECT t_ns::INTEGER FROM cmd_vel"
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader, _SQLCapturingBackend() as spy:
+        query(raw, reader, alias=False, backend=spy)
+    assert spy.executed_sql == [raw]  # exact string forwarded — no round-trip
+    assert "CAST" not in spy.executed_sql[-1]  # NOT the sqlglot-normalized form
+
+
+def test_query_no_op_alias_forwards_raw_sql_verbatim(fixture_bags: dict[str, Path]) -> None:
+    """WR-01: a query that triggers NO expansion (default `alias=True`) is also verbatim.
+
+    `SELECT t_ns::INTEGER FROM cmd_vel` references no alias token, so even with the
+    alias pack enabled nothing is rewritten — the SQL-comparison signal reads "no
+    change" and the raw string is forwarded unchanged (not the `CAST(... AS INT)`
+    round-trip). This pins the default no-match path, not just `--no-alias`.
+    """
+    raw = "SELECT t_ns::INTEGER FROM cmd_vel"
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader, _SQLCapturingBackend() as spy:
+        query(raw, reader, backend=spy)  # alias=True default; no alias token present
+    assert spy.executed_sql == [raw]
+    assert "CAST" not in spy.executed_sql[-1]
+
+
+def test_query_alias_expansion_forwards_rewritten_sql(fixture_bags: dict[str, Path]) -> None:
+    """WR-01 (other side): when an alias IS expanded, the REWRITTEN SQL is forwarded.
+
+    `SELECT vx FROM cmd_vel` expands `vx` -> `"linear.x"`, so the string reaching the
+    backend is the re-rendered tree carrying the dotted column — NOT the original
+    `vx`. This confirms the fix preserves the alias path (D-02): expansion still
+    re-renders, only the no-expansion paths fall back to verbatim.
+    """
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader, _SQLCapturingBackend() as spy:
+        query("SELECT vx FROM cmd_vel", reader, backend=spy)
+    forwarded = spy.executed_sql[-1]
+    assert '"linear.x"' in forwarded  # the expanded dotted column reached the backend
+    assert re.search(r"\bvx\b", forwarded) is None, forwarded  # no bare alias survives
 
 
 # ---------------------------------------------------------------------------

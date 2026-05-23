@@ -125,14 +125,21 @@ def query(
     (Open Q1) → recompute ``referenced_tables``/``referenced_columns``/``has_star``
     on the (possibly rewritten) tree → load only referenced topics, materializing
     per-topic ``include`` (heavy-blob) ∧ ``restrict`` (projection) column sets →
-    forward the REWRITTEN SQL (``tree.sql("duckdb")``) to ``backend.execute``.
+    forward SQL to ``backend.execute``: the user's RAW string VERBATIM, unless alias
+    expansion actually rewrote the tree, in which case the re-rendered
+    ``tree.sql("duckdb")`` is sent so the expanded dotted columns reach DuckDB (WR-01
+    — the no-expansion path, including ``--no-alias``, keeps the Phase 5 trusted-SQL-
+    as-is boundary rather than round-tripping through sqlglot's renderer).
 
     Args:
-        sql: the user's SQL — the trusted interface. The orchestrator NEVER builds
-            SQL by string concatenation; when ``alias`` expands a short token it
-            does so inside the ``sqlglot`` AST (quoted identifiers) and forwards
-            ``tree.sql("duckdb")`` — the same trusted-SQL boundary as Phase 5
-            (threat T-05-04 / T-10-07), not an injection vector.
+        sql: the user's SQL — the trusted interface. It is forwarded to
+            ``backend.execute`` UNCHANGED unless an alias is expanded; the
+            orchestrator NEVER builds SQL by string concatenation. When ``alias``
+            expands a short token it does so inside the ``sqlglot`` AST (quoted
+            identifiers) and forwards the re-rendered ``tree.sql("duckdb")`` instead
+            — the same trusted-SQL boundary as Phase 5 (threat T-05-04 / T-10-07),
+            not an injection vector. With no expansion (``--no-alias`` or a no-match
+            query) the raw string round-trips verbatim (WR-01).
         reader: an ALREADY-OPEN ``BagReader`` (the caller owns the
             ``with RosbagsReader(...) as reader:`` lifecycle — Open Q2). Its
             ``topics``/``typestore`` drive table resolution and schema build.
@@ -196,16 +203,29 @@ def query(
     # msgtype and existence-gated on its schema column names. With zero or >1 base
     # topics (JOIN/CTE/multi-topic) OR `alias=False`, expansion is skipped (safe
     # no-op, A3 / Pitfall 2) so an ambiguous short token is left for DuckDB to reject.
+    #
+    # `expanded` (WR-01) tracks whether a rewrite ACTUALLY changed the SQL — Step 8
+    # forwards the user's RAW `sql` verbatim unless it did, restoring the Phase 5
+    # trusted-SQL-as-is boundary (T-05-04) for the `--no-alias` / no-match paths.
+    # `expand_aliases` always returns a NEW tree (`tree.transform` copies — D-01), so
+    # an `is`-identity check would ALWAYS read "changed"; instead we compare the
+    # rendered SQL before/after (the reviewer-sanctioned robust signal), which the
+    # alias path needs to render anyway. The existence-gate makes a no-resolving token
+    # a true no-op, so an unchanged render reliably means "nothing was expanded."
+    expanded = False
     if alias:
         base_tables = [t for t in referenced_tables_in(tree) if t in table_to_topic]
         if len(base_tables) == 1:
             only_table = base_tables[0]
             schema = schemas_by_table[only_table]
-            tree = expand_aliases(
+            before = tree.sql("duckdb")
+            new_tree = expand_aliases(
                 tree,
                 schema.msgtype,
                 {c.name for c in schema.columns},
             )
+            if new_tree.sql("duckdb") != before:  # a real rewrite occurred
+                tree, expanded = new_tree, True
 
     # Step 5 — derive tables / columns / star from the (possibly rewritten) tree
     # (D-02 — these MUST run after expansion so they see the expanded dotted names).
@@ -264,11 +284,16 @@ def query(
             arrow = build_arrow_table(msgs, schema, include=include, restrict=restrict)
             # Register under the SANITIZED table name — the name the SQL references.
             backend.register_table(topic_to_table[topic], arrow)
-        # Step 8 — forward the REWRITTEN SQL (`tree.sql("duckdb")`, D-02): when alias
-        # expansion ran, `tree` carries the expanded dotted columns, so the regenerated
-        # SQL is what must reach DuckDB; when it did not, `tree` is the parsed original,
-        # so this round-trips the user's SQL unchanged. The string is sqlglot-rendered
-        # from the AST (never hand-concatenated), preserving the trusted-SQL boundary
+        # Step 8 — forward the SQL to the backend. WR-01: forward the user's RAW `sql`
+        # VERBATIM unless alias expansion actually rewrote the tree (`expanded`). Only
+        # the alias path round-trips through sqlglot's renderer (`tree.sql("duckdb")`),
+        # because there the rewritten dotted columns MUST reach DuckDB; the `--no-alias`
+        # path and any no-op-expansion default path send the original string unchanged,
+        # restoring the Phase 5 "trusted SQL as-is" boundary (T-05-04) — sqlglot does
+        # rewrite some surface syntax (`x::INT` -> `CAST(x AS INT)`, `list_value(...)` ->
+        # `[...]`), so a `--no-alias` escape hatch that re-renders is not a true verbatim
+        # bypass. When expansion DID run the string is sqlglot-rendered from the AST
+        # (never hand-concatenated), preserving the same trusted-SQL boundary
         # (T-05-04 / T-10-07). An unknown column surfaces as duckdb.BinderException;
         # catch it by TYPE (robust), then NARROW to the unknown-column case by message
         # before re-mapping (CR-01). duckdb.BinderException is NOT specific to unknown
@@ -278,15 +303,26 @@ def query(
         # carrying the referenced tables' columns (CLI-03). On a NON-match
         # (GROUP BY/HAVING/other), re-raise the ORIGINAL BinderException unchanged so the
         # real DuckDB error surfaces verbatim. The catch inspects the EXCEPTION, not the
-        # SQL string, so forwarding the rewritten SQL does not affect it. duckdb is
+        # SQL string, so which SQL string is forwarded does not affect it. duckdb is
         # imported LAZILY here — already pulled in via _default_backend(), but the explicit
         # import keeps the module top stdlib-light (offline; 07-RESEARCH §2 / Pitfall 6).
+        final_sql = tree.sql("duckdb") if expanded else sql
         try:
-            return backend.execute(tree.sql("duckdb"))
+            return backend.execute(final_sql)
         except duckdb_binder_exception() as e:
             m = _BINDER_COL.search(str(e))
             if m is None:
                 raise  # not an unknown-column error (e.g. GROUP BY/HAVING) — surface as-is
+            # INVARIANT (WR-03): `columns_by_table` advertises each table's FULL schema
+            # columns, but the registered relations carry only the PROJECTED subset
+            # (`restrict`). This listing stays complete under projection pushdown because
+            # `restrict ⊇ (referenced columns ∩ schema)` — every non-star column the SQL
+            # references is unioned into that topic's `restrict` (Step 7, with the four
+            # standard columns; D-06/D-07). So any column the binder rejects is genuinely
+            # absent from the schema, NEVER merely projected away — the full-schema
+            # listing in UnknownColumnError can therefore never name a column the user
+            # "should" have been able to select. (If a future change lets the binder fire
+            # on a schema column excluded from `restrict`, revisit this coupling.)
             raise UnknownColumnError(m.group(1), columns_by_table) from e
     finally:
         # Own the lifecycle only for the default backend; a caller-supplied
