@@ -40,3 +40,25 @@ Scrubber {
 .replay-controls {
     height: auto;
 }
+
+/* Fix the Phase-14 blank-panel regression (GUI-01): InspectPanel and TfPanel extend a
+   bare textual.widget.Widget with no intrinsic height, so Textual lays them out at
+   height 0 and their populated DataTables render invisible. QueryPanel renders only
+   because it extends Vertical, which flexes inside the `Horizontal { height: 1fr }`
+   shell. Give the two bare-Widget panels a fill height (mirroring the type-selector
+   `Scrubber` rule above) so they fill the ContentSwitcher instead of collapsing. */
+InspectPanel,
+TfPanel {
+    height: 1fr;
+    width: 1fr;
+}
+
+/* The two panels each stack a Static header + two DataTables. A bare `height: 1fr` on
+   the panel leaves the tables at their default `height: auto` (content-sized); give the
+   panels' DataTables a flexing share so #bag-info/#table-schemas and #tf-edges/#tf-gaps
+   are both visible. Descendant selector (scoped to these two panels only) so the Static
+   header stays auto-height and the working QueryPanel layout is untouched. */
+InspectPanel DataTable,
+TfPanel DataTable {
+    height: 1fr;
+}
