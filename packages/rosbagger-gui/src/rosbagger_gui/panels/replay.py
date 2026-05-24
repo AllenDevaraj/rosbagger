@@ -209,8 +209,24 @@ class ReplayPanel(Widget):
         elif event.button.id == "replay-step":
             self._step()
 
+    def _drive_running(self) -> bool:
+        """True while a ``replay-run`` drive worker is mid-flight (WR-06 guard).
+
+        The pure ``Replayer`` is a non-thread-safe state machine and the drive worker is
+        ``exclusive=True`` — issuing a second Play/Step while ``run()`` executes on the
+        worker thread would (a) cancel the in-flight playback worker and (b) mutate
+        ``self._state`` from the UI thread while ``run()`` reads it on the worker thread,
+        an undefined interleaving. So Play/Step are only issued BETWEEN run segments: a
+        control pressed while a worker runs is ignored with a teaching status. Pause is
+        still allowed (it asks the running loop to stop at the next boundary).
+        """
+        return any(w.group == "replay-run" and w.is_running for w in self.workers)
+
     def _play(self) -> None:
         """Resume publishing from the held cursor (-> PLAYING) and (re)start the worker."""
+        if self._drive_running():
+            self._show_status("Already playing — pause before issuing a new control.")
+            return
         if not self._ensure_transport():
             return
         self._replayer.play()  # type: ignore[union-attr]
@@ -226,6 +242,9 @@ class ReplayPanel(Widget):
 
     def _step(self) -> None:
         """Arm a single-step (publish exactly one item then re-pause, D-09) + run once."""
+        if self._drive_running():
+            self._show_status("Pause before stepping (a play worker is running).")
+            return
         if not self._ensure_transport():
             return
         self._replayer.step()  # type: ignore[union-attr]
