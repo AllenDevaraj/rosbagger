@@ -20,7 +20,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 7: CLI & Teaching Errors** - `bagq query` end-to-end with helpful errors (completed 2026-05-22)
 - [x] **Phase 8: Packaging, Docs & Release** - pip-installable v0.1, offline imports (completed 2026-05-22)
 
-### Milestone v0.2 — Modular cockpit (TF · ergonomics · edit · live · GUI)
+### Milestone v0.2 — Modular cockpit (TF · ergonomics · edit · live · GUI · release)
 
 - [x] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand) (completed 2026-05-22)
 - [x] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown (completed 2026-05-23)
@@ -28,6 +28,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 12: Live Record** - live topic discovery + select recording (rclpy) (completed 2026-05-23)
 - [x] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy) (completed 2026-05-23)
 - [x] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI) (completed 2026-05-24)
+- [ ] **Phase 15: Packaging & Release v0.2** - git/path-installable packages + coherent v0.2.0 versions + per-package install docs (no index publish)
 
 ## Phase Details
 
@@ -396,3 +397,21 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 12. Live Record | 3/3 | Complete    | 2026-05-23 |
 | 13. Live Replay | 3/3 | Complete    | 2026-05-23 |
 | 14. GUI | 7/7 | Complete    | 2026-05-24 |
+
+### Phase 15: Packaging & Release v0.2
+
+**Goal**: Make the v0.2 packages installable into OTHER repos via git+subdirectory and path dependencies — **no PyPI / index publish** (decision: git/path install only). Today the inter-package deps (bare names like `rosbagger-core`) only resolve through the monorepo root `[tool.uv.sources] workspace = true`; outside the repo they don't resolve, so a consuming project can't install them. This phase closes that gap and ships coherent v0.2.0 versions with per-package install docs — the v0.2 equivalent of Phase 8's v0.1 release work, covering the four packages Phase 8 didn't (`rosbagger-record`, `rosbagger-replay`, `rosbagger-gui`, plus a `bagq`/`rosbagger-core` version bump).
+**Depends on**: Phase 14
+**Requirements**: (Definition of Done — git/path-installable packages, coherent versioning, install docs; infrastructure phase like Phase 8, no new REQ-ID)
+**Success Criteria** (what must be TRUE):
+
+  1. Each distributable package builds a wheel via `uv build` (core, bagq, record, replay, gui)
+  2. A fresh EXTERNAL venv installs the packages from git+subdirectory / path specs with `rosbagger-core` resolving by spec (not the workspace source) — proven by `rosbagger-gui --help` + `import rosbagger_gui` working outside the monorepo
+  3. Per-package install + usage docs exist (git+subdirectory and `[tool.uv.sources]` git/path snippets), including that the GUI's live record/replay panels need `rosbagger-record` / `rosbagger-replay` installed alongside (lazy-imported, not declared deps; consider a `gui` extra)
+  4. Versions are coherent at v0.2.0 across all packages (+ re-locked `uv.lock`)
+  5. Offline-import invariant + ROS-free core intact; full offline test suite + offline guard still green
+
+**Plans:** 0 plans (not yet planned)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 15 to break down)

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: milestone_complete
-stopped_at: Milestone complete (Phase 14 was final phase)
-last_updated: 2026-05-24T06:55:15.905Z
+status: in_progress
+stopped_at: Phase 15 (Packaging & Release v0.2) added — not yet planned
+last_updated: 2026-05-24T18:55:00.000Z
 last_activity: 2026-05-24
 progress:
-  total_phases: 14
+  total_phases: 15
   completed_phases: 14
   total_plans: 42
   completed_plans: 42
-  percent: 100
+  percent: 93
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone complete
+**Current focus:** Phase 15 — Packaging & Release v0.2 (added, not yet planned)
 
 ## Current Position
 
-Phase: 14
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-24 - Completed quick task 260524-hg7: Fix Inspect/TF GUI panels rendering blank
+Phase: 15
+Plan: Not planned yet
+Status: Phase 15 added — run /gsd-plan-phase 15
+Last activity: 2026-05-24 - Added Phase 15 (Packaging & Release v0.2) to roadmap
 
-Progress: [██████████] 100%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -113,6 +113,10 @@ Progress: [██████████] 100%
 | Phase 14 P07 | ~4min | 2 tasks | 5 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 15 added (2026-05-24): Packaging & Release v0.2 — make the v0.2 packages git/path-installable into other repos (no index publish; user decision). The v0.2 milestone reopened from "complete" to add this release phase, mirroring Phase 8's v0.1 release work for the four packages Phase 8 didn't cover.
 
 ### Decisions
 
