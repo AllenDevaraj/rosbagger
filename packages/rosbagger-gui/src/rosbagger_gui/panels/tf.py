@@ -98,9 +98,7 @@ class TfPanel(Widget):
             raw = (report.end_ns - report.start_ns) / 1e9
             span_s = raw if raw > 0 else None
         span_clause = f" over {span_s:.2f}s" if span_s else ""
-        status.update(
-            f"{n_dynamic} dynamic edges, {n_static} static edges{span_clause}"
-        )
+        status.update(f"{n_dynamic} dynamic edges, {n_static} static edges{span_clause}")
 
         # Per-edge summary: one row per TfReport.edges entry (mirror bagq tf columns).
         edges_table.clear(columns=True)

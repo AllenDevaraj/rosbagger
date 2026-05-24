@@ -82,12 +82,9 @@ class InspectPanel(Widget):
         schemas = collect_table_schemas(reader)
 
         # Whole-bag header line (presentation formatting only — no new analysis).
-        duration = (
-            f"{info.duration_ns / 1e9:.2f}s" if info.duration_ns is not None else _EM_DASH
-        )
+        duration = f"{info.duration_ns / 1e9:.2f}s" if info.duration_ns is not None else _EM_DASH
         header.update(
-            f"duration: {duration} · {info.message_count} messages · "
-            f"{_human_size(info.size_bytes)}"
+            f"duration: {duration} · {info.message_count} messages · {_human_size(info.size_bytes)}"
         )
 
         # Per-topic overview: one row per BagInfo.topics entry.
@@ -103,6 +100,4 @@ class InspectPanel(Widget):
         for schema in schemas:
             for col in schema.columns:
                 marker = "lazy (blob)" if col.is_heavy_blob else ""
-                schemas_table.add_row(
-                    schema.table_name, col.name, str(col.arrow_type), marker
-                )
+                schemas_table.add_row(schema.table_name, col.name, str(col.arrow_type), marker)
