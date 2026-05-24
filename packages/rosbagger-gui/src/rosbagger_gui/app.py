@@ -131,7 +131,15 @@ class RosbaggerApp(App):
         switcher = self.query_one("#content", ContentSwitcher)
         active = switcher.current
         if active is not None:
-            self.query_one(f"#{active}").refresh()
+            panel = self.query_one(f"#{active}")
+            # Panels expose refresh_view() to re-READ the new shared reader (a plain
+            # .refresh() only re-renders the existing data); call it when present so
+            # a bag switch repopulates the active panel from core (D-05/D-07).
+            refresh_view = getattr(panel, "refresh_view", None)
+            if callable(refresh_view):
+                refresh_view()
+            else:
+                panel.refresh()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Sidebar selection drives the ContentSwitcher (D-01).
