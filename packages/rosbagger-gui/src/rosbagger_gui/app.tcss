@@ -1,0 +1,27 @@
+/* rosbagger-gui shell layout (D-01) + disabled-live dim styling (D-03).
+   The App is a Horizontal of a fixed-width sidebar ListView and a flexing
+   ContentSwitcher; disabled (ROS-absent) live nav items + panels render dim. */
+
+Horizontal {
+    height: 1fr;
+}
+
+#sidebar {
+    width: 24;
+    border-right: solid $primary;
+}
+
+#content {
+    width: 1fr;
+    padding: 1 2;
+}
+
+/* Capability gate (D-03): a disabled live nav item / panel reads as dim so the
+   teaching hint is visibly inert rather than clickable. */
+ListItem:disabled {
+    color: $text-disabled;
+}
+
+#content > :disabled {
+    color: $text-disabled;
+}
