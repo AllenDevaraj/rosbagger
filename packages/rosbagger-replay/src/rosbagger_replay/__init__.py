@@ -40,6 +40,7 @@ __all__ = [
     "ReplayItem",
     "Replayer",
     "RosNotAvailableError",
+    "build_publish_sink",
     "load_items",
     "replay",
     "replay_bag",
@@ -78,6 +79,23 @@ def replay(*args: object, **kwargs: object) -> object:
     from .replay import replay as _replay
 
     return _replay(*args, **kwargs)
+
+
+def build_publish_sink(*args: object, **kwargs: object) -> object:
+    """Build the single rclpy publish sink shared by ``replay()`` and the GUI (D-09a).
+
+    Lazy front door: checks ROS availability (raising the teaching
+    :class:`RosNotAvailableError` when ROS is absent — D-12), then delegates to
+    :func:`rosbagger_replay.replay.build_publish_sink`, which does the heavy
+    ``rclpy.serialization`` / ``rosidl_runtime_py`` import inside its body. Keeping the
+    import behind ``_require_ros()`` is what lets ``import rosbagger_replay`` succeed
+    offline. The Phase-14 GUI imports the publish mechanics through THIS package front
+    door so there is exactly one production publish path — never a duplicated sink.
+    """
+    _require_ros()
+    from .replay import build_publish_sink as _build_publish_sink
+
+    return _build_publish_sink(*args, **kwargs)
 
 
 # Submodule-shadow-proof alias to the lazy front-door FUNCTION above.

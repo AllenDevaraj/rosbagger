@@ -36,6 +36,57 @@ from __future__ import annotations
 import contextlib
 
 
+def build_publish_sink(node):
+    """Build the single rclpy publish sink + its source-of-truth count dict (D-09a).
+
+    This is the ONE reusable publish-mechanics function shared by BOTH ``replay()``
+    (the run-to-completion CLI front door) and the Phase-14 GUI replay panel (which
+    drives the pure :class:`~rosbagger_replay.scheduler.Replayer` directly for live
+    play/pause/step/seek/rate/loop). Factoring the ~15-line sink out here keeps a
+    SINGLE production publish path — neither caller re-implements the
+    ``get_message`` -> ``create_publisher`` -> ``deserialize_message`` -> ``publish``
+    mechanics.
+
+    OFFLINE INVARIANT (D-03/D-12): the ``rclpy.serialization`` / ``rosidl_runtime_py``
+    imports live INSIDE this function body (never at module top), so importing
+    ``rosbagger_replay`` stays ROS-free; this function is only ever called behind the
+    package front door's ``_require_ros()`` guard.
+
+    Args:
+        node: an initialized ``rclpy`` node used to create the per-topic publishers.
+
+    Returns:
+        A ``(sink, published)`` pair where ``sink(item) -> None`` is the publish
+        closure the :class:`Replayer` drives and ``published`` is the ``{"n": 0}``
+        count dict (the WR-07 source-of-truth published-message counter).
+    """
+    from rclpy.serialization import deserialize_message
+    from rosidl_runtime_py.utilities import get_message
+
+    published = {"n": 0}
+    # topic -> (msg_cls, publisher); built lazily on first sight of each topic.
+    pubs: dict[str, tuple] = {}
+
+    def sink(item) -> None:
+        if item.topic not in pubs:
+            cls = get_message(item.msgtype)  # type string -> message class (VERIFIED)
+            # Sane default QoS (depth-10 RELIABLE VOLATILE) — Pitfall 4. Per-topic
+            # QoS override is a deferred enhancement (Phase 13 out of scope).
+            pubs[item.topic] = (cls, node.create_publisher(cls, item.topic, 10))
+        cls, pub = pubs[item.topic]
+        msg = deserialize_message(item.cdr, cls)  # raw CDR -> typed message (VERIFIED)
+        pub.publish(msg)  # any subscriber on the topic receives it (VERIFIED)
+        # WR-07: published["n"] is the SOURCE OF TRUTH for the returned count. The
+        # scheduler's own max_messages bound counts SINK INVOCATIONS, not this counter —
+        # the two cannot diverge today because the sink fires exactly once per scheduler
+        # publish (one increment per drive-loop publish). If a future sink ever filtered
+        # or dropped a message, this counter and the scheduler's bound would need to be
+        # reconciled (the bound would over-run); they agree only under the one-fire coupling.
+        published["n"] += 1
+
+    return sink, published
+
+
 def replay(
     bag_paths,
     *,
@@ -74,9 +125,9 @@ def replay(
     """
     # Lazy ROS imports (offline invariant — never at module top). The package front door
     # (__init__.replay) already called _require_ros(); these bind the sourced ROS distro.
+    # The publish mechanics (get_message/deserialize_message/create_publisher/publish) live
+    # in build_publish_sink — the SINGLE production publish path shared with the Phase-14 GUI.
     import rclpy
-    from rclpy.serialization import deserialize_message
-    from rosidl_runtime_py.utilities import get_message
 
     from .errors import NoMessagesToReplayError
     from .scheduler import Replayer
@@ -97,28 +148,10 @@ def replay(
     if created_ctx:
         rclpy.init()
     node = None
-    published = {"n": 0}
     try:
         node = rclpy.create_node("rosbagger_replayer")
-        # topic -> (msg_cls, publisher); built lazily on first sight of each topic.
-        pubs: dict[str, tuple] = {}
-
-        def sink(item) -> None:
-            if item.topic not in pubs:
-                cls = get_message(item.msgtype)  # type string -> message class (VERIFIED)
-                # Sane default QoS (depth-10 RELIABLE VOLATILE) — Pitfall 4. Per-topic
-                # QoS override is a deferred enhancement (Phase 13 out of scope).
-                pubs[item.topic] = (cls, node.create_publisher(cls, item.topic, 10))
-            cls, pub = pubs[item.topic]
-            msg = deserialize_message(item.cdr, cls)  # raw CDR -> typed message (VERIFIED)
-            pub.publish(msg)  # any subscriber on the topic receives it (VERIFIED)
-            # WR-07: published["n"] is the SOURCE OF TRUTH for the returned count. The
-            # scheduler's own max_messages bound counts SINK INVOCATIONS, not this counter —
-            # the two cannot diverge today because the sink fires exactly once per scheduler
-            # publish (one increment per drive-loop publish). If a future sink ever filtered
-            # or dropped a message, this counter and the scheduler's bound would need to be
-            # reconciled (the bound would over-run); they agree only under the one-fire coupling.
-            published["n"] += 1
+        # The SINGLE production publish sink (D-09a) — same mechanics the Phase-14 GUI drives.
+        sink, published = build_publish_sink(node)
 
         # The Replayer has NO `start` ctor param (W3): map the --start SECONDS offset onto
         # seek(t_offset_ns) (bag-relative NANOSECONDS) before playing.
