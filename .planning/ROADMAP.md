@@ -364,7 +364,7 @@ Plans:
 **Wave 2** *(blocked on 14-02)*
 
 - [x] 14-03-PLAN.md — Inspect panel over `collect_bag_info`/`collect_table_schemas` (D-05) + TF panel over `collect_tf_report` (D-07), thin DataTable renderers -> GUI-01
-- [ ] 14-04-PLAN.md — Query panel (D-06): SQL input + results DataTable over `query()`, schema/topic Tree click-to-insert, history/re-run, CSV/Parquet export over `write_table` -> GUI-01
+- [x] 14-04-PLAN.md — Query panel (D-06): SQL input + results DataTable over `query()`, schema/topic Tree click-to-insert, history/re-run, CSV/Parquet export over `write_table` -> GUI-01
 
 **Wave 3** *(blocked on 14-02; 14-06 also on 14-01)*
 
@@ -395,4 +395,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
 | 12. Live Record | 3/3 | Complete    | 2026-05-23 |
 | 13. Live Replay | 3/3 | Complete    | 2026-05-23 |
-| 14. GUI | 3/7 | In Progress|  |
+| 14. GUI | 4/7 | In Progress|  |
