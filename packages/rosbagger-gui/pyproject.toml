@@ -1,0 +1,29 @@
+# rosbagger-gui — the Textual TUI "cockpit": a thin face over the offline +
+# live module APIs (D-12, API-first). It is a uv WORKSPACE MEMBER, mirroring
+# rosbagger-replay's manifest shape (swap typer for textual).
+#
+# OFFLINE-IMPORT INVARIANT (D-03): this package declares NOTHING ROS. Its
+# offline panels (inspect/query/tf) drive rosbagger-core only; its live panels
+# (record/replay) LAZY-import the already-installed workspace siblings
+# (rosbagger-record / rosbagger-replay) inside method bodies in a later wave, so
+# `import rosbagger_gui` stays clean in the ROS-free uv venv. The ROS runtime is
+# environment-provided by a sourced ROS distro and never resolved by uv here.
+[project]
+name = "rosbagger-gui"
+version = "0.1.0"
+requires-python = ">=3.10"
+# ONLY rosbagger-core (the v1 reader contract the shared reader uses, resolved
+# via the root [tool.uv.sources] workspace source) and textual (the TUI face).
+# NOTHING ROS — the live panels lazy-import rosbagger_record / rosbagger_replay
+# as already-installed workspace siblings (D-03). The live sibling deps are
+# intentionally NOT declared so a ROS-free `uv sync` never tries to build them
+# (they pull the ROS runtime at runtime, not at install).
+dependencies = ["rosbagger-core", "textual>=8,<9"]
+
+[project.scripts]
+# cli.py exposes a plain main() launching RosbaggerApp(bag_path=...).run().
+rosbagger-gui = "rosbagger_gui.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

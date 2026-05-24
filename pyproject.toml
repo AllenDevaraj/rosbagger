@@ -22,6 +22,11 @@ dev = [
     "pytest-cov>=6",
     "rosbags>=0.11,<0.12",
     "matplotlib>=3.8",
+    # GUI test/dev tooling (slopcheck [OK]): pytest-asyncio drives the headless
+    # Textual App tests (Plan 14-07) via asyncio_mode="auto" below; textual-dev
+    # ships the `textual` devtools console for interactive panel work.
+    "pytest-asyncio>=0.23",
+    "textual-dev>=1,<2",
 ]
 
 # --- Lint + format (ruff): one tool for lint, isort, and format ---
@@ -36,6 +41,7 @@ src = [
     "packages/bagq/src",
     "packages/rosbagger-record/src",
     "packages/rosbagger-replay/src",
+    "packages/rosbagger-gui/src",
     "tools",
     "tests",
 ]
@@ -53,6 +59,11 @@ quote-style = "double"
 [tool.pytest.ini_options]
 addopts = "--cov=rosbagger_core --cov=bagq --cov-report=term-missing --cov-fail-under=80"
 testpaths = ["tests"]
+# pytest-asyncio in auto mode: the headless Textual App tests (Plan 14-07) are
+# `async def` and run via App.run_test() without per-test @pytest.mark.asyncio
+# markers. The GUI stays OUT of the coverage gate above (mirror Phase 13 D-12;
+# the TUI is near-zero pure logic by the thin-face rule).
+asyncio_mode = "auto"
 # The `live` marker tags the Phase-12 LIVE integration tests (tests/test_record_live.py,
 # Plan 03) that require a sourced ROS 2 environment (rclpy + rosbag2_py). They are
 # SKIPPED in the offline CI (gated by importorskip("rclpy")); registering the marker
