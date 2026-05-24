@@ -1,0 +1,192 @@
+"""Headless GUI proof tests (GUI-01 / SC1+SC2+SC3) — ROS-FREE in CI.
+
+This is the PROOF layer for the Textual cockpit (Phase 14). It drives the real
+``RosbaggerApp`` headlessly via ``App.run_test()`` / ``Pilot`` against a fixture bag
+written into ``tmp_path`` by the ROS-FREE ``tools.make_fixtures`` writer (the same
+writer the reader / query / tf suites use), and asserts the three GUI-01 success
+criteria become passing automated tests:
+
+* **SC1 — five panels exposed.** Launching ``RosbaggerApp`` exposes all five panels:
+  the five sidebar ``nav-*`` ids AND the five ``ContentSwitcher`` panel ids are all
+  queryable (``test_app_has_five_panels``).
+* **SC2 — capability-gating.** With ROS forced ABSENT (monkeypatch
+  ``rosbagger_gui._detect_ros`` → ``False`` so the assertion is meaningful on this
+  ROS-equipped dev box), the LIVE panels (record/replay) + their nav items are
+  ``disabled`` while the OFFLINE panels (inspect/query/tf) are NOT — and the offline
+  panels still WORK without ROS (``test_live_panels_disabled_without_ros``).
+* **SC3 — inspect + query drive REAL ``rosbagger_core`` output to the widgets.**
+  Selecting the inspect panel renders real ``collect_bag_info`` topic rows into the
+  ``bag-info`` DataTable (``test_inspect_panel_shows_real_topics``); typing a SELECT
+  over a known fixture table into ``sql-input`` and pressing Enter runs the real
+  ``query()`` and lands its rows in the ``results`` DataTable
+  (``test_query_panel_runs_real_core``). Both are ROS-FREE.
+
+ASYNC (14-RESEARCH Pitfall 3): ``asyncio_mode="auto"`` is set in the root pyproject
+(Plan 14-02), so these are plain ``async def`` tests — no per-test ``@pytest.mark.asyncio``
+marker is needed and they are NOT skipped.
+
+PAUSE-BEFORE-ASSERT (14-RESEARCH Pitfall 4): every interaction is followed by
+``await pilot.pause()`` to flush the Textual message pump before asserting, so an
+assertion never races an un-applied mount / switch / query result.
+
+SELF-CONTAINED HARNESS: mirrors the reader / tf suites — this module owns its own
+repo-root ``sys.path`` insert (so ``tools.make_fixtures`` resolves when only the repo
+root is on the path) and writes its OWN fixture bag into ``tmp_path``; it reuses no
+shared fixture.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+from textual.widgets import ContentSwitcher, DataTable, Input, ListItem
+
+# Self-contained src/repo-root resolution (mirrors tests/test_tf.py / test_reader.py):
+# put the repo root + the gui/core src trees on the path so ``tools.make_fixtures`` and
+# ``rosbagger_gui`` import regardless of how the suite is launched. Harmless when already
+# importable (the membership check guards it).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+for _p in (
+    _REPO_ROOT,
+    _REPO_ROOT / "packages" / "rosbagger-gui" / "src",
+    _REPO_ROOT / "packages" / "rosbagger-core" / "src",
+):
+    if _p.is_dir() and str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+from tools.make_fixtures import write_ros2_sqlite_bag  # noqa: E402
+
+import rosbagger_gui  # noqa: E402  (forced-no-ROS monkeypatch target for SC2)
+from rosbagger_gui.app import RosbaggerApp  # noqa: E402
+
+# The known fixture topics (tools.make_fixtures) → tables. /imu and /cmd_vel become the
+# ``imu`` / ``cmd_vel`` query tables; SC3 queries one of them and asserts a real row.
+_EXPECTED_TABLES = {"imu", "cmd_vel", "image"}
+
+
+@pytest.fixture
+def bag(tmp_path: Path) -> Path:
+    """Write a ROS 2 sqlite3 fixture bag into ``tmp_path`` (ROS-FREE) and return it.
+
+    The same ``write_ros2_sqlite_bag`` writer the reader / query suites use: 3 topics
+    (``/imu``, ``/cmd_vel``, ``/image``), 3 messages each. The App opens it with the
+    ROS-2-Humble typestore default (14-02), so SC3 reads real core output off it.
+    """
+    return write_ros2_sqlite_bag(tmp_path)
+
+
+async def test_app_has_five_panels(bag: Path) -> None:
+    """SC1: the launched App exposes all five panels (nav ids + ContentSwitcher ids).
+
+    Drives the real ``RosbaggerApp`` headlessly and asserts the five ``nav-*`` sidebar
+    ListItems AND the five ``ContentSwitcher`` panel widgets are all mounted/queryable —
+    the cockpit surfaces inspect/query/tf/record/replay over the module APIs (D-01).
+    """
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()  # flush mount before asserting (Pitfall 4)
+
+        panel_ids = ("inspect", "query", "tf", "record", "replay")
+        for panel_id in panel_ids:
+            # The sidebar nav ListItem (id = "nav-" + panel id) must exist.
+            assert app.query_one(f"#nav-{panel_id}", ListItem) is not None
+            # The ContentSwitcher child panel (id = panel id) must exist.
+            assert app.query_one(f"#{panel_id}") is not None
+
+        # The ContentSwitcher itself holds exactly the five panel children.
+        switcher = app.query_one("#content", ContentSwitcher)
+        switcher_child_ids = {child.id for child in switcher.children}
+        assert switcher_child_ids == set(panel_ids)
+
+
+async def test_live_panels_disabled_without_ros(bag: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SC2: with ROS forced absent the LIVE panels are disabled, the OFFLINE ones are not.
+
+    Forces the no-ROS condition DETERMINISTICALLY (monkeypatch
+    ``rosbagger_gui._detect_ros`` → ``False`` BEFORE constructing the App, so the
+    capability gate is exercised even on this ROS-equipped dev box). Asserts the live
+    record/replay nav items + panel widgets are ``disabled`` while the offline
+    inspect/query/tf ones are NOT — and that the offline panels still render real data
+    without ROS (the inspect ``bag-info`` table fills), so "offline panels work without
+    ROS" is proven, not merely "live panels are gated".
+    """
+    # Force ROS absent for THIS app (monkeypatch the probe the App ctor calls in 14-02).
+    monkeypatch.setattr(rosbagger_gui, "_detect_ros", lambda: False)
+
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()  # flush mount + the on_mount gate before asserting (Pitfall 4)
+
+        assert app.ros_available is False, "forced-no-ROS app must report ros_available False"
+
+        # LIVE panels (record/replay): both the nav item AND the panel widget disabled.
+        for live_id in ("record", "replay"):
+            assert app.query_one(f"#nav-{live_id}", ListItem).disabled is True
+            assert app.query_one(f"#{live_id}").disabled is True
+
+        # OFFLINE panels (inspect/query/tf): NOT disabled — always enabled (D-03).
+        for offline_id in ("inspect", "query", "tf"):
+            assert app.query_one(f"#nav-{offline_id}", ListItem).disabled is False
+            assert app.query_one(f"#{offline_id}").disabled is False
+
+        # And the offline panels WORK without ROS: the inspect bag-info table fills from
+        # real core output even with ros_available False.
+        await pilot.click("#nav-inspect")
+        await pilot.pause()
+        bag_info = app.query_one("#bag-info", DataTable)
+        assert bag_info.row_count >= 1, "inspect panel did not render real topics without ROS"
+
+
+async def test_inspect_panel_shows_real_topics(bag: Path) -> None:
+    """SC3 (inspect): the inspect panel renders REAL ``collect_bag_info`` topic rows.
+
+    Selects the inspect panel against the fixture bag and asserts the ``bag-info``
+    DataTable has at least one row — i.e. real ``rosbagger_core.inspect`` topic output
+    reached the widget (the fixture has 3 topics, so ``row_count >= 1`` is a safe lower
+    bound). ``row_count`` is the stable 8.2.7 DataTable accessor (the column-introspection
+    accessor shifted across versions; row_count did not — verified against textual 8.2.7).
+    """
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#nav-inspect")
+        await pilot.pause()  # flush the panel switch + refresh_view before asserting
+
+        bag_info = app.query_one("#bag-info", DataTable)
+        assert bag_info.row_count >= 1, (
+            f"inspect bag-info had {bag_info.row_count} rows; expected real topics from core"
+        )
+
+
+async def test_query_panel_runs_real_core(bag: Path) -> None:
+    """SC3 (query): a SELECT over a fixture table lands REAL ``query()`` rows in ``results``.
+
+    Selects the query panel, sets ``sql-input`` to ``SELECT topic, t_ns FROM imu LIMIT 1``
+    (``imu`` is the known fixture table from ``write_ros2_sqlite_bag``), and presses Enter
+    — the SC3 ``press("enter")`` path (the Run BUTTON can miss on the default 80-col
+    viewport in the headless harness; the Enter-on-input path is the documented robust
+    trigger, 14-04 SUMMARY). Asserts the ``results`` DataTable row_count == 1, i.e. real
+    ``rosbagger_core.backend.query.query()`` output reached the widget. ``row_count`` is
+    the stable 8.2.7 accessor.
+    """
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#nav-query")
+        await pilot.pause()  # flush the switch + schema-tree refresh
+
+        # Set the SQL string + run via the Enter-on-input path (NOT a Run-button click,
+        # which can miss off-screen on the default viewport — 14-04 harness caveat).
+        sql_input = app.query_one("#sql-input", Input)
+        sql_input.focus()
+        await pilot.pause()
+        sql_input.value = "SELECT topic, t_ns FROM imu LIMIT 1"
+        await pilot.press("enter")
+        await pilot.pause()  # flush the query run + result render before asserting
+
+        results = app.query_one("#results", DataTable)
+        assert results.row_count == 1, (
+            f"query results had {results.row_count} rows; expected exactly 1 real query() row"
+        )

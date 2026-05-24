@@ -375,3 +375,25 @@ def test_import_replay_submodules_do_not_pull_ros():
     """
     leaked = _ros_modules_after_import("rosbagger_replay.scheduler", "rosbagger_replay.source")
     assert leaked == [], f"import rosbagger_replay submodules pulled in ROS modules: {leaked}"
+
+
+def test_import_gui_does_not_pull_ros():
+    """`import rosbagger_gui` / `.app` must NOT pull rclpy/rosbag2_py (the GUI offline invariant).
+
+    The Phase 14 Textual cockpit is a THIN FACE over the module APIs: its package top
+    (``rosbagger_gui/__init__``) keeps the only ``rclpy`` touch inside the ``_detect_ros``
+    capability probe's BODY; the App shell (``app.py``) imports only ``textual`` + the
+    ROS-FREE ``rosbags`` typestore at top level; and the live record/replay panels confine
+    every ``rclpy`` / ``rosbagger_record`` / ``rosbagger_replay`` import to worker / method
+    bodies. So the bare top-level ``import rosbagger_gui`` (and ``import rosbagger_gui.app``,
+    which pulls the offline panels) binds none of the ROS RUNTIME stack — the no-ROS promise
+    holds for the new package even though its live panels REQUIRE ROS at run time (mirrors
+    ``test_import_replay_does_not_pull_ros`` / ``test_import_record_does_not_pull_ros``).
+
+    Mechanism: a FRESH interpreter with ``env={"PYTHONPATH": ""}`` (the empty PYTHONPATH
+    neutralizes this dev host's ROS-on-PYTHONPATH leak; the editable workspace member still
+    resolves via its site-packages ``.pth``), so this asserts the package's import GRAPH is
+    ROS-free, not merely that ROS is off the path.
+    """
+    leaked = _ros_modules_after_import("rosbagger_gui", "rosbagger_gui.app")
+    assert leaked == [], f"import rosbagger_gui pulled in ROS modules: {leaked}"
