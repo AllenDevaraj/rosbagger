@@ -116,7 +116,15 @@ class RosbaggerApp(App):
             self.reader.close()
             self.reader = None
         reader = RosbagsReader(path, default_typestore=_ros2_humble_typestore())
-        reader.open()
+        try:
+            reader.open()
+        except Exception as exc:  # noqa: BLE001 - teaching, not a startup crash (WR-05)
+            # A bad/corrupt/missing <bag-path> must surface in the UI rather than crash
+            # construction — the __init__ contract defers opening to on_mount for exactly
+            # this. Both the launch (on_mount) and the picker (open_bag) paths funnel here,
+            # so a single teaching notify covers both without a traceback.
+            self.notify(f"Could not open {path}: {exc}", severity="error")
+            return
         self.reader = reader
         self._bag_path = path
 
