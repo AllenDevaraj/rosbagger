@@ -27,7 +27,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar (completed 2026-05-23)
 - [x] **Phase 12: Live Record** - live topic discovery + select recording (rclpy) (completed 2026-05-23)
 - [x] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy) (completed 2026-05-23)
-- [ ] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI)
+- [x] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI) (completed 2026-05-24)
 
 ## Phase Details
 
@@ -373,7 +373,7 @@ Plans:
 
 **Wave 4** *(blocked on 14-02..14-06)*
 
-- [ ] 14-07-PLAN.md — SC1/SC2/SC3 headless `App.run_test()`/Pilot tests against a fixture bag, `test_import_gui_does_not_pull_ros` offline-guard extension, live-marked record/replay lane, phase gate -> GUI-01
+- [x] 14-07-PLAN.md — SC1/SC2/SC3 headless `App.run_test()`/Pilot tests against a fixture bag, `test_import_gui_does_not_pull_ros` offline-guard extension, live-marked record/replay lane, phase gate -> GUI-01
 
 ## Progress
 
@@ -395,4 +395,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
 | 12. Live Record | 3/3 | Complete    | 2026-05-23 |
 | 13. Live Replay | 3/3 | Complete    | 2026-05-23 |
-| 14. GUI | 6/7 | In Progress|  |
+| 14. GUI | 7/7 | Complete   | 2026-05-24 |

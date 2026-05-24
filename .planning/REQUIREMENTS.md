@@ -70,7 +70,7 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 - **REP-01**: Replay a bag to ROS topics with transport controls (play/pause/step/seek/rate/loop)
 
 ### GUI
-- **GUI-01**: Five capability-gated panels (record/inspect/query/tf/replay) over module APIs
+- **GUI-01** ✓ (Phase 14 — Complete): Five capability-gated panels (record/inspect/query/tf/replay) over module APIs
 
 ### Edit / Events
 - [x] **EDIT-01**: Trim / drop / merge / downsample / convert (ROS1↔ROS2↔MCAP)
