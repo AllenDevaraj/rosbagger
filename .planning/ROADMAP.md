@@ -353,7 +353,27 @@ Plans:
   2. Capability-gating: live panels (record/replay) disabled without a ROS graph; offline panels (inspect/query/tf) always work
   3. The inspect/query panels drive the real `rosbagger_core` APIs against a fixture bag
 
-**Plans**: TBD (set at plan-phase)
+**Plans**: 7 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 14-01-PLAN.md — D-09a: refactor the rclpy publish sink out of `replay.py` into one reusable `build_publish_sink` (single production publish path) + Phase-13 replay regression check -> GUI-01
+- [ ] 14-02-PLAN.md — `rosbagger-gui` workspace member + Textual App shell (sidebar ListView + ContentSwitcher, D-01), shared open-reader lifecycle (D-02), tier-1 ROS gate + disabled-live panels (D-03/D-04), five panel stubs, console script, dev async plugin -> GUI-01
+
+**Wave 2** *(blocked on 14-02)*
+
+- [ ] 14-03-PLAN.md — Inspect panel over `collect_bag_info`/`collect_table_schemas` (D-05) + TF panel over `collect_tf_report` (D-07), thin DataTable renderers -> GUI-01
+- [ ] 14-04-PLAN.md — Query panel (D-06): SQL input + results DataTable over `query()`, schema/topic Tree click-to-insert, history/re-run, CSV/Parquet export over `write_table` -> GUI-01
+
+**Wave 3** *(blocked on 14-02; 14-06 also on 14-01)*
+
+- [ ] 14-05-PLAN.md — Record panel (live, D-04/D-08): tier-2 `discover_topics` scan → topic checklist + start/stop `record()`, all in `@work(thread=True)` workers -> GUI-01
+- [ ] 14-06-PLAN.md — Replay panel (live, D-09): six transport controls over the pure `Replayer` + the shared `build_publish_sink`, custom scrubber Widget seeking via `Replayer.seek()`, jump-to-event markers from `list_events`, thread worker -> GUI-01
+
+**Wave 4** *(blocked on 14-02..14-06)*
+
+- [ ] 14-07-PLAN.md — SC1/SC2/SC3 headless `App.run_test()`/Pilot tests against a fixture bag, `test_import_gui_does_not_pull_ros` offline-guard extension, live-marked record/replay lane, phase gate -> GUI-01
 
 ## Progress
 
