@@ -368,7 +368,7 @@ Plans:
 
 **Wave 3** *(blocked on 14-02; 14-06 also on 14-01)*
 
-- [ ] 14-05-PLAN.md — Record panel (live, D-04/D-08): tier-2 `discover_topics` scan → topic checklist + start/stop `record()`, all in `@work(thread=True)` workers -> GUI-01
+- [x] 14-05-PLAN.md — Record panel (live, D-04/D-08): tier-2 `discover_topics` scan → topic checklist + start/stop `record()`, all in `@work(thread=True)` workers -> GUI-01
 - [ ] 14-06-PLAN.md — Replay panel (live, D-09): six transport controls over the pure `Replayer` + the shared `build_publish_sink`, custom scrubber Widget seeking via `Replayer.seek()`, jump-to-event markers from `list_events`, thread worker -> GUI-01
 
 **Wave 4** *(blocked on 14-02..14-06)*
@@ -395,4 +395,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
 | 12. Live Record | 3/3 | Complete    | 2026-05-23 |
 | 13. Live Replay | 3/3 | Complete    | 2026-05-23 |
-| 14. GUI | 4/7 | In Progress|  |
+| 14. GUI | 5/7 | In Progress|  |
