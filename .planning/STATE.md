@@ -4,14 +4,14 @@ milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
 stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-05-24T06:24:01.575Z"
+last_updated: "2026-05-24T06:28:14.099Z"
 last_activity: 2026-05-24
 progress:
   total_phases: 14
   completed_phases: 13
   total_plans: 42
-  completed_plans: 37
-  percent: 88
+  completed_plans: 38
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 14 (gui) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-05-24
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -105,6 +105,7 @@ Progress: [█████████░] 88%
 | Phase 13 P03 | ~8min | 3 tasks | 5 files |
 | Phase 14 P14-01 | ~6min | 1 tasks | 2 files |
 | Phase 14 P02 | 4min | 2 tasks | 13 files |
+| Phase 14 P03 | 6min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -203,6 +204,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 14-01]: D-09a shared publish path — extracted build_publish_sink(node) -> (sink, published) from replay()'s body VERBATIM (no behavior change). It is now the ONE production publish-mechanics function (lazy per-topic pubs dict + depth-10 RELIABLE-VOLATILE create_publisher + get_message resolve + deserialize_message + publish + the WR-07 source-of-truth published["n"] counter). replay() now calls `sink, published = build_publish_sink(node)` instead of inlining the closure (removed the now-dead pre-try published init); rclpy stays imported in replay() for ok()/init()/create_node/shutdown, while the serialization/rosidl imports moved INSIDE build_publish_sink (offline invariant preserved). __init__ lazily re-exports build_publish_sink behind its own _require_ros() guard (mirrors the replay/replay_bag front-door) + __all__ entry, so the Phase-14 GUI drives the pure Replayer through the SAME sink via the package front door — exactly one production publish path, never a duplicate. Tests: 42 green (25 replay_unit Phase-13 regression gate + 17 offline guard incl. test_import_replay_does_not_pull_ros); ruff check+format clean. NOTE: plan acceptance said "25 tests / grep -c create_publisher == 1" — test_replay_unit.py actually collects 26 (plan undercounted by 1, all pass), and grep -c is 4 (the 3 extra are pre-existing docstring/comment prose; the REAL node.create_publisher(...) call appears exactly once, inside build_publish_sink). DEVIATION: none (mechanics moved verbatim). GUI-01 NOT marked complete (this plan only builds the shared sink, not any of the five panels — GUI-01 spans 14-02..14-07). T-14-01-01 (behavior drift) + T-14-01-02 (rclpy import leak) both mitigated and gated green.
 - [Phase ?]: [Phase 14-02] rosbagger-gui shell shipped: RosbaggerApp = sidebar ListView + ContentSwitcher (D-01) over five panels; App owns ONE shared RosbagsReader opened from the launch <bag-path> with the ROS-free ROS-2-Humble typestore (D-02) + open_bag() picker seam; cheap tier-1 _detect_ros gate disables the live record/replay nav items + panels when rclpy is absent (D-03/D-04). Panels are Static stubs; offline-clean import graph. argparse cli (--help exits 0 w/o launching). pytest-asyncio + asyncio_mode=auto + textual-dev wired for 14-07; GUI kept OUT of the coverage gate (D-12).
 - [Phase ?]: [Phase 14-02] GUI-01 NOT yet complete — this plan builds the shell + STUB panels only; offline panels (14-03/04/05) + live panels (14-06) fill the stubs, headless+offline-guard tests land in 14-07. Requirement stays open until panels are wired.
+- [Phase ?]: [Phase 14-03] InspectPanel + TfPanel are thin faces over collect_bag_info/collect_table_schemas and collect_tf_report; refresh_view() data-refresh convention wired to on_mount/on_show + app.open_bag bag-switch callback; NoTransformsError teaching path; panels promoted Static->Widget; offline-import invariant held (panel modules leak no rclpy/rosbags/pyarrow). GUI-01.
 
 ### Pending Todos
 
@@ -222,7 +224,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-24T06:23:21.901Z
+Last session: 2026-05-24T06:28:14.092Z
 Stopped at: Completed 14-01-PLAN.md
 Resume file: None
 Next: Phase 14 Plan 02 (next GUI plan). Plan 14-01 COMPLETE — the shared rclpy publish path (build_publish_sink) is extracted and lazily re-exported, so the upcoming GUI replay panel drives the pure Replayer through the SAME single sink (D-09a). Phase-13 offline replay regression suite + offline-import guard green (42 tests). Historical context below.
