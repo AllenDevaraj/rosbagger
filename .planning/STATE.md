@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
-stopped_at: Completed 14-05-PLAN.md
-last_updated: "2026-05-24T06:38:53.466Z"
+stopped_at: Completed 14-06-PLAN.md
+last_updated: "2026-05-24T06:46:09.614Z"
 last_activity: 2026-05-24
 progress:
   total_phases: 14
   completed_phases: 13
   total_plans: 42
-  completed_plans: 40
-  percent: 95
+  completed_plans: 41
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 14 (gui) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-05-24
 
-Progress: [██████████] 95%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -108,6 +108,7 @@ Progress: [██████████] 95%
 | Phase 14 P03 | 6min | 2 tasks | 3 files |
 | Phase 14 P04 | 8min | 2 tasks | 1 files |
 | Phase 14 P05 | ~10min | 1 tasks | 1 files |
+| Phase 14 P06 | ~5min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -209,6 +210,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 14-03] InspectPanel + TfPanel are thin faces over collect_bag_info/collect_table_schemas and collect_tf_report; refresh_view() data-refresh convention wired to on_mount/on_show + app.open_bag bag-switch callback; NoTransformsError teaching path; panels promoted Static->Widget; offline-import invariant held (panel modules leak no rclpy/rosbags/pyarrow). GUI-01.
 - [Phase ?]: [Phase 14-04] QueryPanel is a thin face over query()/collect_table_schemas/write_table: SQL Input+Run -> query() VERBATIM -> results DataTable (Pattern 4, str()-rendered temporal/LIST cells); schema Tree leaves insert col.name verbatim (no SQL built); CSV/Parquet export supplies only a path and lets write_table pick the format from the extension (no COPY/format string in GUI); Phase-7 teaching errors caught+presented (not built). Offline invariant held; full suite 460 passed/2 skipped/97.37%.
 - [Phase ?]: [Phase 14-05] RecordPanel live thin face: @work(thread=True) discovery worker (list_record_topics -> SelectionList via call_from_thread) + @work(thread=True) record worker (real record_topics() with bounded duration, Stop = worker-group cancel). Caught the full teaching-error family incl. McapStorageUnavailableError (Rule 2). Module-top ROS imports 0; offline import graph leaks no rclpy/rosbag2_py; full offline suite 460 passed/2 skipped/97.37%.
+- [Phase ?]: [Phase 14-06] Live ReplayPanel + custom Scrubber: panel builds its OWN rclpy context (WR-04) + the SHARED build_publish_sink (D-09a, single publish path — no inlined create_publisher/deserialize_message), drives the pure Replayer.run() in a @work(thread=True) worker with the six controls; the Scrubber widget emits only a click fraction (panel owns fraction->seek), markers from list_events. Offline-import graph leaks no rclpy/rosbag2_py.
 
 ### Pending Todos
 
@@ -228,8 +230,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-24T06:38:40.780Z
-Stopped at: Completed 14-05-PLAN.md
+Last session: 2026-05-24T06:46:09.603Z
+Stopped at: Completed 14-06-PLAN.md
 Resume file: None
 Next: Phase 14 Plan 02 (next GUI plan). Plan 14-01 COMPLETE — the shared rclpy publish path (build_publish_sink) is extracted and lazily re-exported, so the upcoming GUI replay panel drives the pure Replayer through the SAME single sink (D-09a). Phase-13 offline replay regression suite + offline-import guard green (42 tests). Historical context below.
 Prior-session note: Phase 13 Plan 03 BUILT — the LIVE half of REP-01 is in place and the offline tier is green, but SC1 is NOT yet signed off (the orchestrator must run the live lane — W4). Shipped: __init__.py lazy _require_ros boundary (rclpy imported inside the body -> teaching RosNotAvailableError; replay() lazy delegator + submodule-shadow-proof replay_bag alias; NO top-level rclpy/rosidl), replay.py (the ONLY rclpy module — D-04/Pattern 4 VERIFIED publish path: load_items -> NoMessagesToReplayError before rclpy.init() on empty [WR-04] -> try/finally rclpy.init()/shutdown() + per-topic create_publisher dict + sink [get_message -> create_publisher(cls,topic,10) -> deserialize_message(cdr,cls) -> publish] + --start seconds -> seek(int(s*1e9)) [W3] -> drives the pure Replayer -> returns published count; the SINGLE production publish path), the thin rosbagger-replay CLI (cli.py — one typer replay verb over replay_bag, @_capability_errors -> clean Exit(1), top imports typer-only, D-10 --end FOLDED into --duration [W5] documented in help + module comment; FLAT single-command invocation `rosbagger-replay <bag> [opts]`), the offline-guard extension (test_import_replay_does_not_pull_ros + submodule guard), and the LIVE SC1 test (tests/test_replay_live.py — importorskip(rclpy)+live marker; PRODUCTION replay_bag() IN-PROCESS publisher + an EXTERNAL subscriber subprocess that counts /imu + reports on stdout; asserts published==9 + received==3; BLOCKER-1 grep-verified: replay_bag( present, NO Replayer(/create_publisher in test). Offline: 459 passed, 2 skipped @ 97.37% (>=80% gate on core+bagq held; rosbagger_replay out per D-12; live test collected-and-skipped), ruff clean (77 files), offline guard 17 green. PENDING SC1 SIGN-OFF (W4): the orchestrator MUST run `source /opt/ros/humble/setup.bash && PYTHONPATH="packages/rosbagger-replay/src:packages/rosbagger-core/src:$PYTHONPATH" python3 -m pytest tests/test_replay_live.py -m live -v` and confirm SC1 PASSED (not skipped) — only then is REP-01 fully Complete. After SC1 passes, the next milestone is Phase 14 (GUI) capability-gating over this replay_bag() API. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` + observe CI green to finalize v0.1.
