@@ -25,3 +25,18 @@ ListItem:disabled {
 #content > :disabled {
     color: $text-disabled;
 }
+
+/* Replay scrubber (Plan 14-06, D-09): a one-row timeline bar spanning the panel
+   width. The bar glyphs render dim ($primary), the playhead/markers pop via the
+   widget's glyphs; height is a single line so it reads as a transport track. */
+Scrubber {
+    height: 1;
+    width: 1fr;
+    color: $primary;
+}
+
+/* Replay transport row: the play/pause/step buttons + rate input + loop switch sit
+   in a compact horizontal strip above/below the scrubber. */
+.replay-controls {
+    height: auto;
+}
