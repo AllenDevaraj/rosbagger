@@ -252,16 +252,26 @@ class ReplayPanel(Widget):
         self._drive_worker()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Apply a new schedule rate when the rate Input is submitted (set_rate, D-08)."""
+        """Apply a new schedule rate when the rate Input is submitted (set_rate, D-08).
+
+        Parse the raw entry ONCE and branch on validity (WR-02): a non-numeric or ``<= 0``
+        entry is REJECTED with a teaching status (never silently coerced to 1.0). The
+        scheduler's ``set_rate`` is the single validator (it raises ``ValueError`` on
+        ``<= 0``), so ``abc`` or ``-2`` teaches instead of resetting to 1 and reporting it
+        as a successful "Rate set to 1.".
+        """
         if event.input.id != "replay-rate":
             return
         if self._replayer is None:
             return
+        raw = self.query_one("#replay-rate", Input).value.strip()
         try:
-            self._replayer.set_rate(self._read_rate())  # type: ignore[union-attr]
-            self._show_status(f"Rate set to {self._read_rate():g}.")
-        except ValueError as exc:
-            self._show_status(f"Invalid rate: {exc}")
+            rate = float(raw)
+            self._replayer.set_rate(rate)  # type: ignore[union-attr]  # raises ValueError on <= 0
+        except ValueError:
+            self._show_status(f"Invalid rate {raw!r}: enter a number > 0.")
+            return
+        self._show_status(f"Rate set to {rate:g}.")
 
     def on_switch_changed(self, event: Switch.Changed) -> None:
         """Forward the loop toggle to ``replayer.loop`` (D-09; wrap rewinds to 0, WR-02)."""
