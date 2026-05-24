@@ -160,6 +160,48 @@ async def test_inspect_panel_shows_real_topics(bag: Path) -> None:
         )
 
 
+async def test_inspect_and_tf_panels_render_with_height(bag: Path) -> None:
+    """GUI-01 blank-panel regression guard: the inspect/tf panels render at non-zero height.
+
+    ``test_inspect_panel_shows_real_topics`` only asserts ``row_count`` — which PASSED even
+    while ``InspectPanel`` / ``TfPanel`` (bare ``textual.widget.Widget`` subclasses with no
+    intrinsic height) laid out at height 0 and rendered their populated DataTables INVISIBLE.
+    Rendered region height, NOT row_count, is the assertion that catches that collapse: a
+    DataTable at ``region.height == 0`` is invisible, so this fails if either panel regresses.
+
+    Inspect: click ``#nav-inspect`` and assert the ``#bag-info`` DataTable has
+    ``region.height > 0`` (the precise regression signal) AND ``row_count >= 1`` (so the
+    table is both VISIBLE and carrying real core data, not merely sized-but-empty).
+
+    TF: click ``#nav-tf`` and assert the ``#tf-edges`` DataTable has ``region.height > 0``.
+    The fixture bag has no ``/tf``, so the tf panel shows the teaching status line and the
+    edges table may be empty — assert on region height ONLY for tf (NOT row_count), since
+    "no transforms" is a valid empty state.
+    """
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await pilot.click("#nav-inspect")
+        await pilot.pause()  # flush the panel switch + refresh_view before asserting
+        bag_info = app.query_one("#bag-info", DataTable)
+        assert bag_info.region.height > 0, (
+            f"inspect #bag-info rendered at height {bag_info.region.height}; "
+            "the panel collapsed to height 0 (GUI-01 blank-panel regression)"
+        )
+        assert bag_info.row_count >= 1, (
+            "inspect #bag-info is sized but empty; expected real topics from core"
+        )
+
+        await pilot.click("#nav-tf")
+        await pilot.pause()  # flush the panel switch + refresh_view before asserting
+        tf_edges = app.query_one("#tf-edges", DataTable)
+        assert tf_edges.region.height > 0, (
+            f"tf #tf-edges rendered at height {tf_edges.region.height}; "
+            "the panel collapsed to height 0 (GUI-01 blank-panel regression)"
+        )
+
+
 async def test_query_panel_runs_real_core(bag: Path) -> None:
     """SC3 (query): a SELECT over a fixture table lands REAL ``query()`` rows in ``results``.
 
