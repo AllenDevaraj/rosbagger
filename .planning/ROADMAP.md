@@ -359,7 +359,7 @@ Plans:
 **Wave 1**
 
 - [x] 14-01-PLAN.md — D-09a: refactor the rclpy publish sink out of `replay.py` into one reusable `build_publish_sink` (single production publish path) + Phase-13 replay regression check -> GUI-01
-- [ ] 14-02-PLAN.md — `rosbagger-gui` workspace member + Textual App shell (sidebar ListView + ContentSwitcher, D-01), shared open-reader lifecycle (D-02), tier-1 ROS gate + disabled-live panels (D-03/D-04), five panel stubs, console script, dev async plugin -> GUI-01
+- [x] 14-02-PLAN.md — `rosbagger-gui` workspace member + Textual App shell (sidebar ListView + ContentSwitcher, D-01), shared open-reader lifecycle (D-02), tier-1 ROS gate + disabled-live panels (D-03/D-04), five panel stubs, console script, dev async plugin -> GUI-01
 
 **Wave 2** *(blocked on 14-02)*
 
@@ -395,4 +395,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
 | 12. Live Record | 3/3 | Complete    | 2026-05-23 |
 | 13. Live Replay | 3/3 | Complete    | 2026-05-23 |
-| 14. GUI | 1/7 | In Progress|  |
+| 14. GUI | 2/7 | In Progress|  |

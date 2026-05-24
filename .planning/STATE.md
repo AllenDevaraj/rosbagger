@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
-stopped_at: Phase 14 context gathered
-last_updated: "2026-05-24T06:16:59.013Z"
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-05-24T06:24:01.575Z"
 last_activity: 2026-05-24
 progress:
   total_phases: 14
   completed_phases: 13
   total_plans: 42
-  completed_plans: 36
-  percent: 86
+  completed_plans: 37
+  percent: 88
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 14 (gui) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-05-24
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -104,6 +104,7 @@ Progress: [█████████░] 86%
 | Phase 13 P02 | ~12min | 2 tasks | 2 files |
 | Phase 13 P03 | ~8min | 3 tasks | 5 files |
 | Phase 14 P14-01 | ~6min | 1 tasks | 2 files |
+| Phase 14 P02 | 4min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -200,6 +201,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 13-02] Rule-1 fix in run(): up-front bound check (max=0/duration<=0 halt BEFORE first publish — WR-01 truthiness trap) + while/else clean-DONE at seek-past-end (no IndexError). SC2 + SC3 proven by 13 ROS-free unit tests (recording sink + sleep + fake monotonic clock) incl. the W4 loop+max==N exact-end boundary (publishes EXACTLY N then DONE). Full offline suite 452 passed, 1 skipped @ 97.37% (>=80% gate on core+bagq held; rosbagger_replay out of gate per D-12); ruff clean; offline guard intact. Plan 13-03 injects the rclpy sink into this Replayer.
 - [Phase 13-03]: Shipped the live half of REP-01. __init__.py lazy _require_ros boundary (rclpy imported INSIDE the body -> teaching RosNotAvailableError) + replay() lazy delegator + submodule-shadow-proof replay_bag alias; NO top-level rclpy/rosidl import (import rosbagger_replay stays ROS-free, offline-guard-verified). replay.py is the ONLY rclpy module (D-04/Pattern 4 VERIFIED publish path): load_items -> NoMessagesToReplayError BEFORE rclpy.init() on empty (WR-04) -> try/finally owning rclpy.init()/shutdown() + per-topic (cls,publisher) dict + sink (get_message -> create_publisher(cls,topic,10) -> deserialize_message(cdr,cls) -> publish) -> --start SECONDS mapped to replayer.seek(int(start*1e9)) (W3, no scheduler start kwarg) -> drives the pure Replayer -> returns published count. The SINGLE production publish path (CLI + Phase-14 GUI + SC1 live test all call it). Thin rosbagger-replay CLI (cli.py): one typer `replay` verb over replay_bag, @_capability_errors -> clean Exit(1) (RosNotAvailableError/NoMessagesToReplayError, NO bare except Exception), top imports typer-only. D-10 --end FOLDED into --duration (W5 — v1 scheduler bounds on monotonic duration/max_messages, not a bag-timestamp horizon; documented in help text + a module comment, true --end deferred). Single-command typer flattens: invoked as `rosbagger-replay <bag> [opts]`; both `rosbagger-replay --help` and `... replay --help` exit 0. Offline guard extended: test_import_replay_does_not_pull_ros + submodule guard (scheduler/source leak no rclpy/rosbag2_py). LIVE SC1 test (tests/test_replay_live.py): importorskip(rclpy)+live marker; PRODUCTION replay_bag() runs IN-PROCESS (publisher), an EXTERNAL subscriber subprocess (own rclpy context, no double-init) counts /imu + reports on stdout; asserts published==9 + received==3. BLOCKER-1 grep-verified (shows replay_bag(, NO Replayer(/create_publisher in test). Offline: 459 passed, 2 skipped @ 97.37% (>=80% gate on core+bagq; rosbagger_replay out per D-12; live test collected-and-skipped); ruff clean (77 files). DEVIATION (Rule 1, test-only): CLI parse tests invoke the FLAT form (single-command typer collapses the `replay` verb token); production cli.py unchanged. PENDING (SC1 sign-off): the orchestrator MUST actually run `source /opt/ros/humble/setup.bash && PYTHONPATH=<replay/core src prepend>:$PYTHONPATH python3 -m pytest tests/test_replay_live.py -m live -v` and confirm SC1 PASSED (not skipped) — collected-and-skipped is insufficient (W4). REP-01 = Built; live SC1 proof pending the orchestrator run.
 - [Phase 14-01]: D-09a shared publish path — extracted build_publish_sink(node) -> (sink, published) from replay()'s body VERBATIM (no behavior change). It is now the ONE production publish-mechanics function (lazy per-topic pubs dict + depth-10 RELIABLE-VOLATILE create_publisher + get_message resolve + deserialize_message + publish + the WR-07 source-of-truth published["n"] counter). replay() now calls `sink, published = build_publish_sink(node)` instead of inlining the closure (removed the now-dead pre-try published init); rclpy stays imported in replay() for ok()/init()/create_node/shutdown, while the serialization/rosidl imports moved INSIDE build_publish_sink (offline invariant preserved). __init__ lazily re-exports build_publish_sink behind its own _require_ros() guard (mirrors the replay/replay_bag front-door) + __all__ entry, so the Phase-14 GUI drives the pure Replayer through the SAME sink via the package front door — exactly one production publish path, never a duplicate. Tests: 42 green (25 replay_unit Phase-13 regression gate + 17 offline guard incl. test_import_replay_does_not_pull_ros); ruff check+format clean. NOTE: plan acceptance said "25 tests / grep -c create_publisher == 1" — test_replay_unit.py actually collects 26 (plan undercounted by 1, all pass), and grep -c is 4 (the 3 extra are pre-existing docstring/comment prose; the REAL node.create_publisher(...) call appears exactly once, inside build_publish_sink). DEVIATION: none (mechanics moved verbatim). GUI-01 NOT marked complete (this plan only builds the shared sink, not any of the five panels — GUI-01 spans 14-02..14-07). T-14-01-01 (behavior drift) + T-14-01-02 (rclpy import leak) both mitigated and gated green.
+- [Phase ?]: [Phase 14-02] rosbagger-gui shell shipped: RosbaggerApp = sidebar ListView + ContentSwitcher (D-01) over five panels; App owns ONE shared RosbagsReader opened from the launch <bag-path> with the ROS-free ROS-2-Humble typestore (D-02) + open_bag() picker seam; cheap tier-1 _detect_ros gate disables the live record/replay nav items + panels when rclpy is absent (D-03/D-04). Panels are Static stubs; offline-clean import graph. argparse cli (--help exits 0 w/o launching). pytest-asyncio + asyncio_mode=auto + textual-dev wired for 14-07; GUI kept OUT of the coverage gate (D-12).
+- [Phase ?]: [Phase 14-02] GUI-01 NOT yet complete — this plan builds the shell + STUB panels only; offline panels (14-03/04/05) + live panels (14-06) fill the stubs, headless+offline-guard tests land in 14-07. Requirement stays open until panels are wired.
 
 ### Pending Todos
 
@@ -219,7 +222,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-24
+Last session: 2026-05-24T06:23:21.901Z
 Stopped at: Completed 14-01-PLAN.md
 Resume file: None
 Next: Phase 14 Plan 02 (next GUI plan). Plan 14-01 COMPLETE — the shared rclpy publish path (build_publish_sink) is extracted and lazily re-exported, so the upcoming GUI replay panel drives the pure Replayer through the SAME single sink (D-09a). Phase-13 offline replay regression suite + offline-import guard green (42 tests). Historical context below.
