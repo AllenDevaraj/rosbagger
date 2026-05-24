@@ -62,7 +62,12 @@ class RecordPanel(Widget):
             yield RadioButton("mcap", value=True, id="storage-mcap")
             yield RadioButton("sqlite3", id="storage-sqlite3")
         yield Button("Start", id="record-start", variant="success")
-        yield Button("Stop", id="record-stop", variant="error", disabled=True)
+        # WR-03: the bounded record() owns its own stop (the duration deadline + rclpy.ok);
+        # there is no in-process interrupt hook the event loop can pull, so this control
+        # CANNOT stop the in-flight capture early — it only dismisses the UI and lets the
+        # bounded window finalize on its own. The label says so rather than promising a
+        # "Stop" the panel cannot deliver.
+        yield Button("Dismiss", id="record-stop", variant="error", disabled=True)
 
     def on_mount(self) -> None:
         """Kick off the tier-2 discovery scan once the widget tree exists."""
@@ -238,16 +243,20 @@ class RecordPanel(Widget):
             )
 
     def _stop_record(self) -> None:
-        """Stop the in-flight record: cancel the worker (the bounded duration ends it).
+        """Dismiss the in-flight record UI; the bounded ``duration`` is what ends recording.
 
-        ``record()`` spins its own loop (``rclpy.ok()`` + the bounded ``_should_stop``
-        deadline); there is no in-process interrupt hook from the event loop, so the
-        bounded ``duration`` is what actually ends the loop. Cancelling the worker
-        suppresses the late result callback so a Stop reads as a clean end and resets
-        the controls immediately.
+        WR-03: ``record()`` spins its own loop (``rclpy.ok()`` + the bounded
+        ``_should_stop`` deadline) and exposes NO in-process interrupt hook the event loop
+        can pull — so this control does NOT stop the capture early. Cancelling the worker
+        only suppresses the late result callback (the recorder keeps writing until its
+        bounded window elapses, then finalizes on its own). The status says so rather than
+        claiming an immediate stop the panel cannot deliver.
         """
         self.workers.cancel_group(self, "record-run")
-        self._finish_record("Stopped.")
+        self._finish_record(
+            f"Dismissed — the bounded record finalizes on its own "
+            f"(up to {_DEFAULT_RECORD_SECONDS:.0f}s)."
+        )
 
     def _finish_record(self, message: str) -> None:
         """Reset Start/Stop + write the final status (UI-thread helper)."""
