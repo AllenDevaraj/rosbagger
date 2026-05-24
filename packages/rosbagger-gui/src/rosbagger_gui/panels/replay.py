@@ -295,11 +295,16 @@ class ReplayPanel(Widget):
         self._show_status(f"Seeked to {event.fraction * 100:.0f}% of the bag.")
 
     def _update_position(self) -> None:
-        """Reflect the Replayer cursor onto the scrubber playhead (UI-thread helper)."""
+        """Reflect the Replayer cursor onto the scrubber playhead (UI-thread helper).
+
+        Uses the Replayer's TIME-fraction accessor (``position_fraction``, WR-01) — NOT
+        the index — so the playhead agrees with the time-fraction basis the seek mapping
+        (``fraction * bag_span_ns``) and the event markers ``(t - bag_start) / span`` use.
+        On a non-uniform bag the index basis drifted off the markers; time keeps them aligned.
+        """
         if self._replayer is None or self._item_count == 0:
             return
-        cursor = self._replayer.cursor  # type: ignore[union-attr]
-        fraction = min(1.0, cursor / self._item_count)
+        fraction = self._replayer.position_fraction  # type: ignore[union-attr]
         self.query_one("#replay-scrubber", Scrubber).position = fraction
 
     # --------------------------------------------------------------- event markers

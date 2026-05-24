@@ -123,6 +123,25 @@ class Replayer:
         return self._cursor
 
     @property
+    def position_fraction(self) -> float:
+        """The cursor's position as a TIME fraction of the bag span, in ``[0.0, 1.0]``.
+
+        Derived from the cursor item's ``t_ns`` relative to the bag span
+        (``items[-1].t_ns - items[0].t_ns``) — NOT the index — so it agrees with the
+        time-fraction basis ``seek`` and the event markers use (WR-01). An empty stream,
+        a zero-span (single timestamp) bag, or a cursor at/past end-of-stream all return
+        ``1.0``-or-``0.0`` cleanly without an IndexError or a divide-by-zero.
+        """
+        if not self._items:
+            return 0.0
+        if self._cursor >= len(self._items):
+            return 1.0
+        span = self._items[-1].t_ns - self._items[0].t_ns
+        if span <= 0:
+            return 0.0
+        return min(1.0, (self._items[self._cursor].t_ns - self._items[0].t_ns) / span)
+
+    @property
     def rate(self) -> float:
         """The current schedule scale (always ``> 0``)."""
         return self._rate
