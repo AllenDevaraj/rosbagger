@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: ready_to_plan
-stopped_at: Phase 13 complete (3/3) — ready to discuss Phase 14
-last_updated: 2026-05-23T21:13:50.811Z
+status: planning
+stopped_at: Phase 14 context gathered
+last_updated: "2026-05-24T03:11:03.588Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 14
@@ -217,7 +217,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-23T21:00:51.575Z
-Stopped at: Phase 13 — 13-03 BUILT (live front door + sink + CLI + SC1 test); SC1 live lane pending orchestrator run
-Resume file: None
+Last session: 2026-05-24T03:11:03.580Z
+Stopped at: Phase 14 context gathered
+Resume file: .planning/phases/14-gui/14-CONTEXT.md
 Next: Phase 13 Plan 03 BUILT — the LIVE half of REP-01 is in place and the offline tier is green, but SC1 is NOT yet signed off (the orchestrator must run the live lane — W4). Shipped: __init__.py lazy _require_ros boundary (rclpy imported inside the body -> teaching RosNotAvailableError; replay() lazy delegator + submodule-shadow-proof replay_bag alias; NO top-level rclpy/rosidl), replay.py (the ONLY rclpy module — D-04/Pattern 4 VERIFIED publish path: load_items -> NoMessagesToReplayError before rclpy.init() on empty [WR-04] -> try/finally rclpy.init()/shutdown() + per-topic create_publisher dict + sink [get_message -> create_publisher(cls,topic,10) -> deserialize_message(cdr,cls) -> publish] + --start seconds -> seek(int(s*1e9)) [W3] -> drives the pure Replayer -> returns published count; the SINGLE production publish path), the thin rosbagger-replay CLI (cli.py — one typer replay verb over replay_bag, @_capability_errors -> clean Exit(1), top imports typer-only, D-10 --end FOLDED into --duration [W5] documented in help + module comment; FLAT single-command invocation `rosbagger-replay <bag> [opts]`), the offline-guard extension (test_import_replay_does_not_pull_ros + submodule guard), and the LIVE SC1 test (tests/test_replay_live.py — importorskip(rclpy)+live marker; PRODUCTION replay_bag() IN-PROCESS publisher + an EXTERNAL subscriber subprocess that counts /imu + reports on stdout; asserts published==9 + received==3; BLOCKER-1 grep-verified: replay_bag( present, NO Replayer(/create_publisher in test). Offline: 459 passed, 2 skipped @ 97.37% (>=80% gate on core+bagq held; rosbagger_replay out per D-12; live test collected-and-skipped), ruff clean (77 files), offline guard 17 green. PENDING SC1 SIGN-OFF (W4): the orchestrator MUST run `source /opt/ros/humble/setup.bash && PYTHONPATH="packages/rosbagger-replay/src:packages/rosbagger-core/src:$PYTHONPATH" python3 -m pytest tests/test_replay_live.py -m live -v` and confirm SC1 PASSED (not skipped) — only then is REP-01 fully Complete. After SC1 passes, the next milestone is Phase 14 (GUI) capability-gating over this replay_bag() API. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` + observe CI green to finalize v0.1.
