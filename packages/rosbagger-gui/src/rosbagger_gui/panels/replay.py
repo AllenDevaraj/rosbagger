@@ -339,10 +339,11 @@ class ReplayPanel(Widget):
                 self.query_one("#replay-scrubber", Scrubber).set_markers([])
                 return
 
-            # bag_start_ns / span from the loaded items (build the transport so the
-            # marker fractions line up with the scrubber's seek mapping).
-            if not self._ensure_transport():
-                return
+            # bag_start_ns / span come from load_items(bag) ALONE (WR-04): merely viewing
+            # the Replay tab must NOT build the publish transport (rclpy.init + node +
+            # publishers) — that stays lazy on first Play/Step/seek per the panel contract.
+            # The marker fractions need only the item timestamps, which load_items provides
+            # without any ROS context, so they line up with the seek mapping all the same.
             from rosbagger_replay import load_items
 
             items = load_items(bag)
