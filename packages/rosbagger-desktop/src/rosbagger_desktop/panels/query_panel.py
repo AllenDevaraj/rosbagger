@@ -144,7 +144,11 @@ class QueryPanel(QWidget):
         history_container = QWidget()
         history_layout = QVBoxLayout(history_container)
         history_layout.setContentsMargins(0, 0, 0, 0)
-        history_layout.addWidget(QLabel("History"))
+        # Section heading (17-03 / D-03): the heading="true" dynamic property keys the theme QSS
+        # heading style — no inline font/color literal lives in the panel.
+        history_label = QLabel("History")
+        history_label.setProperty("heading", True)
+        history_layout.addWidget(history_label)
         history_layout.addWidget(self._history)
 
         # P2-layout: the three resizable regions (schema tree, results view, history) live
@@ -162,6 +166,10 @@ class QueryPanel(QWidget):
         # Fixed-height controls (status, query bar, export bar) stay OUTSIDE the splitter;
         # the splitter takes the free vertical space (stretch factor 1).
         layout = QVBoxLayout(self)
+        # Deliberate spacing rhythm (17-03 / D-03): consistent panel margins + control spacing set
+        # on the layout (not an inline color/QSS literal — styling stays in theme/qss.py).
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
         layout.addWidget(self._status)
         layout.addLayout(query_bar)
         layout.addWidget(regions, 1)

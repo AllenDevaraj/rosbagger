@@ -74,6 +74,9 @@ class InspectPanel(QWidget):
         self._header.setObjectName("inspect_status")
         self._header.setAccessibleName("Inspect status")
         self._header.setAccessibleDescription("Open a bag to inspect")
+        # Section-heading affordance (17-03 / D-03): keyed to the theme QSS heading style — no
+        # inline font/color literal in the panel.
+        self._header.setProperty("heading", True)
 
         # Model/view rendering target (D-02): a generic RowsTableModel behind a QTableView,
         # no per-cell item allocation. The panel formats every cell to a string up front.
@@ -90,6 +93,10 @@ class InspectPanel(QWidget):
         self._schemas_view.setEditTriggers(QTableView.NoEditTriggers)
 
         layout = QVBoxLayout(self)
+        # Deliberate spacing rhythm (17-03 / D-03): margins/spacing on the layout, not an inline
+        # color/QSS literal — styling stays in theme/qss.py.
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
         layout.addWidget(self._header)
         layout.addWidget(self._bag_info_view, 1)
         layout.addWidget(self._schemas_view, 1)

@@ -117,6 +117,57 @@ def test_app_has_five_panels(qtbot) -> None:
     assert window._nav.count() == 5, "expected five nav rows (inspect/query/tf/record/replay)"
 
 
+def test_no_inline_color_in_any_panel_or_shell(qtbot) -> None:
+    """SC1/D-03: no panel or shell widget carries an inline stylesheet — color is app-level.
+
+    Constructs ``MainWindow`` (all five panels) and walks EVERY descendant ``QWidget`` of each
+    panel and the shell chrome (nav rail / panel stack / central), asserting each widget's own
+    ``.styleSheet()`` is empty. Per D-03 ALL color/QSS lives in the app-level theme
+    (``theme/qss.py``) targeted by objectNames / dynamic properties — never an inline per-widget
+    literal. The single app stylesheet on ``QApplication`` is where color belongs; an inline
+    widget stylesheet would breach the single-source rule (T-17-09).
+    """
+    from PySide6.QtWidgets import QWidget
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    roots: list[QWidget] = [window._nav, window._stack, window.centralWidget()]
+    roots.extend(window.panels.values())
+
+    seen: set[int] = set()
+    for root in roots:
+        for widget in [root, *root.findChildren(QWidget)]:
+            if id(widget) in seen:
+                continue
+            seen.add(id(widget))
+            assert widget.styleSheet() == "", (
+                f"{widget.objectName() or type(widget).__name__} carries an inline stylesheet — "
+                "color must live only in the app-level theme/qss.py (D-03)"
+            )
+
+
+def test_shell_and_panels_carry_theme_object_names(qtbot) -> None:
+    """SC1/D-03: the shell chrome + each panel's status/header expose theme objectNames.
+
+    The theme QSS targets these objectNames (nav rail / panel stack / central + per-panel
+    status lines), so asserting they are set proves the panels opt into the centralized theme
+    rather than styling themselves inline.
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window._nav.objectName() == "nav_list"
+    assert window._stack.objectName() == "panel_stack"
+    assert window.centralWidget().objectName() == "shell_central"
+
+    assert window.inspect_panel.status_label.objectName() == "inspect_status"
+    assert window.query_panel.status_label.objectName() == "query_status"
+    assert window.tf_panel.status_label.objectName() == "tf_status"
+    assert window.record_panel.status_label.objectName() == "record_status"
+    assert window.replay_panel.status_label.objectName() == "replay_status"
+
+
 def test_live_panels_disabled_without_ros(qtbot, tmp_path: Path, monkeypatch) -> None:
     """SC2/SC4: with ROS forced absent the live nav rows are disabled, the offline ones aren't.
 

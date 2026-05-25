@@ -74,6 +74,9 @@ class TfPanel(QWidget):
         self._status.setObjectName("tf_status")
         self._status.setAccessibleName("TF status")
         self._status.setAccessibleDescription("Open a bag with /tf to analyze")
+        # Section-heading affordance (17-03 / D-03): keyed to the theme QSS heading style — no
+        # inline font/color literal in the panel.
+        self._status.setProperty("heading", True)
 
         # Model/view rendering target (D-02): RowsTableModel behind a QTableView.
         self._edges_model = RowsTableModel(_EDGES_HEADERS)
@@ -89,6 +92,10 @@ class TfPanel(QWidget):
         self._gaps_view.setEditTriggers(QTableView.NoEditTriggers)
 
         layout = QVBoxLayout(self)
+        # Deliberate spacing rhythm (17-03 / D-03): margins/spacing on the layout, not an inline
+        # color/QSS literal — styling stays in theme/qss.py.
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
         layout.addWidget(self._status)
         layout.addWidget(self._edges_view, 1)
         layout.addWidget(self._gaps_view, 1)

@@ -97,6 +97,40 @@ def build_qss(t: Tokens) -> str:
         color: {t.text_muted};
     }}
 
+    /* Section heading affordance (17-03 visual hierarchy, D-03): panels mark a section/header
+       label with the dynamic property heading="true" instead of an inline font/color literal.
+       A heading reads slightly larger + muted so dense data tables stay the focal point. */
+    QLabel[heading="true"] {{
+        color: {t.text_muted};
+        font-size: {t.font_size_base + 1}px;
+        font-weight: 600;
+        padding: {t.space_sm}px {t.space_sm}px;
+    }}
+
+    /* Shell chrome (17-03): the cockpit nav rail + the central surface get objectName-keyed
+       selectors so the shell itself reads as a deliberate frame, not a default-Qt gray box. */
+    QListWidget#nav_list {{
+        background-color: {t.surface};
+        border: none;
+        border-right: 1px solid {t.border};
+        padding: {t.space_sm}px;
+        outline: 0;
+    }}
+    QListWidget#nav_list::item {{
+        padding: {t.space_sm}px {t.space_md}px;
+        border-radius: {t.radius}px;
+    }}
+    QListWidget#nav_list::item:selected {{
+        background-color: {t.accent};
+        color: {t.bg};
+    }}
+    QWidget#shell_central {{
+        background-color: {t.bg};
+    }}
+    QStackedWidget#panel_stack {{
+        background-color: {t.bg};
+    }}
+
     /* Semantic error status surface — objectName-keyed (replaces inline _STATUS_ERROR_STYLE
        in 17-03). Panels set objectName("status_error") instead of writing inline QSS (D-03). */
     QLabel#status_error {{

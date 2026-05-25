@@ -123,8 +123,13 @@ class MainWindow(QMainWindow):
             panel_id: widget for panel_id, _label, widget, _live in self._registry
         }
 
+        # Shell chrome objectNames (17-03 / D-03): the theme QSS targets these so the cockpit
+        # frame (nav rail + central surface + panel stack) is styled centrally — the shell
+        # writes NO inline color/QSS itself (styling lives only in theme/qss.py).
         self._nav = QListWidget()
+        self._nav.setObjectName("nav_list")
         self._stack = QStackedWidget()
+        self._stack.setObjectName("panel_stack")
         for index, (_panel_id, label, widget, is_live) in enumerate(self._registry):
             self._nav.addItem(label)
             self._stack.addWidget(widget)
@@ -139,7 +144,14 @@ class MainWindow(QMainWindow):
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
 
         central = QWidget()
+        central.setObjectName("shell_central")
         layout = QHBoxLayout(central)
+        # Deliberate spacing rhythm (17-03 / D-03): the nav rail is a fixed-width gutter and the
+        # central margins/spacing give the cockpit breathing room — set on the layout, not via an
+        # inline stylesheet color literal (styling stays in theme/qss.py).
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self._nav.setMaximumWidth(180)
         layout.addWidget(self._nav)
         layout.addWidget(self._stack, 1)
         self.setCentralWidget(central)
