@@ -71,25 +71,34 @@ quote-style = "double"
 # CI runs `uv run pytest` with no extra flags; the coverage gate lives in
 # addopts so local and CI runs are identical.
 [tool.pytest.ini_options]
-addopts = "--cov=rosbagger_core --cov=bagq --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=rosbagger_core --cov=bagq --cov=rosbagger_desktop --cov-report=term-missing --cov-fail-under=80"
 testpaths = ["tests"]
 # pytest-asyncio in auto mode: the headless Textual App tests (Plan 14-07) are
 # `async def` and run via App.run_test() without per-test @pytest.mark.asyncio
-# markers. The GUI stays OUT of the coverage gate above (mirror Phase 13 D-12;
-# the TUI is near-zero pure logic by the thin-face rule).
+# markers. The Textual TUI (rosbagger-gui) stays OUT of the coverage gate (mirror
+# Phase 13 D-12; the TUI is near-zero pure logic by the thin-face rule).
 asyncio_mode = "auto"
 # pytest-qt binding selection (Phase 16): the headless PySide6 desktop-GUI tests
 # (tests/test_desktop.py) run under qtbot with PySide6. The offscreen platform
 # (QT_QPA_PLATFORM=offscreen) is set at the top of the desktop test module BEFORE
 # any PySide6 import (16-RESEARCH Pitfall 3); qt_api pins the binding so qtbot does
-# not try PyQt. The desktop GUI stays OUT of the coverage gate (thin-face rule,
-# mirror the TUI exemption — addopts covers only rosbagger_core + bagq).
+# not try PyQt.
+# Phase 17: rosbagger_desktop is now IN the coverage gate above (blended with
+# rosbagger_core + bagq under one --cov-fail-under=80). The blend — not a standalone
+# desktop floor — is intentional: a handful of desktop paths are irreducibly
+# uncoverable offline (cli.py's QApplication.exec main loop; the live-only branches
+# in record/replay panels + the scrubber that only run on the `-m live` ROS lane),
+# so rosbagger_desktop alone sits ~66%. Folding it into the blended gate brings the
+# headlessly-testable code (theme/, widgets/ models, offline panels) under measurement
+# and guards against desktop regressions, while not demanding coverage of code that
+# physically cannot execute without a real ROS graph or a visible display.
 qt_api = "pyside6"
 # The `live` marker tags the Phase-12 LIVE integration tests (tests/test_record_live.py,
 # Plan 03) that require a sourced ROS 2 environment (rclpy + rosbag2_py). They are
 # SKIPPED in the offline CI (gated by importorskip("rclpy")); registering the marker
-# here silences pytest's "Unknown pytest.mark.live" warning. Coverage stays gated on
-# rosbagger_core + bagq only — the irreducibly-live record core can't be covered offline.
+# here silences pytest's "Unknown pytest.mark.live" warning. The irreducibly-live
+# record/replay core can't be covered offline, so it falls outside the blended gate's
+# reach (see the rosbagger_desktop note above).
 markers = [
     "live: integration tests that require a sourced ROS 2 environment (rclpy + rosbag2_py); skipped in the offline CI",
 ]
