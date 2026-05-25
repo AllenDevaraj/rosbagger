@@ -698,6 +698,91 @@ def test_record_releases_replay_context_before_scan(qtbot, monkeypatch) -> None:
     assert not foreign.torn_down, "record tore down a context the replay panel did not own"
 
 
+# --------------------------------------------------------------------------------------
+# Phase 17 Plan 01 — design-token + QSS theme foundation (D-03/D-04/D-06/D-07/D-08).
+#
+# The cleanest proof the design system is token-driven (17-RESEARCH Pitfall 4): build_qss
+# is a PURE function over a Tokens dataclass — these tests call it with NO QApplication and
+# assert each baked token hex appears in the emitted stylesheet. The theme_apply/theme_toggle
+# tests below DO drive a QApplication (qtbot) but scope QSettings to a unique temp org/app so
+# the dev box's real ~/.config is never polluted (17-RESEARCH Wave 0 note / T-17-02).
+# --------------------------------------------------------------------------------------
+
+
+def test_qss_dark_contains_every_dark_token_hex() -> None:
+    """build_qss(DARK) is a pure non-empty string carrying DARK's baked token hex (D-03/D-04).
+
+    No QApplication is constructed — build_qss is a pure token→string function, the single
+    place QSS strings live (D-03). Each DARK color token must appear verbatim in the output,
+    proving the stylesheet is genuinely token-driven rather than hand-written literals.
+    """
+    from rosbagger_desktop.theme import DARK, build_qss
+
+    qss = build_qss(DARK)
+    assert isinstance(qss, str) and qss.strip(), "build_qss(DARK) must be a non-empty string"
+    for hexval in (DARK.bg, DARK.surface, DARK.text, DARK.accent, DARK.error, DARK.border):
+        assert hexval in qss, f"DARK token {hexval} missing from build_qss(DARK)"
+
+
+def test_qss_light_contains_every_light_token_hex_and_differs_from_dark() -> None:
+    """build_qss(LIGHT) carries LIGHT's hex AND differs from build_qss(DARK) (D-05).
+
+    Each LIGHT color token appears in the LIGHT stylesheet, and the two themes' outputs
+    differ — proving both palettes are real and distinct, not one shared string.
+    """
+    from rosbagger_desktop.theme import DARK, LIGHT, build_qss
+
+    light = build_qss(LIGHT)
+    assert isinstance(light, str) and light.strip(), "build_qss(LIGHT) must be a non-empty string"
+    for hexval in (LIGHT.bg, LIGHT.surface, LIGHT.text, LIGHT.accent, LIGHT.error, LIGHT.border):
+        assert hexval in light, f"LIGHT token {hexval} missing from build_qss(LIGHT)"
+    assert build_qss(DARK) != light, "DARK and LIGHT stylesheets must differ"
+
+
+def test_qss_targets_the_non_inheriting_selectors() -> None:
+    """build_qss targets QTableView grid/selection, QHeaderView::section, QSplitter::handle.
+
+    17-RESEARCH Pitfall 3: these elements do NOT inherit QWidget styling, so the stylesheet
+    must name them explicitly. Also asserts the #status_error objectName selector exists (it
+    replaces query_panel's inline _STATUS_ERROR_STYLE literal in 17-03).
+    """
+    from rosbagger_desktop.theme import DARK, build_qss
+
+    qss = build_qss(DARK)
+    assert "QTableView" in qss
+    assert "gridline-color" in qss
+    assert "selection-background-color" in qss
+    assert "QHeaderView::section" in qss
+    assert "QSplitter::handle" in qss
+    assert "#status_error" in qss
+
+
+def test_qss_tokens_module_imports_no_pyside6() -> None:
+    """A fresh-interpreter import of theme.tokens + theme.qss leaves no PySide6 (D-08/Pitfall 6).
+
+    tokens.py is pure data and qss.py is a pure string function — neither may import Qt at
+    module level, or the offline+Qt-free import graph would be at risk. A FRESH subprocess
+    (empty PYTHONPATH neutralizes the host ROS leak) asserts no PySide6/shiboken6 lands in
+    sys.modules after importing both theme modules.
+    """
+    import subprocess
+
+    code = (
+        "import sys; import rosbagger_desktop.theme.tokens; import rosbagger_desktop.theme.qss; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] in {'PySide6', 'shiboken6'}]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"theme.tokens/theme.qss pulled in Qt at import: {leaked}"
+
+
 def test_replay_rate_loop_guarded_while_drive_running(qtbot, monkeypatch) -> None:
     """CR-02: rate/loop mutations are refused while a drive worker runs (no UI-thread race).
 
