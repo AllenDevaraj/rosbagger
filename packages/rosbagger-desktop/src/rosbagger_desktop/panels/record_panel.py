@@ -345,8 +345,17 @@ class RecordPanel(QWidget):
         )
 
     def _finish_record(self, result: object) -> None:
-        """Write the captured-count terminal status (UI-thread slot for the worker result)."""
-        captured, out = result  # type: ignore[misc]
+        """Write the captured-count terminal status (UI-thread slot for the worker result).
+
+        WR-02: the worker success path emits ``(captured, out)`` (see ``work`` above), but
+        ``result`` is typed ``object`` — a non-2-tuple payload (e.g. a future change to the
+        worker's return) would make the unpack raise an unhandled ``TypeError``/``ValueError``
+        in the Qt event loop. Guard the shape and surface a teaching status instead of crashing.
+        """
+        if not (isinstance(result, tuple) and len(result) == 2):
+            self._status.setText(f"Recorded (unexpected result: {result!r})")
+            return
+        captured, out = result
         self._status.setText(f"Recorded {captured} message(s) → {out}")
 
     def _finish_record_status(self, message: str) -> None:

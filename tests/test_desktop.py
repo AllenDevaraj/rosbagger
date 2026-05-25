@@ -430,6 +430,37 @@ def test_replay_rate_contract_agrees_on_play_and_enter(qtbot) -> None:
     assert "Invalid rate" in panel.status_label.text()
 
 
+def test_finish_record_guards_non_tuple_result(qtbot) -> None:
+    """WR-02: a non-2-tuple worker result becomes a teaching status, never an event-loop crash.
+
+    Pre-fix ``_finish_record`` did ``captured, out = result`` unconditionally — a non-2-tuple
+    payload (typed ``object``) raised an unhandled ``TypeError``/``ValueError`` on the UI thread.
+    Drives the slot with a bare int and a wrong-length tuple (each must set a status and NOT
+    raise), then with the real ``(captured, out)`` shape (the happy path still formats cleanly).
+    """
+    from rosbagger_desktop.panels.record_panel import RecordPanel
+
+    panel = RecordPanel()
+    qtbot.addWidget(panel)
+
+    # Bad shape (bare int, as record() historically returned): teaching status, no exception.
+    panel._finish_record(42)
+    assert "unexpected result" in panel.status_label.text(), (
+        "a non-tuple record result must surface a teaching status, not crash (WR-02)"
+    )
+
+    # Bad shape (wrong-length tuple): same defensive path.
+    panel._finish_record((1, 2, 3))
+    assert "unexpected result" in panel.status_label.text(), (
+        "a wrong-length tuple result must surface a teaching status (WR-02)"
+    )
+
+    # Happy path (the worker's real (captured, out) contract): formats the terminal status.
+    panel._finish_record((7, "out.mcap"))
+    assert "Recorded 7 message(s)" in panel.status_label.text()
+    assert "out.mcap" in panel.status_label.text()
+
+
 def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> None:
     """WR-03: export routes through ``QFileDialog.getSaveFileName`` to a user-chosen path.
 
