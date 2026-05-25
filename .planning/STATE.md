@@ -4,8 +4,8 @@ milestone: v0.3
 milestone_name: Desktop cockpit
 status: executing
 stopped_at: Completed 14-06-PLAN.md
-last_updated: "2026-05-25T08:46:32.189Z"
-last_activity: 2026-05-25 -- Phase 16 planning complete
+last_updated: "2026-05-25T08:59:18.383Z"
+last_activity: 2026-05-25 -- Phase 16 execution started
 progress:
   total_phases: 16
   completed_phases: 15
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone v0.3 (Desktop cockpit) — Phase 16: Native Desktop GUI (PySide6), ready to plan
+**Current focus:** Phase 16 — native-desktop-gui-pyside6
 
 ## Current Position
 
-Phase: 16
-Plan: Not planned yet (run /gsd-plan-phase 16)
-Status: Ready to execute
-Last activity: 2026-05-25 -- Phase 16 planning complete
+Phase: 16 (native-desktop-gui-pyside6) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 16
+Last activity: 2026-05-25 -- Phase 16 execution started
 
 Progress: [█████████░] 94%
 
