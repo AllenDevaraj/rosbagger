@@ -397,3 +397,68 @@ def test_import_gui_does_not_pull_ros():
     """
     leaked = _ros_modules_after_import("rosbagger_gui", "rosbagger_gui.app")
     assert leaked == [], f"import rosbagger_gui pulled in ROS modules: {leaked}"
+
+
+def test_import_core_does_not_pull_pyside6():
+    """`import rosbagger_core` / `import bagq` must NOT pull PySide6 (the Qt-free invariant, D-04).
+
+    Phase 16 adds the native PySide6 desktop GUI as a NEW isolated package
+    (``rosbagger-desktop``); the load-bearing isolation guarantee is that the
+    OFFLINE import graph stays not only ROS-free but ALSO Qt-free — a stray
+    top-level ``from PySide6 ...`` anywhere reachable from ``rosbagger_core`` /
+    ``bagq`` would break the invariant the phase is built to protect (16-RESEARCH
+    Pitfall 4). PySide6's binding runtime is ``shiboken6`` (verified after first
+    install), so both names are in the blocklist; ``PySide6`` alone already catches
+    a leak.
+
+    Mechanism (mirrors the ROS guards above): a FRESH interpreter with
+    ``env={"PYTHONPATH": ""}`` — the empty PYTHONPATH neutralizes this dev host's
+    ROS-on-PYTHONPATH leak, and the editable workspace members still resolve via
+    their site-packages ``.pth`` — so this asserts the import GRAPH is Qt-free.
+    """
+    code = (
+        "import sys; import rosbagger_core; import bagq; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] in {'PySide6', 'shiboken6'}]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"offline import pulled in Qt: {leaked}"
+
+
+def test_import_desktop_cli_does_not_pull_pyside6_or_ros():
+    """`import rosbagger_desktop.cli` stays Qt-free AND ROS-free (QApplication is inside main()).
+
+    The desktop cli is an argparse front door (16-01): ``QApplication`` and
+    ``MainWindow`` are imported INSIDE :func:`rosbagger_desktop.cli.main` (so
+    ``--help`` exits 0 building no Qt, Pitfall 6), the capability probe imports
+    ``rclpy`` inside its body (D-09), and the panels lazy-import the core/ROS APIs
+    inside method bodies (D-08). So the bare ``import rosbagger_desktop.cli`` binds
+    NEITHER the Qt stack (``PySide6`` / ``shiboken6``) NOR the ROS runtime
+    (``rclpy`` / ``rosbag2_py``) — regression-locking the help-clean discipline and
+    the offline invariant for the new package.
+
+    Mechanism: a FRESH interpreter with ``env={"PYTHONPATH": ""}`` (same technique
+    as the ROS / Qt-free guards above).
+    """
+    code = (
+        "import sys; import rosbagger_desktop.cli; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] in "
+        "{'PySide6', 'shiboken6', 'rclpy', 'rosbag2_py'}]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"import rosbagger_desktop.cli pulled Qt/ROS: {leaked}"

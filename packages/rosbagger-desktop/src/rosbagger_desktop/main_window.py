@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .capabilities import ros_available
+from . import capabilities
 from .panels.inspect_panel import InspectPanel
 from .panels.tf_panel import TfPanel
 
@@ -74,7 +74,10 @@ class MainWindow(QMainWindow):
         # The ONE shared open reader (D-07); None until a bag is opened.
         self.reader: object | None = None
         self._bag_path: Path | None = None
-        self._ros_available: bool = ros_available()
+        # Called via the module (not a bound name) so a test can monkeypatch
+        # ``rosbagger_desktop.capabilities.ros_available`` to force the gate path
+        # deterministically — the documented analog of the TUI's _detect_ros patch.
+        self._ros_available: bool = capabilities.ros_available()
 
         # Panel registry — an editable list of (panel_id, label, widget, is_live)
         # rows that LATER plans append to (Plan 02 -> query; Plan 03 -> record/replay).
