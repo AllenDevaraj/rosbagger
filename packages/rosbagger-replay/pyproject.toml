@@ -17,7 +17,7 @@ requires-python = ">=3.10"
 # ONLY rosbagger-core (the v1 reader contract, resolved via the root
 # [tool.uv.sources] workspace source) and typer (the thin-CLI face, mirroring
 # bagq) are uv-resolved. NOTHING ROS goes here (D-03).
-dependencies = ["rosbagger-core", "typer>=0.15,<1"]
+dependencies = ["rosbagger-core>=0.2,<0.3", "typer>=0.15,<1"]
 
 [project.scripts]
 # cli.py lands in Plan 03; declaring the entry point now is fine — hatchling

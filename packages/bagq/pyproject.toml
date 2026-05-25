@@ -6,7 +6,7 @@
 name = "bagq"
 version = "0.2.0"
 requires-python = ">=3.10"
-dependencies = ["rosbagger-core", "typer>=0.15,<1", "rich>=13"]
+dependencies = ["rosbagger-core>=0.2,<0.3", "typer>=0.15,<1", "rich>=13"]
 
 [project.scripts]
 bagq = "bagq.cli:app"
