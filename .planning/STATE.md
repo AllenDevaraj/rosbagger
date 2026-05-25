@@ -4,13 +4,13 @@ milestone: v0.3
 milestone_name: Desktop cockpit
 status: executing
 stopped_at: Completed 14-06-PLAN.md
-last_updated: "2026-05-25T08:59:18.383Z"
-last_activity: 2026-05-25 -- Phase 16 execution started
+last_updated: "2026-05-25T09:07:21.664Z"
+last_activity: 2026-05-25
 progress:
   total_phases: 16
   completed_phases: 15
   total_plans: 48
-  completed_plans: 45
+  completed_plans: 46
   percent: 94
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 16 (native-desktop-gui-pyside6) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 16
-Last activity: 2026-05-25 -- Phase 16 execution started
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-05-25
 
-Progress: [█████████░] 94%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
@@ -115,6 +115,7 @@ Progress: [█████████░] 94%
 | Phase 15 P15-01 | 2min | 3 tasks | 12 files |
 | Phase 15 P02 | 3min | 2 tasks | 2 files |
 | Phase 15 P03 | 4min | 2 tasks | 1 files |
+| Phase 16 P01 | 12min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -226,6 +227,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 15-02] External-install proof encoded as committed scripts/proof_external_install.sh (path-based, throwaway non-.venv venv, neutral cwd, PYTHONPATH="") — autonomous network-free gate printing PROOF OK
 - [Phase ?]: [Phase 15-02] git+@v0.2.0 INSTALL.md recipes documented + flagged awaits-push (remote empty), NOT a blocking checkpoint — path proof is the locally-verified gate
 - [Phase ?]: [Phase 15-03] PHASE 15 COMPLETE (3/3). Full v0.2 release gate green (SC1 five 0.2.0 wheels via uv build --all-packages, no hatch config; uv sync --locked; ruff clean; pytest 466 passed/97.37% incl offline guard under the live extra = SC5; proof script PROOF OK = SC2). Local annotated v0.2.0 tag created (bd06d1e, NOT pushed); push + observe-CI + literal git recipe = sole human follow-ups (Phase 8 honest-split precedent).
+- [Phase ?]: [Phase 16-01] rosbagger-desktop stood up as an isolated PySide6 workspace package (v0.2.0); PySide6 declared ONLY in its deps + the dev group; offline import graph kept BOTH ROS-free AND Qt-free via two new fresh-subprocess guards (D-01/D-04). shiboken6 confirmed as the binding-runtime module (A2). Panel registry is editable list+panels-dict for Plans 02/03 to append.
 
 ### Pending Todos
 
@@ -252,7 +254,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-25T00:37:59.998Z
+Last session: 2026-05-25T09:07:06.531Z
 Stopped at: Completed 14-06-PLAN.md
 Resume file: None
 Next: Phase 14 Plan 02 (next GUI plan). Plan 14-01 COMPLETE — the shared rclpy publish path (build_publish_sink) is extracted and lazily re-exported, so the upcoming GUI replay panel drives the pure Replayer through the SAME single sink (D-09a). Phase-13 offline replay regression suite + offline-import guard green (42 tests). Historical context below.

@@ -435,11 +435,11 @@ Plans:
 **Goal:** Ship a native desktop GUI as a new isolated workspace package `rosbagger-desktop` (PySide6/Qt). Running `rosbagger-desktop [BAG]` spawns a real OS window with full parity to the Textual TUI's five panels (inspect/query/tf/record/replay), each a thin face calling the existing `rosbagger_core`/`rosbagger_record`/`rosbagger_replay` APIs verbatim — no new analysis logic. Hard constraint: do not modify or regress anything that already exists — the TUI (`rosbagger-gui`) is untouched, PySide6 is isolated to the new package, and the offline import graph stays both ROS-free AND Qt-free (offline guard extended). Phased internally: offline parity (inspect/query/tf) first, then live parity (record/replay). Full design: `docs/superpowers/specs/2026-05-25-rosbagger-desktop-gui-design.md`.
 **Requirements**: (new milestone v0.3 — DoD: native window launches, five panels reach feature parity with the TUI reusing module APIs, package fully isolated, offline+Qt-free guard green, headless pytest-qt tests pass at ≥80%)
 **Depends on:** Phase 15
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 16-01-PLAN.md — Package skeleton + manifest + root deps/config + re-lock uv.lock + cli (argparse front door) + capabilities (rclpy probe) + QMainWindow shell with Inspect/TF panels + Qt-free offline guard + headless SC1/SC3 tests -> SC1/SC3/SC4/SC5
+- [x] 16-01-PLAN.md — Package skeleton + manifest + root deps/config + re-lock uv.lock + cli (argparse front door) + capabilities (rclpy probe) + QMainWindow shell with Inspect/TF panels + Qt-free offline guard + headless SC1/SC3 tests -> SC1/SC3/SC4/SC5
 
 **Wave 2** *(blocked on 16-01)*
 - [ ] 16-02-PLAN.md — Query panel (thin face over query() + collect_table_schemas tree + write_table export + teaching errors), registered as an offline panel + headless SC2/SC3 query test -> SC2/SC3/SC5
