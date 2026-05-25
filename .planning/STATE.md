@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.4
 milestone_name: Desktop revamp
-status: phase_not_planned
-stopped_at: Phase 17 added (Desktop Revamp) — not yet planned
-last_updated: 2026-05-25T20:10:00.000Z
+status: phase_executed_pending_human_verify
+stopped_at: Phase 17 — all 3 plans' automated tasks done; BLOCKED on 17-03 human visual checkpoint (real-window dark/light verify)
+last_updated: 2026-05-25T21:30:00.000Z
 last_activity: 2026-05-25
 progress:
   total_phases: 17
   completed_phases: 16
-  total_plans: 48
-  completed_plans: 48
-  percent: 94
+  total_plans: 51
+  completed_plans: 50
+  percent: 98
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone v0.4 — Desktop revamp (Phase 17 scoped, not yet planned)
+**Current focus:** Milestone v0.4 — Desktop revamp (Phase 17 executed; awaiting human visual sign-off)
 
 ## Current Position
 
 Phase: 17
-Plan: Not planned yet
-Status: Phase added — run /gsd-plan-phase 17 to break down
+Plan: 17-03 (final task is a blocking human-verify checkpoint)
+Status: All 3 plans' automated tasks complete + committed (505 passed, 84.74%, offline guard green, no inline color). BLOCKED on the 17-03 real-window visual checkpoint — launch `PYTHONPATH="" uv run rosbagger-desktop <bag>`, verify both themes + live toggle + persistence, then the phase can be verified/closed.
 Last activity: 2026-05-25
 
 Progress: [██████████] 100%
