@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
 from . import capabilities
 from .panels.inspect_panel import InspectPanel
 from .panels.query_panel import QueryPanel
+from .panels.record_panel import RecordPanel
+from .panels.replay_panel import ReplayPanel
 from .panels.tf_panel import TfPanel
 
 # The default panel shown on launch (the first nav row).
@@ -81,16 +83,21 @@ class MainWindow(QMainWindow):
         self._ros_available: bool = capabilities.ros_available()
 
         # Panel registry — an editable list of (panel_id, label, widget, is_live)
-        # rows that LATER plans append to (Plan 03 -> record/replay). This plan adds
-        # the Query panel (offline, is_live=False) in the TUI _PANELS order
-        # inspect/query/tf; all three offline rows are always enabled (D-08).
+        # rows in the full TUI _PANELS order inspect/query/tf/record/replay (SC1
+        # completeness, D-08/D-09). The three offline rows (is_live=False) are always
+        # enabled; the two live rows (is_live=True) are capability-gated below — their
+        # nav items are disabled with a teaching tooltip when ROS is absent.
         self.inspect_panel = InspectPanel(self)
         self.query_panel = QueryPanel(self)
         self.tf_panel = TfPanel(self)
+        self.record_panel = RecordPanel(self)
+        self.replay_panel = ReplayPanel(self)
         self._registry: list[tuple[str, str, QWidget, bool]] = [
             ("inspect", "Inspect", self.inspect_panel, False),
             ("query", "Query", self.query_panel, False),
             ("tf", "TF", self.tf_panel, False),
+            ("record", "Record", self.record_panel, True),
+            ("replay", "Replay", self.replay_panel, True),
         ]
         # Public accessor so headless tests reach the live widgets by id.
         self.panels: dict[str, QWidget] = {
