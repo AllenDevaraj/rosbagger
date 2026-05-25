@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..widgets import set_status
 from ..workers import BlockingWorker, run_on_thread, stop_thread
 
 # A bounded default record window (seconds). record_topics() spins its own loop checking
@@ -73,7 +74,13 @@ class RecordPanel(QWidget):
         self._discover_thread: QThread | None = None
         self._record_thread: QThread | None = None
 
+        # Status line as an accessibly-named region (D-02 a11y parity); a stable objectName lets
+        # the shared status helper restore it after an error toggle and the theme style it.
         self._status = QLabel("Live recording — open the panel to discover topics.")
+        self._status.setObjectName("record_status")
+        self._status.setAccessibleName("Record status")
+        self._status.setAccessibleDescription("Live recording — open the panel to discover topics.")
+        self._status.setProperty("heading", True)
 
         # Topic checklist: a QListWidget with checkable items (the Qt analog of the TUI
         # SelectionList). Each item carries the topic NAME — Start reads the checked names.
@@ -191,14 +198,14 @@ class RecordPanel(QWidget):
         ``QThread`` worker (Pitfall 1); a fresh scan replaces any in-flight one.
         """
         if not self._ros_available():
-            self._status.setText(_NO_ROS_HINT)
+            set_status(self._status, _NO_ROS_HINT, is_error=True)
             return
         if self._discover_thread is not None and self._discover_thread.isRunning():
             return  # a scan is already running; let it finish
         # WR-01: release the replay panel's own rclpy context so the unconditional
         # rclpy.init() inside list_record_topics does not clash with a live replay context.
         self._release_replay_context()
-        self._status.setText("Discovering live topics…")
+        set_status(self._status, "Discovering live topics…")
 
         def work() -> dict:
             # Lazy import (D-08): list_record_topics owns its own rclpy node — no node
@@ -218,9 +225,20 @@ class RecordPanel(QWidget):
             self,
             worker,
             on_result=self._populate_checklist,
-            on_failed=self._status.setText,
+            on_failed=self._on_discover_failed,
             on_finished=self._clear_discover_thread,  # CR-01: null the ref before deleteLater
         )
+
+    def _on_discover_failed(self, message: str) -> None:
+        """Render a discovery teaching-error VERBATIM through the accessible helper (D-02/D-09).
+
+        The worker emits ``str(exc)`` for the capability teaching errors (or
+        ``"Topic discovery failed: <exc>"`` otherwise) — never a traceback. Routed through the
+        shared ``set_status`` with ``is_error=True`` so the error affordance shows + a screen
+        reader Alert fires on a real desktop (guarded no-op offscreen). Content unchanged
+        (THIN-FACE, D-09 — core owns the strings).
+        """
+        set_status(self._status, message, is_error=True)
 
     def _clear_discover_thread(self) -> None:
         """Drop the kept discover-thread ref when the worker finishes (CR-01 — UI thread).
@@ -247,9 +265,11 @@ class RecordPanel(QWidget):
             item.setCheckState(Qt.Unchecked)
             self._topic_list.addItem(item)
         if topics:
-            self._status.setText(f"Discovered {len(topics)} topic(s) — select + Start to record.")
+            set_status(
+                self._status, f"Discovered {len(topics)} topic(s) — select + Start to record."
+            )
         else:
-            self._status.setText("No live topics discovered. Publish some, then re-open.")
+            set_status(self._status, "No live topics discovered. Publish some, then re-open.")
 
     def _checked_topics(self) -> list[str]:
         """The topic names of the checked checklist items (verbatim, no selection logic)."""
@@ -275,14 +295,18 @@ class RecordPanel(QWidget):
         ``record_topics`` runs in the worker (Pitfall 1).
         """
         if not self._ros_available():
-            self._status.setText(_NO_ROS_HINT)
+            set_status(self._status, _NO_ROS_HINT, is_error=True)
             return
         if self._record_thread is not None and self._record_thread.isRunning():
-            self._status.setText("A record is already in flight (bounded — wait for it to finish).")
+            set_status(
+                self._status,
+                "A record is already in flight (bounded — wait for it to finish).",
+                is_error=True,
+            )
             return
         topics = self._checked_topics()
         if not topics:
-            self._status.setText("Select at least one topic to record.")
+            set_status(self._status, "Select at least one topic to record.", is_error=True)
             return
         out = self._out_input.text().strip() or _DEFAULT_OUT
         storage = self._selected_storage()
@@ -291,9 +315,10 @@ class RecordPanel(QWidget):
         self._release_replay_context()
         self._start_button.setEnabled(False)
         self._dismiss_button.setEnabled(True)
-        self._status.setText(
+        set_status(
+            self._status,
             f"Recording {len(topics)} topic(s) → {out} "
-            f"({storage}, up to {_DEFAULT_RECORD_SECONDS:.0f}s)…"
+            f"({storage}, up to {_DEFAULT_RECORD_SECONDS:.0f}s)…",
         )
 
         def work() -> object:
@@ -339,9 +364,10 @@ class RecordPanel(QWidget):
         than claiming an immediate stop the panel cannot deliver.
         """
         self._reset_buttons()
-        self._status.setText(
+        set_status(
+            self._status,
             f"Dismissed — the bounded record finalizes on its own "
-            f"(up to {_DEFAULT_RECORD_SECONDS:.0f}s)."
+            f"(up to {_DEFAULT_RECORD_SECONDS:.0f}s).",
         )
 
     def _finish_record(self, result: object) -> None:
@@ -353,14 +379,19 @@ class RecordPanel(QWidget):
         in the Qt event loop. Guard the shape and surface a teaching status instead of crashing.
         """
         if not (isinstance(result, tuple) and len(result) == 2):
-            self._status.setText(f"Recorded (unexpected result: {result!r})")
+            set_status(self._status, f"Recorded (unexpected result: {result!r})", is_error=True)
             return
         captured, out = result
-        self._status.setText(f"Recorded {captured} message(s) → {out}")
+        set_status(self._status, f"Recorded {captured} message(s) → {out}")
 
     def _finish_record_status(self, message: str) -> None:
-        """Write a teaching-error status from the record worker (UI-thread slot)."""
-        self._status.setText(message)
+        """Write a teaching-error status from the record worker through the accessible helper.
+
+        The worker emits ``str(exc)`` for the capability teaching errors (or
+        ``"Recording failed: <exc>"`` otherwise). Routed through the shared ``set_status`` with
+        ``is_error=True`` (error affordance + guarded a11y Alert, D-02/D-09); content unchanged.
+        """
+        set_status(self._status, message, is_error=True)
 
     def _reset_buttons(self) -> None:
         """Re-enable Start / disable Dismiss (UI-thread, after the record worker finishes)."""

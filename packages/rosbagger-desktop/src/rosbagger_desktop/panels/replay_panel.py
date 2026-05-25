@@ -53,7 +53,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import Scrubber
+from ..widgets import Scrubber, set_status
 from ..workers import BlockingWorker, run_on_thread, stop_thread
 
 REPLAY_HINT = "Source your ROS 2 environment to enable live replay (rosbagger-replay)."
@@ -83,7 +83,13 @@ class ReplayPanel(QWidget):
         # Kept drive-thread ref (Pitfall 2 — the GC must not collect a live thread).
         self._drive_thread: QThread | None = None
 
+        # Status line as an accessibly-named region (D-02 a11y parity); a stable objectName lets
+        # the shared status helper restore it after an error toggle and the theme style it.
         self._status = QLabel(REPLAY_HINT)
+        self._status.setObjectName("replay_status")
+        self._status.setAccessibleName("Replay status")
+        self._status.setAccessibleDescription(REPLAY_HINT)
+        self._status.setProperty("heading", True)
         self._scrubber = Scrubber()
 
         self._play_button = QPushButton("Play")
@@ -156,10 +162,10 @@ class ReplayPanel(QWidget):
         """Source the event markers when the panel becomes the active stacked view (D-14)."""
         super().showEvent(event)
         if not self._ros_available():
-            self._status.setText(REPLAY_HINT)
+            set_status(self._status, REPLAY_HINT, is_error=True)
             return
         if self._bag_path() is None:
-            self._status.setText("Open a bag to replay (no bag loaded).")
+            set_status(self._status, "Open a bag to replay (no bag loaded).", is_error=True)
             return
         self._load_markers()
 
@@ -204,10 +210,10 @@ class ReplayPanel(QWidget):
         try:
             value = float(raw)
         except ValueError:
-            self._status.setText(f"Invalid rate {raw!r}: enter a number > 0.")
+            set_status(self._status, f"Invalid rate {raw!r}: enter a number > 0.", is_error=True)
             return None
         if value <= 0:
-            self._status.setText(f"Invalid rate {raw!r}: enter a number > 0.")
+            set_status(self._status, f"Invalid rate {raw!r}: enter a number > 0.", is_error=True)
             return None
         return value
 
@@ -231,7 +237,7 @@ class ReplayPanel(QWidget):
 
         bag = self._bag_path()
         if bag is None:
-            self._status.setText("Open a bag to replay (no bag loaded).")
+            set_status(self._status, "Open a bag to replay (no bag loaded).", is_error=True)
             return False
 
         rate = self._validated_rate()
@@ -266,15 +272,15 @@ class ReplayPanel(QWidget):
             self._item_count = len(items)
             self._bag_span_ns = items[-1].t_ns - items[0].t_ns
         except RosNotAvailableError as exc:
-            self._status.setText(str(exc))
+            set_status(self._status, str(exc), is_error=True)
             self._teardown_transport()
             return False
         except NoMessagesToReplayError as exc:
-            self._status.setText(str(exc))
+            set_status(self._status, str(exc), is_error=True)
             self._teardown_transport()
             return False
         except Exception as exc:  # noqa: BLE001 - surface any live build failure as teaching text
-            self._status.setText(f"Replay setup failed: {exc}")
+            set_status(self._status, f"Replay setup failed: {exc}", is_error=True)
             self._teardown_transport()
             return False
         return True
@@ -313,10 +319,12 @@ class ReplayPanel(QWidget):
     def _play(self) -> None:
         """Resume publishing from the held cursor (→ PLAYING) and (re)start the drive worker."""
         if not self._ros_available():
-            self._status.setText(REPLAY_HINT)
+            set_status(self._status, REPLAY_HINT, is_error=True)
             return
         if self._drive_running():
-            self._status.setText("Already playing — pause before issuing a new control.")
+            set_status(
+                self._status, "Already playing — pause before issuing a new control.", is_error=True
+            )
             return
         if not self._ensure_transport():
             return
@@ -324,7 +332,7 @@ class ReplayPanel(QWidget):
         # WR-06: report the Replayer's ACTUAL rate (set_rate's validated value), not a re-read of
         # the raw input — the input and the running scheduler can no longer disagree.
         rate = self._replayer.rate  # type: ignore[union-attr]
-        self._status.setText(f"Playing… ({self._item_count} msg, rate {rate:g})")
+        set_status(self._status, f"Playing… ({self._item_count} msg, rate {rate:g})")
         self._start_drive()
 
     def _pause(self) -> None:
@@ -332,20 +340,22 @@ class ReplayPanel(QWidget):
         if self._replayer is None:
             return
         self._replayer.pause()  # type: ignore[union-attr]
-        self._status.setText("Paused.")
+        set_status(self._status, "Paused.")
 
     def _step(self) -> None:
         """Arm a single-step (publish one item then re-pause, D-14) + run the worker once."""
         if not self._ros_available():
-            self._status.setText(REPLAY_HINT)
+            set_status(self._status, REPLAY_HINT, is_error=True)
             return
         if self._drive_running():
-            self._status.setText("Pause before stepping (a play worker is running).")
+            set_status(
+                self._status, "Pause before stepping (a play worker is running).", is_error=True
+            )
             return
         if not self._ensure_transport():
             return
         self._replayer.step()  # type: ignore[union-attr]
-        self._status.setText("Stepped one message.")
+        set_status(self._status, "Stepped one message.")
         self._start_drive()
 
     def _apply_rate(self) -> None:
@@ -365,7 +375,11 @@ class ReplayPanel(QWidget):
         if self._replayer is None:
             return
         if self._drive_running():
-            self._status.setText("Pause before changing the rate (a play worker is running).")
+            set_status(
+                self._status,
+                "Pause before changing the rate (a play worker is running).",
+                is_error=True,
+            )
             return
         # WR-06: the SAME validate-or-reject contract the Play/Step build path uses
         # (_validated_rate) — both paths agree on the widget's contract, never a silent coerce.
@@ -373,7 +387,7 @@ class ReplayPanel(QWidget):
         if rate is None:  # _validated_rate set the teaching status
             return
         self._replayer.set_rate(rate)  # type: ignore[union-attr]  # set_rate also rejects <= 0
-        self._status.setText(f"Rate set to {rate:g}.")
+        set_status(self._status, f"Rate set to {rate:g}.")
 
     def _apply_loop(self, checked: bool) -> None:
         """Forward the loop toggle to ``replayer.loop`` (D-14; wrap rewinds to 0, WR-02).
@@ -386,7 +400,11 @@ class ReplayPanel(QWidget):
         if self._replayer is None:
             return
         if self._drive_running():
-            self._status.setText("Pause before toggling loop (a play worker is running).")
+            set_status(
+                self._status,
+                "Pause before toggling loop (a play worker is running).",
+                is_error=True,
+            )
             return
         self._replayer.loop = checked  # type: ignore[union-attr]
 
@@ -401,14 +419,16 @@ class ReplayPanel(QWidget):
         mutate it between run segments — WR-06).
         """
         if self._drive_running():
-            self._status.setText("Pause before seeking (a play worker is running).")
+            set_status(
+                self._status, "Pause before seeking (a play worker is running).", is_error=True
+            )
             return
         if not self._ensure_transport():
             return
         t_offset_ns = int(fraction * self._bag_span_ns)
         self._replayer.seek(t_offset_ns)  # type: ignore[union-attr]
         self._update_position()
-        self._status.setText(f"Seeked to {fraction * 100:.0f}% of the bag.")
+        set_status(self._status, f"Seeked to {fraction * 100:.0f}% of the bag.")
 
     def _update_position(self) -> None:
         """Reflect the Replayer cursor onto the scrubber playhead (UI-thread helper).
@@ -494,9 +514,18 @@ class ReplayPanel(QWidget):
             self,
             worker,
             on_result=self._on_drive_done,
-            on_failed=self._status.setText,
+            on_failed=self._on_drive_failed,
             on_finished=self._on_drive_finished,  # CR-01/CR-02: clear ref + re-enable controls
         )
+
+    def _on_drive_failed(self, message: str) -> None:
+        """Render a drive-worker error VERBATIM through the accessible helper (D-02/D-09).
+
+        The worker emits ``"Replay failed: <exc>"`` (never a traceback). Routed through the
+        shared ``set_status`` with ``is_error=True`` so the error affordance shows + a screen
+        reader Alert fires on a real desktop (guarded no-op offscreen). Content unchanged.
+        """
+        set_status(self._status, message, is_error=True)
 
     def _on_drive_finished(self) -> None:
         """Drop the drive-thread ref + re-enable rate/loop controls when the worker finishes.
@@ -528,4 +557,4 @@ class ReplayPanel(QWidget):
 
         if replayer.state is State.DONE:  # type: ignore[union-attr]
             published = self._published["n"] if self._published else 0
-            self._status.setText(f"Done — published {published} message(s).")
+            set_status(self._status, f"Done — published {published} message(s).")

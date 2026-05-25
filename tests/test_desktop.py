@@ -168,6 +168,55 @@ def test_shell_and_panels_carry_theme_object_names(qtbot) -> None:
     assert window.replay_panel.status_label.objectName() == "replay_status"
 
 
+def test_record_replay_status_is_accessible_and_error_styled(qtbot) -> None:
+    """D-02: record + replay status labels are accessibly named and route errors through set_status.
+
+    Builds both live panels and asserts each status label exposes an ``accessibleName`` (so a
+    screen reader announces a named status region) and a base objectName the theme QSS targets.
+    Then drives an ERROR path on each (an invalid rate on replay; the no-ROS hint on record via a
+    forced-no-ROS scan) and asserts the shared ``set_status`` toggled the ``status_error``
+    objectName affordance (the color comes from the theme QSS — D-03, no inline literal) without
+    crashing under offscreen Qt (the QAccessible Alert is guarded, D-09).
+    """
+    from rosbagger_desktop.panels.record_panel import RecordPanel
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    record = RecordPanel()
+    replay = ReplayPanel()
+    qtbot.addWidget(record)
+    qtbot.addWidget(replay)
+
+    # Accessibly named + theme-targeted base objectName on both (D-02 a11y parity).
+    assert record.status_label.accessibleName() == "Record status"
+    assert record.status_label.objectName() == "record_status"
+    assert replay.status_label.accessibleName() == "Replay status"
+    assert replay.status_label.objectName() == "replay_status"
+
+    # Replay error path: an invalid rate routes through set_status(is_error=True) → status_error.
+    replay.rate_input.setText("fast")
+    assert replay._validated_rate() is None  # the error path sets the teaching status + affordance
+    assert replay.status_label.objectName() == "status_error", (
+        "replay invalid-rate did not toggle the status_error affordance (D-02/D-03)"
+    )
+    assert "Invalid rate" in replay.status_label.text()
+
+    # Record error path: a scan with ROS forced absent routes the no-ROS hint as an error. The
+    # panel reads ros_available off its window(); with no parent window the getattr default is
+    # False, so the scan takes the teaching-hint error branch.
+    record._scan_topics()
+    assert record.status_label.objectName() == "status_error", (
+        "record no-ROS hint did not toggle the status_error affordance (D-02/D-03)"
+    )
+
+    # A subsequent success-path status clears the affordance back to the base objectName.
+    from rosbagger_desktop.widgets import set_status
+
+    set_status(record.status_label, "all good")
+    assert record.status_label.objectName() == "record_status", (
+        "record success path did not restore the base objectName (path-scoped affordance)"
+    )
+
+
 def test_live_panels_disabled_without_ros(qtbot, tmp_path: Path, monkeypatch) -> None:
     """SC2/SC4: with ROS forced absent the live nav rows are disabled, the offline ones aren't.
 
