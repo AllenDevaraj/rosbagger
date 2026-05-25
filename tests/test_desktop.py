@@ -783,25 +783,38 @@ def test_qss_tokens_module_imports_no_pyside6() -> None:
     assert leaked == [], f"theme.tokens/theme.qss pulled in Qt at import: {leaked}"
 
 
-def _temp_settings_scope(monkeypatch, tmp_path: Path) -> None:
-    """Point QSettings at a tmp .conf in a unique org/app scope (T-17-02 / 17-RESEARCH Wave 0).
+import pytest  # noqa: E402
 
-    Sets QSettings's default IniFormat path under ``tmp_path`` and a unique org/app name so the
-    dev box's real ``~/.config/rosbagger/rosbagger-desktop.conf`` is NEVER written/read by a
-    theme test. Also clears any pre-existing ``ui/theme`` so each test starts from the default.
+
+@pytest.fixture
+def theme_scope(tmp_path: Path):
+    """Scope QSettings to a tmp .conf + reset the global app stylesheet on teardown.
+
+    T-17-02 / 17-RESEARCH Wave 0: points QSettings's IniFormat path under ``tmp_path`` and uses
+    a unique org/app name so the dev box's real ``~/.config/rosbagger/rosbagger-desktop.conf``
+    is NEVER written/read by a theme test, and clears any pre-existing ``ui/theme`` so each test
+    starts from the dark default.
+
+    On teardown it clears the global ``QApplication`` stylesheet the theme tests set: a leftover
+    app-wide QSS string interacts with later offscreen widgets' style unpolish during GC and
+    aggravates the known offscreen teardown Bus-error race (CONTEXT host note). Resetting it
+    isolates each theme test's global Qt mutation from a sibling test's teardown.
     """
     from PySide6.QtCore import QCoreApplication, QSettings
+    from PySide6.QtWidgets import QApplication
 
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-    QSettings.setPath(
-        QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path)
-    )
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
     QCoreApplication.setOrganizationName("rosbagger-test")
     QCoreApplication.setApplicationName("rosbagger-desktop-test")
     QSettings().remove("ui/theme")  # start each test from the dark default
+    yield
+    app = QApplication.instance()
+    if app is not None:
+        app.setStyleSheet("")  # clear the global stylesheet so it does not bleed into teardown
 
 
-def test_theme_apply_sets_stylesheet_with_active_bg(qtbot, tmp_path: Path, monkeypatch) -> None:
+def test_theme_apply_sets_stylesheet_with_active_bg(qtbot, theme_scope) -> None:
     """ThemeManager().apply() themes the running QApplication with the active bg hex (D-06).
 
     With a fresh (dark-default) QSettings scope, constructing a ThemeManager and calling
@@ -812,8 +825,6 @@ def test_theme_apply_sets_stylesheet_with_active_bg(qtbot, tmp_path: Path, monke
 
     from rosbagger_desktop.theme import DARK, ThemeManager
 
-    _temp_settings_scope(monkeypatch, tmp_path)
-
     manager = ThemeManager()
     assert manager.name == "dark", "default (unset) ui/theme should report 'dark'"
     manager.apply()
@@ -823,9 +834,7 @@ def test_theme_apply_sets_stylesheet_with_active_bg(qtbot, tmp_path: Path, monke
     assert DARK.bg in sheet, "applied stylesheet does not contain the active (DARK) bg hex"
 
 
-def test_theme_toggle_flips_settings_and_live_stylesheet(
-    qtbot, tmp_path: Path, monkeypatch
-) -> None:
+def test_theme_toggle_flips_settings_and_live_stylesheet(qtbot, theme_scope) -> None:
     """toggle() flips the persisted ui/theme AND the live stylesheet to the other theme (D-06).
 
     Starts dark, toggles, and asserts BOTH the QSettings ui/theme value flipped to "light"
@@ -836,8 +845,6 @@ def test_theme_toggle_flips_settings_and_live_stylesheet(
     from PySide6.QtWidgets import QApplication
 
     from rosbagger_desktop.theme import DARK, LIGHT, ThemeManager
-
-    _temp_settings_scope(monkeypatch, tmp_path)
 
     manager = ThemeManager()
     manager.apply()
@@ -852,9 +859,7 @@ def test_theme_toggle_flips_settings_and_live_stylesheet(
     assert DARK.bg not in sheet, "live stylesheet still carries the DARK bg after toggle"
 
 
-def test_theme_honors_persisted_light_on_construction(
-    qtbot, tmp_path: Path, monkeypatch
-) -> None:
+def test_theme_honors_persisted_light_on_construction(qtbot, theme_scope) -> None:
     """A pre-persisted ui/theme="light" is honored on the NEXT ThemeManager construction (D-06).
 
     Writes "light" to the temp QSettings scope, then constructs a fresh ThemeManager and
@@ -866,7 +871,6 @@ def test_theme_honors_persisted_light_on_construction(
 
     from rosbagger_desktop.theme import LIGHT, ThemeManager
 
-    _temp_settings_scope(monkeypatch, tmp_path)
     QSettings().setValue("ui/theme", "light")
 
     manager = ThemeManager()
@@ -877,7 +881,7 @@ def test_theme_honors_persisted_light_on_construction(
     )
 
 
-def test_theme_tolerates_garbage_persisted_value(qtbot, tmp_path: Path, monkeypatch) -> None:
+def test_theme_tolerates_garbage_persisted_value(qtbot, theme_scope) -> None:
     """A hand-edited/garbage ui/theme value degrades to the dark default, no crash (T-17-01).
 
     A tampered .conf could carry any string. The manager must select DARK unless the stored
@@ -888,7 +892,6 @@ def test_theme_tolerates_garbage_persisted_value(qtbot, tmp_path: Path, monkeypa
 
     from rosbagger_desktop.theme import DARK, ThemeManager
 
-    _temp_settings_scope(monkeypatch, tmp_path)
     QSettings().setValue("ui/theme", "chartreuse-nonsense")
 
     manager = ThemeManager()
@@ -898,25 +901,19 @@ def test_theme_tolerates_garbage_persisted_value(qtbot, tmp_path: Path, monkeypa
     )
 
 
-def test_cli_main_wires_identity_and_theme(qtbot, tmp_path: Path, monkeypatch) -> None:
+def test_cli_main_wires_identity_and_theme(qtbot, theme_scope, monkeypatch) -> None:
     """cli.main sets org/app identity and applies a theme before show (no real exec loop).
 
-    Stubs QApplication.exec to return 0 immediately so main() does not block, scopes QSettings
-    to tmp_path, and asserts that after main() the QApplication carries a non-empty stylesheet
-    (the theme was applied before show) and the org/app identity was set to the rosbagger scope.
+    Stubs QApplication.exec to return 0 immediately so main() does not block; the ``theme_scope``
+    fixture already points QSettings's IniFormat path under tmp_path (so main()'s real
+    "rosbagger" scope writes there, not ~/.config) and clears the global stylesheet on teardown.
+    Asserts that after main() the QApplication carries a non-empty stylesheet (the theme was
+    applied before show) and the org/app identity was set to the rosbagger scope.
     """
     from PySide6.QtCore import QCoreApplication
     from PySide6.QtWidgets import QApplication
 
     from rosbagger_desktop import cli
-
-    _temp_settings_scope(monkeypatch, tmp_path)
-    # Override the temp scope's org/app name AFTER main sets the real one would be wrong; instead
-    # re-point the path so main()'s real ("rosbagger") scope writes under tmp, not ~/.config.
-    from PySide6.QtCore import QSettings
-
-    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
-    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
 
     monkeypatch.setattr(QApplication, "exec", lambda self: 0)
 
@@ -929,7 +926,7 @@ def test_cli_main_wires_identity_and_theme(qtbot, tmp_path: Path, monkeypatch) -
     )
 
 
-def test_view_menu_theme_toggle_flips_live(qtbot, tmp_path: Path, monkeypatch) -> None:
+def test_view_menu_theme_toggle_flips_live(qtbot, theme_scope) -> None:
     """The View-menu checkable action flips theme_manager.name AND the live stylesheet (D-06).
 
     Builds a MainWindow (which self-constructs a ThemeManager when none is passed), triggers
@@ -941,8 +938,6 @@ def test_view_menu_theme_toggle_flips_live(qtbot, tmp_path: Path, monkeypatch) -
 
     from rosbagger_desktop.main_window import MainWindow
     from rosbagger_desktop.theme import DARK, LIGHT
-
-    _temp_settings_scope(monkeypatch, tmp_path)
 
     window = MainWindow()
     qtbot.addWidget(window)

@@ -77,20 +77,20 @@ class MainWindow(QMainWindow):
 
         ``theme_manager`` (Phase 17) is the shell's live Dark/Light toggle owner (D-06).
         ``cli.main`` constructs+applies one and hands it in; when called directly (tests,
-        the bag-only path) it is ``None`` and the window constructs its OWN ThemeManager so a
-        directly-built window stays themeable. The manager is NOT re-applied here — cli.main
-        already applied it before show(); a self-constructed one is left unapplied (no running
-        app stylesheet is forced from a unit-test-built window).
+        the bag-only path) it is ``None`` and the window LAZILY constructs its OWN ThemeManager
+        on first access (the ``theme_manager`` property / a View-toggle click) so a directly-
+        built window stays themeable. Deferring construction keeps ``__init__`` from creating an
+        extra ``QObject`` + doing ``QSettings`` disk I/O on EVERY window build — every unrelated
+        headless test builds a window, and an orphaned manager QObject aggravates the known
+        offscreen teardown Bus-error race (CONTEXT host note). A self-constructed manager is
+        PARENTED to this window so it is destroyed with the window. A cli-supplied manager is
+        already applied + owned by cli.main and stored as-is.
         """
         super().__init__()
         self.setWindowTitle("rosbagger-desktop")
 
-        # Theme manager (D-06): supplied by cli.main (already applied) or self-constructed for a
-        # directly-built window so the View-menu toggle always has a manager to drive (Task 3).
-        if theme_manager is None:
-            from .theme import ThemeManager
-
-            theme_manager = ThemeManager()
+        # Theme manager (D-06): a cli-supplied manager is stored eagerly; otherwise construction
+        # is deferred until first access (see _ensure_theme_manager) to keep __init__ light.
         self._theme_manager = theme_manager
 
         # The ONE shared open reader (D-07); None until a bag is opened.
@@ -161,10 +161,26 @@ class MainWindow(QMainWindow):
         """Whether a ROS 2 environment is sourced (computed once at startup, D-09)."""
         return self._ros_available
 
+    def _ensure_theme_manager(self) -> object:
+        """Return the shell's :class:`ThemeManager`, constructing one on first need (D-06).
+
+        A cli-supplied manager is returned as-is. Otherwise one is constructed LAZILY and
+        PARENTED to this window (destroyed with it — no orphaned QObject through teardown) the
+        first time the toggle is used or the property is read. Deferring keeps ``__init__`` from
+        building a QObject + touching ``QSettings`` on every (often theme-irrelevant) window.
+        """
+        if self._theme_manager is None:
+            from .theme import ThemeManager
+
+            manager = ThemeManager()
+            manager.setParent(self)
+            self._theme_manager = manager
+        return self._theme_manager
+
     @property
     def theme_manager(self) -> object:
-        """The shell's :class:`ThemeManager` (D-06) — the live Dark/Light toggle owner."""
-        return self._theme_manager
+        """The shell's :class:`ThemeManager` (D-06), lazily constructed on first access."""
+        return self._ensure_theme_manager()
 
     @property
     def theme_action(self) -> object:
@@ -181,11 +197,14 @@ class MainWindow(QMainWindow):
 
         # View ▸ Dark theme — a checkable action wired to ThemeManager.toggle (D-06). Lowest-
         # friction toggle home (17-RESEARCH Open Question 1) — no new toolbar chrome. The check
-        # state reflects the manager's current name; toggling flips the theme live + persists.
+        # state reflects a cli-supplied manager's name when present; for a lazily-managed window
+        # the manager is not yet built, so it defaults to the dark default (and is reconciled on
+        # first toggle). The action build does NOT force a manager into existence.
         view_menu = self.menuBar().addMenu("&View")
         self._theme_action = view_menu.addAction("Dark theme")
         self._theme_action.setCheckable(True)
-        self._theme_action.setChecked(self._theme_manager.name == "dark")
+        initial_name = self._theme_manager.name if self._theme_manager is not None else "dark"
+        self._theme_action.setChecked(initial_name == "dark")
         self._theme_action.triggered.connect(self._on_theme_action)
 
     def _on_theme_action(self) -> None:
@@ -193,10 +212,12 @@ class MainWindow(QMainWindow):
 
         Delegates the actual dark↔light flip + persistence + live restyle to
         ``ThemeManager.toggle`` (D-03/D-06 — the shell owns no styling logic), then reflects the
-        manager's resulting name in the action's checked state so the menu stays in sync.
+        manager's resulting name in the action's checked state so the menu stays in sync. Uses
+        the lazy accessor so a directly-built window constructs its manager on first toggle.
         """
-        self._theme_manager.toggle()
-        self._theme_action.setChecked(self._theme_manager.name == "dark")
+        manager = self._ensure_theme_manager()
+        manager.toggle()
+        self._theme_action.setChecked(manager.name == "dark")
 
     def _open_bag_file(self) -> None:
         """File ▸ Open Bag File… — a file picker for a ROS 1 ``.bag`` / standalone ``.mcap``."""
