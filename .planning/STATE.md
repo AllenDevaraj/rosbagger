@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: Desktop cockpit
 status: executing
-stopped_at: Completed 14-06-PLAN.md
-last_updated: "2026-05-25T09:07:21.664Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-05-25T09:13:10.053Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 16
   completed_phases: 15
   total_plans: 48
-  completed_plans: 46
+  completed_plans: 47
   percent: 94
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 16 (native-desktop-gui-pyside6) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-25
 
-Progress: [██████████] 96%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -116,6 +116,7 @@ Progress: [██████████] 96%
 | Phase 15 P02 | 3min | 2 tasks | 2 files |
 | Phase 15 P03 | 4min | 2 tasks | 1 files |
 | Phase 16 P01 | 12min | 3 tasks | 12 files |
+| Phase 16 P02 | ~8min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -228,6 +229,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 15-02] git+@v0.2.0 INSTALL.md recipes documented + flagged awaits-push (remote empty), NOT a blocking checkpoint — path proof is the locally-verified gate
 - [Phase ?]: [Phase 15-03] PHASE 15 COMPLETE (3/3). Full v0.2 release gate green (SC1 five 0.2.0 wheels via uv build --all-packages, no hatch config; uv sync --locked; ruff clean; pytest 466 passed/97.37% incl offline guard under the live extra = SC5; proof script PROOF OK = SC2). Local annotated v0.2.0 tag created (bd06d1e, NOT pushed); push + observe-CI + literal git recipe = sole human follow-ups (Phase 8 honest-split precedent).
 - [Phase ?]: [Phase 16-01] rosbagger-desktop stood up as an isolated PySide6 workspace package (v0.2.0); PySide6 declared ONLY in its deps + the dev group; offline import graph kept BOTH ROS-free AND Qt-free via two new fresh-subprocess guards (D-01/D-04). shiboken6 confirmed as the binding-runtime module (A2). Panel registry is editable list+panels-dict for Plans 02/03 to append.
+- [Phase ?]: 16-02: Query panel registered as offline always-enabled row; SQL forwarded verbatim to query(), pyarrow.Table rendered via Pattern 4, teaching errors shown as status text
 
 ### Pending Todos
 
@@ -254,8 +256,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-25T09:07:06.531Z
-Stopped at: Completed 14-06-PLAN.md
+Last session: 2026-05-25T09:13:10.044Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
 Next: Phase 14 Plan 02 (next GUI plan). Plan 14-01 COMPLETE — the shared rclpy publish path (build_publish_sink) is extracted and lazily re-exported, so the upcoming GUI replay panel drives the pure Replayer through the SAME single sink (D-09a). Phase-13 offline replay regression suite + offline-import guard green (42 tests). Historical context below.
 Prior-session note: Phase 13 Plan 03 BUILT — the LIVE half of REP-01 is in place and the offline tier is green, but SC1 is NOT yet signed off (the orchestrator must run the live lane — W4). Shipped: __init__.py lazy _require_ros boundary (rclpy imported inside the body -> teaching RosNotAvailableError; replay() lazy delegator + submodule-shadow-proof replay_bag alias; NO top-level rclpy/rosidl), replay.py (the ONLY rclpy module — D-04/Pattern 4 VERIFIED publish path: load_items -> NoMessagesToReplayError before rclpy.init() on empty [WR-04] -> try/finally rclpy.init()/shutdown() + per-topic create_publisher dict + sink [get_message -> create_publisher(cls,topic,10) -> deserialize_message(cdr,cls) -> publish] + --start seconds -> seek(int(s*1e9)) [W3] -> drives the pure Replayer -> returns published count; the SINGLE production publish path), the thin rosbagger-replay CLI (cli.py — one typer replay verb over replay_bag, @_capability_errors -> clean Exit(1), top imports typer-only, D-10 --end FOLDED into --duration [W5] documented in help + module comment; FLAT single-command invocation `rosbagger-replay <bag> [opts]`), the offline-guard extension (test_import_replay_does_not_pull_ros + submodule guard), and the LIVE SC1 test (tests/test_replay_live.py — importorskip(rclpy)+live marker; PRODUCTION replay_bag() IN-PROCESS publisher + an EXTERNAL subscriber subprocess that counts /imu + reports on stdout; asserts published==9 + received==3; BLOCKER-1 grep-verified: replay_bag( present, NO Replayer(/create_publisher in test). Offline: 459 passed, 2 skipped @ 97.37% (>=80% gate on core+bagq held; rosbagger_replay out per D-12; live test collected-and-skipped), ruff clean (77 files), offline guard 17 green. PENDING SC1 SIGN-OFF (W4): the orchestrator MUST run `source /opt/ros/humble/setup.bash && PYTHONPATH="packages/rosbagger-replay/src:packages/rosbagger-core/src:$PYTHONPATH" python3 -m pytest tests/test_replay_live.py -m live -v` and confirm SC1 PASSED (not skipped) — only then is REP-01 fully Complete. After SC1 passes, the next milestone is Phase 14 (GUI) capability-gating over this replay_bag() API. Standing blocker unchanged: HUMAN must `git push origin main && git push origin v0.1.0` + observe CI green to finalize v0.1.
