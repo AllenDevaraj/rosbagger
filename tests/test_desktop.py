@@ -387,6 +387,42 @@ def test_record_panel_close_after_finished_run_is_safe(qtbot) -> None:
     panel.close()
 
 
+def test_record_releases_replay_context_before_scan(qtbot, monkeypatch) -> None:
+    """WR-01: a record scan/start tears down a replay-owned rclpy context first.
+
+    ``rosbagger_record``'s ``list_topics``/``record`` call ``rclpy.init()`` unconditionally
+    (no re-entrant guard, outside this phase's editable scope), so a live replay-owned context
+    would make the record worker's ``init()`` clash. The record panel mitigates by releasing
+    the replay panel's OWN context (``_created_ctx``) before launching a worker. This isolates
+    that mitigation: a stub replay panel reporting ``_created_ctx=True`` must have its
+    ``_teardown_transport`` called; one reporting ``False`` must be left alone.
+    """
+    from rosbagger_desktop.panels.record_panel import RecordPanel
+
+    class _StubReplay:
+        def __init__(self, created: bool) -> None:
+            self._created_ctx = created
+            self.torn_down = False
+
+        def _teardown_transport(self) -> None:
+            self.torn_down = True
+
+    panel = RecordPanel()
+    qtbot.addWidget(panel)
+
+    # Replay owns a live context → record must release it before its own init().
+    owned = _StubReplay(created=True)
+    monkeypatch.setattr(panel, "window", lambda: type("W", (), {"replay_panel": owned})())
+    panel._release_replay_context()
+    assert owned.torn_down, "record did not release the replay-owned rclpy context (WR-01)"
+
+    # Replay did NOT create the context → record must NOT touch it.
+    foreign = _StubReplay(created=False)
+    monkeypatch.setattr(panel, "window", lambda: type("W", (), {"replay_panel": foreign})())
+    panel._release_replay_context()
+    assert not foreign.torn_down, "record tore down a context the replay panel did not own"
+
+
 def test_replay_rate_loop_guarded_while_drive_running(qtbot, monkeypatch) -> None:
     """CR-02: rate/loop mutations are refused while a drive worker runs (no UI-thread race).
 
