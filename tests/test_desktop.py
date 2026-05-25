@@ -153,10 +153,15 @@ def test_live_panels_disabled_without_ros(qtbot, tmp_path: Path, monkeypatch) ->
         )
 
     # And the offline panels WORK without ROS: open a fixture, refresh, get real rows.
+    # 17-02 / D-02: inspect now refreshes OFF the UI thread on a BlockingWorker — wait for
+    # the model to populate via the worker's result slot rather than asserting synchronously.
     bag = write_ros2_sqlite_bag(tmp_path)
     window._open_reader(bag)
     window.inspect_panel.refresh_view()
-    assert window.inspect_panel.bag_info_table.rowCount() > 0, (
+    qtbot.waitUntil(
+        lambda: window.inspect_panel.bag_info_table.model().rowCount() > 0, timeout=5000
+    )
+    assert window.inspect_panel.bag_info_table.model().rowCount() > 0, (
         "offline inspect panel did not render real topics without ROS"
     )
 
@@ -165,16 +170,25 @@ def test_inspect_panel_shows_real_topics(qtbot, tmp_path: Path) -> None:
     """SC3 (inspect): the inspect panel renders REAL ``collect_bag_info`` topic rows.
 
     Writes a ROS 2 sqlite3 fixture bag (3 topics), opens ``MainWindow`` on it, drives
-    the inspect panel's ``refresh_view()``, and asserts the bag-info table has > 0 rows
-    — i.e. real ``rosbagger_core.inspect`` output reached the widget.
+    the inspect panel's ``refresh_view()``, and asserts the bag-info table's MODEL has > 0
+    rows — i.e. real ``rosbagger_core.inspect`` output reached the view (17-02 / D-02 model/
+    view). Because ``collect_*`` now runs OFF the UI thread on a ``BlockingWorker`` (P1), the
+    rows arrive via signal — the test ``waitUntil``s the model populates.
     """
     bag = write_ros2_sqlite_bag(tmp_path)
     window = MainWindow(bag_path=str(bag))
     qtbot.addWidget(window)
 
     window.inspect_panel.refresh_view()
-    assert window.inspect_panel.bag_info_table.rowCount() > 0, (
+    qtbot.waitUntil(
+        lambda: window.inspect_panel.bag_info_table.model().rowCount() > 0, timeout=5000
+    )
+    assert window.inspect_panel.bag_info_table.model().rowCount() > 0, (
         "inspect bag-info had 0 rows; expected real topics from collect_bag_info"
+    )
+    # The schemas view also fills (one row per (table, column)).
+    assert window.inspect_panel.schemas_table.model().rowCount() > 0, (
+        "inspect schemas had 0 rows; expected real collect_table_schemas rows"
     )
 
 
