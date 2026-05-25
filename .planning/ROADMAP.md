@@ -34,6 +34,10 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 
 - [x] **Phase 16: Native Desktop GUI (PySide6)** - native Qt desktop window with full parity to the TUI's five panels, as an isolated new `rosbagger-desktop` package (TUI untouched) (completed 2026-05-25)
 
+### Milestone v0.4 — Desktop revamp
+
+- [ ] **Phase 17: Desktop Revamp** - turn the functional-but-unstyled Qt window into a designed cockpit: a QSS design-token theme with dark+light + runtime toggle, and the query panel's robustness patterns (off-thread work, model/view, accessible status) brought to all five panels
+
 ## Phase Details
 
 ### Phase 1: Scaffold & Test Harness
@@ -446,3 +450,24 @@ Plans:
 
 **Wave 3** *(blocked on 16-02)*
 - [x] 16-03-PLAN.md — Increment B live parity: workers.py (QThread/QObject scaffolding) + Qt Scrubber + Record/Replay panels (over rosbagger_record/rosbagger_replay + build_publish_sink + list_events) capability-gated in the shell + five-panel/gate headless tests + @pytest.mark.live record/replay lane + phase gate -> SC2/SC4/SC5
+
+### Phase 17: Desktop Revamp
+
+**Goal:** Transform `rosbagger-desktop` from a functional-but-unstyled default-Qt window into an intentionally designed cockpit — WITHOUT regressing the Phase-16 isolation invariant (PySide6 confined to the package; offline import graph ROS-free AND Qt-free) or the thin-face rule (panels stay pure faces over the module APIs; zero analysis/bag/SQL/ROS logic added). Two halves:
+
+1. **Visual design system** — a centralized QSS theme driven by design tokens (color / spacing / type scale / elevation), applied consistently across the shell + all five panels. Ship a **dark and a light** theme with a runtime toggle (persisted). Replace ad-hoc/no styling with deliberate visual hierarchy, spacing rhythm, and intentional empty/loading/error states. No per-widget inline color; styling lives in the theme layer (the query panel's error-style precedent, generalized).
+
+2. **Cross-panel engineering parity** — bring every panel up to the query panel's robustness bar (quick tasks 260525-is6 / -kj0): long-running work runs off the UI thread on `BlockingWorker`; tabular data uses model/view (`QAbstractTableModel`/`QTableView`) not per-cell widgets; status/error surfaces are accessible live regions (with the offscreen-`QAccessible` guard). Audit inspect / tf / record / replay against these and fix the gaps.
+
+**Requirements** (DoD — to be validated/refined in planning): theme toggle flips dark↔light live and persists across launches; tokens are the single source of styling (no scattered inline QSS/colors); all five panels read from the theme; the four non-query panels have no UI-thread block on their heavy paths and use model/view where they render tables; status surfaces are accessible; isolation invariant + offline/Qt-free guard stay green; headless pytest-qt suite passes at ≥80%; visuals sanity-checked on a real X11 window (offscreen can't prove appearance).
+
+**Depends on:** Phase 16 (the desktop package + thin-face/isolation invariants), quick tasks 260525-is6 + 260525-kj0 (the query-panel patterns this phase generalizes).
+**Plans:** 0 plans
+
+**Open scoping notes for planning (`/gsd-plan-phase 17` / `/gsd-discuss-phase 17`):**
+- Theme palettes: locked direction is "I choose per usage" (robotics engineer reading bag data at a desk → a calm, focused default); planning should pin actual OKLCH-derived token values for both themes and force a concrete scene per the "theme is never a default" rule.
+- Whether a visual prototype precedes implementation (de-risks the both-themes design system) — recommended as plan 1.
+- Token/theme mechanism: QSS variables aren't native; decide on a token→QSS approach (e.g. a Python token module that templates the stylesheet, or `qt-material`-style generation) — must stay inside the package, no new heavy deps leaking into the offline graph.
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 17 to break down)

@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.3
-milestone_name: Desktop cockpit
-status: milestone_complete
-stopped_at: Milestone complete (Phase 16 was final phase)
-last_updated: 2026-05-25T10:45:19.183Z
+milestone: v0.4
+milestone_name: Desktop revamp
+status: phase_not_planned
+stopped_at: Phase 17 added (Desktop Revamp) — not yet planned
+last_updated: 2026-05-25T20:10:00.000Z
 last_activity: 2026-05-25
 progress:
-  total_phases: 16
+  total_phases: 17
   completed_phases: 16
   total_plans: 48
   completed_plans: 48
-  percent: 100
+  percent: 94
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone complete
+**Current focus:** Milestone v0.4 — Desktop revamp (Phase 17 scoped, not yet planned)
 
 ## Current Position
 
-Phase: 16
-Plan: Not started
-Status: Milestone complete
+Phase: 17
+Plan: Not planned yet
+Status: Phase added — run /gsd-plan-phase 17 to break down
 Last activity: 2026-05-25
 
 Progress: [██████████] 100%
@@ -124,6 +124,7 @@ Progress: [██████████] 100%
 
 ### Roadmap Evolution
 
+- Milestone v0.4 "Desktop revamp" started + Phase 17 added (2026-05-25): Desktop Revamp. Phase 16 left the Qt window functional but unstyled (raw default widgets); two quick tasks (260525-is6, 260525-kj0) then hardened ONLY the query panel (off-thread query, model/view rendering, QSplitter layout, accessible/error-styled status). Phase 17 generalizes that into a real revamp. User scoping decisions (locked via AskUserQuestion): (1) scope = visual + engineering parity across ALL five panels; (2) visual depth = full design system (QSS theme + design tokens), not a light pass; (3) theme = ship BOTH dark and light with a runtime toggle, palettes chosen per-usage by Claude. Hard carryover constraints: Phase-16 isolation (PySide6-only-in-package, offline graph ROS-free AND Qt-free) and the thin-face rule must hold. Open planning notes recorded in the ROADMAP Phase 17 block (prototype-first recommended; token→QSS mechanism TBD; OKLCH palette values to be pinned). Two design skills installed globally to support this: pyside6-ui-engineer + impeccable.
 - Milestone v0.3 "Desktop cockpit" started + Phase 16 added (2026-05-25): Native Desktop GUI (PySide6). A new isolated `rosbagger-desktop` package giving a real Qt desktop window with full parity to the Textual TUI's five panels, reusing the existing module APIs verbatim. User wanted a spawned GUI window (not a TUI); the existing TUI (`rosbagger-gui`) stays untouched. Hard isolation constraint: PySide6 confined to the new package, offline import graph kept ROS-free AND Qt-free. Brainstormed + spec'd at `docs/superpowers/specs/2026-05-25-rosbagger-desktop-gui-design.md`.
 - Phase 15 added (2026-05-24): Packaging & Release v0.2 — make the v0.2 packages git/path-installable into other repos (no index publish; user decision). The v0.2 milestone reopened from "complete" to add this release phase, mirroring Phase 8's v0.1 release work for the four packages Phase 8 didn't cover.
 
