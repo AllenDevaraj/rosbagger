@@ -200,23 +200,34 @@ def test_tf_panel_renders_or_teaches(qtbot, tmp_path: Path) -> None:
     makes ``collect_tf_report`` raise ``NoTransformsError`` — caught and rendered on the
     status line, with the edges table empty and no crash (T-16-TF).
     """
-    # Populated path: a /tf bag yields edge rows.
+    # Populated path: a /tf bag yields edge rows. 17-02 / D-02: collect_tf_report now runs
+    # OFF the UI thread on a BlockingWorker — wait for the model to populate via the result
+    # slot rather than asserting synchronously.
     tf_dir = tmp_path / "with_tf"
     tf_bag = write_tf_bag(tf_dir, ros1=False, storage="sqlite3")
     tf_window = MainWindow(bag_path=str(tf_bag))
     qtbot.addWidget(tf_window)
     tf_window.tf_panel.refresh_view()
-    assert tf_window.tf_panel.edges_table.rowCount() > 0, (
+    qtbot.waitUntil(
+        lambda: tf_window.tf_panel.edges_table.model().rowCount() > 0, timeout=5000
+    )
+    assert tf_window.tf_panel.edges_table.model().rowCount() > 0, (
         "tf edges table had 0 rows on a /tf bag; expected real collect_tf_report edges"
     )
 
-    # Teaching path: a no-/tf bag shows the NoTransformsError teaching text, no crash.
+    # Teaching path: a no-/tf bag shows the NoTransformsError teaching text, no crash. The
+    # NoTransformsError now arrives on the worker's failed slot and is routed through the
+    # shared accessible set_status — wait for the status to settle off the empty-state line.
     plain_dir = tmp_path / "no_tf"
     plain_bag = write_ros2_sqlite_bag(plain_dir)
     plain_window = MainWindow(bag_path=str(plain_bag))
     qtbot.addWidget(plain_window)
     plain_window.tf_panel.refresh_view()
-    assert plain_window.tf_panel.edges_table.rowCount() == 0, (
+    qtbot.waitUntil(
+        lambda: plain_window.tf_panel.status_label.text() != "Open a bag with /tf to analyze",
+        timeout=5000,
+    )
+    assert plain_window.tf_panel.edges_table.model().rowCount() == 0, (
         "tf edges table should be empty on a no-/tf bag"
     )
     status_text = plain_window.tf_panel.status_label.text()
