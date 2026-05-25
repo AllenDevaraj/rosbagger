@@ -280,6 +280,83 @@ def test_query_panel_runs_real_core(qtbot, tmp_path: Path) -> None:
     )
 
 
+def test_query_panel_regions_live_in_splitter(qtbot, tmp_path: Path) -> None:
+    """P2-layout: the schema tree, results view, and history list live under one QSplitter.
+
+    Opens ``MainWindow`` on a ROS 2 fixture bag, refreshes the Query panel so the schema
+    tree builds, finds the panel's ``QSplitter`` and asserts the three resizable regions
+    are descendants of it (robust to the history-container wrapper via ``isAncestorOf``)
+    — proving the regions were regrouped under user-draggable control rather than the old
+    flat fixed-stretch stacking.
+    """
+    from PySide6.QtWidgets import QSplitter
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+
+    panel = window.query_panel
+    panel.refresh_view()
+
+    splitter = panel.findChild(QSplitter)
+    assert splitter is not None, "Query panel has no QSplitter; regions are not user-resizable"
+
+    # The three resizable regions are descendants of the splitter (history via its wrapper).
+    assert splitter.isAncestorOf(panel.schema_tree), "schema tree is not inside the splitter"
+    assert splitter.isAncestorOf(panel.results_table), "results view is not inside the splitter"
+    assert splitter.isAncestorOf(panel.history_list), "history list is not inside the splitter"
+
+
+def test_query_status_announces_and_styles_errors(qtbot, tmp_path: Path) -> None:
+    """P2-a11y: the status label is accessibly named, styles+announces errors, clears on success.
+
+    Opens ``MainWindow`` on a ROS 2 fixture bag and derives a real table name from the
+    panel's own schema tree (fixture-robust). Asserts the status label carries an accessible
+    name. Drives the teaching-error path (unknown table) over the ``BlockingWorker`` thread
+    and ``waitUntil`` the status settles to a non-empty teaching string with no "row(s)",
+    then asserts the error style is applied (non-empty ``styleSheet()``) and the verbatim
+    text survived without raising headlessly. Finally runs a successful query and asserts the
+    status reports "row(s)" again AND the error style is cleared (neutral/empty stylesheet) —
+    proving the error styling is path-scoped.
+    """
+    from PySide6.QtCore import Qt
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+
+    panel = window.query_panel
+    panel.refresh_view()
+    table_name = panel.schema_tree.topLevelItem(0).text(0)
+
+    # The status region is named for assistive tech.
+    assert panel.status_label.accessibleName(), "status label has no accessible name (P2-a11y)"
+
+    # Teaching-error path: unknown table → non-empty teaching status, no "row(s)", no crash.
+    panel.sql_input.setText("SELECT * FROM definitely_not_a_real_table")
+    qtbot.mouseClick(panel.run_button, Qt.LeftButton)
+    qtbot.waitUntil(
+        lambda: "row(s)" not in panel.status_label.text()
+        and panel.status_label.text() not in ("", "Running…"),
+        timeout=5000,
+    )
+    error_text = panel.status_label.text()
+    assert error_text, "expected an UnknownTableError teaching message"
+    assert "row(s)" not in error_text, "teaching error must not report a row count"
+    assert panel.status_label.styleSheet(), "error path did not apply a distinct error style"
+
+    # Success path: a real query CLEARS the error style and reports "row(s)" again.
+    panel.sql_input.setText(f"SELECT * FROM {table_name} LIMIT 1")
+    qtbot.mouseClick(panel.run_button, Qt.LeftButton)
+    qtbot.waitUntil(
+        lambda: "row(s)" in panel.status_label.text(),
+        timeout=5000,
+    )
+    assert not panel.status_label.styleSheet(), (
+        "error style was not cleared on success (styling must be path-scoped, P2-a11y)"
+    )
+
+
 def test_capability_gate_keeps_offline_panels_enabled(qtbot, tmp_path: Path, monkeypatch) -> None:
     """The capability gate runs (ROS forced absent) and leaves the offline panels enabled.
 
