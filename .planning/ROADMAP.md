@@ -411,12 +411,12 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
   4. Versions are coherent at v0.2.0 across all packages (+ re-locked `uv.lock`)
   5. Offline-import invariant + ROS-free core intact; full offline test suite + offline guard still green
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 15-01-PLAN.md — Bump all 10 version sites to 0.2.0 + pin sibling deps `>=0.2,<0.3` + add the `rosbagger-gui` `live` extra + re-lock `uv.lock` (D-01/D-02/D-03) -> SC4
+- [x] 15-01-PLAN.md — Bump all 10 version sites to 0.2.0 + pin sibling deps `>=0.2,<0.3` + add the `rosbagger-gui` `live` extra + re-lock `uv.lock` (D-01/D-02/D-03) -> SC4
 
 **Wave 2** *(blocked on 15-01)*
 
