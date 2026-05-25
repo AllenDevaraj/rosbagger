@@ -387,6 +387,43 @@ def test_record_panel_close_after_finished_run_is_safe(qtbot) -> None:
     panel.close()
 
 
+def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """WR-03: export routes through ``QFileDialog.getSaveFileName`` to a user-chosen path.
+
+    Runs a real query over a fixture bag so a result exists, stubs the save dialog to return a
+    tmp path (no native dialog under offscreen), clicks Export CSV, and asserts the file landed
+    at the CHOSEN path (not the old fixed CWD ``query_result.csv``). A second leg returns an
+    empty string (the user cancelled) and asserts NO file is written — a clean no-op.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QFileDialog
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+    panel = window.query_panel
+    panel.refresh_view()
+    table_name = panel.schema_tree.topLevelItem(0).text(0)
+    panel.sql_input.setText(f"SELECT * FROM {table_name} LIMIT 1")
+    qtbot.mouseClick(panel.run_button, Qt.LeftButton)
+    assert panel.results_table.rowCount() > 0, "need a result before exercising export"
+
+    # User picks a destination → the file is written there (WR-03, not a fixed CWD path).
+    chosen = tmp_path / "chosen_export.csv"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", lambda *a, **k: (str(chosen), "CSV (*.csv)")
+    )
+    qtbot.mouseClick(panel.export_csv_button, Qt.LeftButton)
+    assert chosen.exists(), "export did not write to the user-chosen save-dialog path (WR-03)"
+    assert str(chosen) in panel.status_label.text(), "status did not report the chosen path"
+
+    # User cancels the dialog (empty path) → nothing is written, no crash.
+    cancelled = tmp_path / "should_not_exist.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: ("", ""))
+    qtbot.mouseClick(panel.export_parquet_button, Qt.LeftButton)
+    assert not cancelled.exists()
+
+
 def test_record_releases_replay_context_before_scan(qtbot, monkeypatch) -> None:
     """WR-01: a record scan/start tears down a replay-owned rclpy context first.
 

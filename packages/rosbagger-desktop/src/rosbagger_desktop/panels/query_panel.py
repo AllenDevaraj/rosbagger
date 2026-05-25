@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -53,10 +54,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-# Default export destinations (CWD). The panel collects a PATH only; the FORMAT is
-# chosen by write_table from the extension — the panel never picks a format itself.
-_CSV_PATH = "query_result.csv"
-_PARQUET_PATH = "query_result.parquet"
+# Default export file NAMES (the dialog's pre-filled name; the user picks the directory via
+# the save dialog, WR-03). The panel collects a PATH only; the FORMAT is chosen by write_table
+# from the extension — the panel never picks a format itself.
+_CSV_DEFAULT_NAME = "query_result.csv"
+_PARQUET_DEFAULT_NAME = "query_result.parquet"
+_CSV_FILTER = "CSV (*.csv)"
+_PARQUET_FILTER = "Parquet (*.parquet)"
 
 # Qt item-data role carrying the verbatim SQL on a history row / column on a tree leaf.
 _SQL_ROLE = int(Qt.UserRole)
@@ -121,8 +125,10 @@ class QueryPanel(QWidget):
         self._sql_input.returnPressed.connect(self._run_query)
         self._schema_tree.itemClicked.connect(self._on_schema_item_clicked)
         self._history.itemClicked.connect(self._on_history_item_clicked)
-        self._export_csv.clicked.connect(lambda: self._export(_CSV_PATH))
-        self._export_parquet.clicked.connect(lambda: self._export(_PARQUET_PATH))
+        self._export_csv.clicked.connect(lambda: self._export(_CSV_DEFAULT_NAME, _CSV_FILTER))
+        self._export_parquet.clicked.connect(
+            lambda: self._export(_PARQUET_DEFAULT_NAME, _PARQUET_FILTER)
+        )
 
     @property
     def sql_input(self) -> QLineEdit:
@@ -294,18 +300,25 @@ class QueryPanel(QWidget):
         item.setData(_SQL_ROLE, sql)
         self._history.addItem(item)
 
-    def _export(self, path: str) -> None:
-        """Write the last result ``pyarrow.Table`` to ``path`` via ``write_table`` (D-11).
+    def _export(self, default_name: str, filter_: str) -> None:
+        """Write the last result ``pyarrow.Table`` to a USER-CHOSEN path via ``write_table`` (D-11).
 
-        Lazily imports the ONE export API INSIDE this handler (offline invariant) and
-        calls ``write_table(last_result, path)`` VERBATIM. The FORMAT is chosen by
-        ``write_table`` from the path EXTENSION (the one LIST/STRUCT-safe writer) — the
-        panel only supplies a path with the matching suffix; it builds no
-        serialization/format string. Any error is surfaced to the status label rather
-        than crashing the GUI.
+        WR-03: open a ``QFileDialog.getSaveFileName`` so the user controls the destination (and
+        gets the native overwrite confirmation) rather than silently overwriting a fixed
+        CWD-relative file whose location depends on where the GUI was launched. ``default_name``
+        pre-fills the file name and ``filter_`` constrains the suffix; the FORMAT is still chosen
+        by ``write_table`` from the path EXTENSION (the one LIST/STRUCT-safe writer) — the panel
+        builds no serialization/format string. A cancelled dialog is a clean no-op. Any error is
+        surfaced to the status label rather than crashing the GUI.
         """
         if self._last_result is None:  # export disabled until a result exists
             self._status.setText("Run a query first, then export.")
+            return
+
+        path, _selected = QFileDialog.getSaveFileName(
+            self, "Export query result", default_name, filter_
+        )
+        if not path:  # the user cancelled the save dialog
             return
 
         # Lazy import (D-08): keep this module's top level PySide6-only.
