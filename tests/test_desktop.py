@@ -213,20 +213,26 @@ def test_tf_panel_renders_or_teaches(qtbot, tmp_path: Path) -> None:
 
 
 def test_query_panel_runs_real_core(qtbot, tmp_path: Path) -> None:
-    """SC2/SC3 (query): the Query panel drives a REAL ``query()`` over a fixture bag.
+    """SC2/SC3 (query): the Query panel drives a REAL THREADED ``query()`` over a fixture bag.
 
     Writes a ROS 2 sqlite3 fixture bag, opens ``MainWindow`` on it, shows the Query
     panel so its ``refresh_view()`` builds the schema tree, derives a known table name
     from the panel's own schema tree (so the test is robust to fixture topic changes),
-    sets a ``SELECT * FROM <table> LIMIT 1`` and triggers Run via the Run button. The
-    results ``QTableWidget`` must then carry real ``rosbagger_core.backend.query.query``
-    rows (``rowCount() > 0`` and ``columnCount() > 0``) — SC2/SC3.
+    sets a ``SELECT * FROM <table> LIMIT 1`` and triggers Run via the Run button. Because
+    ``query()`` now runs on a ``BlockingWorker`` thread (P1), the result arrives via signal
+    — so the test ``waitUntil``s the lazy ``QAbstractTableModel`` populates rather than
+    asserting synchronously. The results view must then carry real
+    ``rosbagger_core.backend.query.query`` rows/cols via the model (SC2/SC3).
 
-    A second leg drives a SELECT over a clearly-unknown table and asserts the status
-    label shows a non-empty teaching string with NO exception raised (the
-    UnknownTableError path; T-16-02-TEACH). pytest-qt is synchronous — no ``await``.
+    Second leg (TEACHING): a SELECT over a clearly-unknown table arrives on the worker's
+    ``failed`` slot as ``str(exc)`` — the status shows a non-empty teaching string with no
+    "row(s)" and NO exception raised (the UnknownTableError path; T-16-02-TEACH / T-is6-01).
+
+    Third leg (NON-BLOCKING): after a successful Run the worker tears down and the
+    ``_query_thread`` ref is cleared on the UI thread (proving the off-thread path ran and
+    Run was re-enabled) — the P1 responsiveness contract.
     """
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QAbstractTableModel, Qt
     from PySide6.QtWidgets import QTreeWidget
 
     bag = write_ros2_sqlite_bag(tmp_path)
@@ -241,23 +247,32 @@ def test_query_panel_runs_real_core(qtbot, tmp_path: Path) -> None:
     assert tree.topLevelItemCount() > 0, "schema tree had no tables from collect_table_schemas"
     table_name = tree.topLevelItem(0).text(0)
 
-    # Run a real SELECT and assert rows landed in the results table (SC2/SC3).
+    # Run a real SELECT; the result lands on the worker thread → wait for the model to fill.
     panel.sql_input.setText(f"SELECT * FROM {table_name} LIMIT 1")
     qtbot.mouseClick(panel.run_button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: panel.results_table.model().rowCount() > 0, timeout=5000)
 
-    assert panel.results_table.rowCount() > 0, (
-        "query results table had 0 rows; expected real query() rows from a fixture table"
-    )
-    assert panel.results_table.columnCount() > 0, (
-        "query results table had 0 columns; expected real query() columns"
-    )
-    # A successful query enables export (D-06).
+    # Rows/cols rendered via the QAbstractTableModel-backed view (SC2/SC3, P2).
+    model = panel.results_table.model()
+    assert model is not None, "results view had no model"
+    assert isinstance(model, QAbstractTableModel), "results view is not QAbstractTableModel-backed"
+    assert model.columnCount() > 0, "query results model had 0 columns; expected real query() cols"
+    # A successful query enables export (D-06) and re-enables Run (P1).
     assert panel.export_csv_button.isEnabled()
     assert panel.export_parquet_button.isEnabled()
 
-    # Teaching path: an unknown table sets a non-empty status string, no exception.
+    # Third leg (NON-BLOCKING): the worker completed and cleared its thread ref on the UI thread.
+    qtbot.waitUntil(lambda: getattr(panel, "_query_thread", None) is None, timeout=5000)
+    assert panel.run_button.isEnabled(), "Run was not re-enabled after the worker finished"
+
+    # Teaching path: an unknown table sets a non-empty status string (no "row(s)"), no exception.
     panel.sql_input.setText("SELECT * FROM definitely_not_a_real_table")
     qtbot.mouseClick(panel.run_button, Qt.LeftButton)
+    qtbot.waitUntil(
+        lambda: "row(s)" not in panel.status_label.text()
+        and panel.status_label.text() not in ("", "Running…"),
+        timeout=5000,
+    )
     status_text = panel.status_label.text()
     assert status_text, "query status was empty; expected an UnknownTableError teaching message"
     assert "row(s)" not in status_text, (
@@ -509,7 +524,8 @@ def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> No
     table_name = panel.schema_tree.topLevelItem(0).text(0)
     panel.sql_input.setText(f"SELECT * FROM {table_name} LIMIT 1")
     qtbot.mouseClick(panel.run_button, Qt.LeftButton)
-    assert panel.results_table.rowCount() > 0, "need a result before exercising export"
+    # query() runs on a worker thread (P1) → wait for the model to populate before exporting.
+    qtbot.waitUntil(lambda: panel.results_table.model().rowCount() > 0, timeout=5000)
 
     # User picks a destination → the file is written there (WR-03, not a fixed CWD path).
     chosen = tmp_path / "chosen_export.csv"
@@ -548,7 +564,8 @@ def test_query_export_surfaces_arrow_error_as_status(qtbot, tmp_path: Path, monk
     table_name = panel.schema_tree.topLevelItem(0).text(0)
     panel.sql_input.setText(f"SELECT * FROM {table_name} LIMIT 1")
     qtbot.mouseClick(panel.run_button, Qt.LeftButton)
-    assert panel.results_table.rowCount() > 0, "need a result before exercising export"
+    # query() runs on a worker thread (P1) → wait for the model to populate before exporting.
+    qtbot.waitUntil(lambda: panel.results_table.model().rowCount() > 0, timeout=5000)
 
     class _FakeArrowError(Exception):
         """Stand-in for an Arrow exception (not a ValueError/OSError)."""

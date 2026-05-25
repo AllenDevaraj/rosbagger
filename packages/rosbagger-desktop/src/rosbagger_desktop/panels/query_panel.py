@@ -158,6 +158,7 @@ class QueryPanel(QWidget):
         # thread mid-run) and the SQL captured for the in-flight run (appended to history on
         # the result slot). Both None between runs.
         self._query_thread: QThread | None = None
+        self._query_worker: BlockingWorker | None = None
         self._pending_sql: str | None = None
 
         self._status = QLabel("Open a bag to query")
@@ -363,7 +364,12 @@ class QueryPanel(QWidget):
         # Disable Run + show the running status BEFORE starting (P1 responsiveness contract).
         self._run_button.setEnabled(False)
         self._status.setText("Running…")
-        self._query_thread, _ = run_on_thread(
+        # Keep BOTH the thread and worker refs on the panel (Pitfall 2): the worker is
+        # moved onto the thread but not Qt-reparented, so a discarded Python ref lets the GC
+        # collect it before its queued `run` slot fires (a fast query never starts) — the
+        # replay panel's blocking run() masked this by keeping the worker busy. Hold the
+        # worker until _on_query_finished clears it.
+        self._query_thread, self._query_worker = run_on_thread(
             self,
             worker,
             on_result=self._on_query_result,
@@ -408,6 +414,7 @@ class QueryPanel(QWidget):
         failure (mirrors the replay panel's ``_on_drive_finished``).
         """
         self._query_thread = None
+        self._query_worker = None
         self._run_button.setEnabled(True)
 
     def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
