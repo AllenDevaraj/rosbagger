@@ -446,7 +446,19 @@ class ReplayPanel(QWidget):
             worker,
             on_result=self._on_drive_done,
             on_failed=self._status.setText,
+            on_finished=self._clear_drive_thread,  # CR-01: null the ref before deleteLater
         )
+
+    def _clear_drive_thread(self) -> None:
+        """Drop the kept drive-thread ref when the worker finishes (CR-01 — runs on UI thread).
+
+        ``run_on_thread`` wires ``thread.finished → thread.deleteLater``, so once the worker
+        finishes the underlying C++ ``QThread`` is destroyed; keeping the stale Python wrapper
+        in ``self._drive_thread`` makes a later ``stop_thread``/``_drive_running`` probe touch a
+        deleted object. Connected via ``on_finished`` (wired before the teardown chain), this
+        clears the ref on the UI thread so a subsequent close/control sees ``None``.
+        """
+        self._drive_thread = None
 
     def _on_drive_done(self, _result: object) -> None:
         """Push the final playhead + a terminal status after the drive worker returns (UI thread).

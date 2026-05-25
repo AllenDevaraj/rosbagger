@@ -314,3 +314,70 @@ def test_capability_gate_keeps_offline_panels_enabled(qtbot, tmp_path: Path, mon
     assert window.inspect_panel.bag_info_table.rowCount() > 0, (
         "offline inspect panel did not render real topics without ROS"
     )
+
+
+def test_stop_thread_survives_deleted_qthread(qtbot) -> None:
+    """CR-01: ``stop_thread`` is a no-op on a ``deleteLater``'d (destroyed) QThread.
+
+    Reproduces the use-after-free class: ``run_on_thread`` wires
+    ``thread.finished → thread.deleteLater``, so once a worker finishes the underlying C++
+    ``QThread`` is destroyed while a panel may still hold the stale Python wrapper. Touching
+    ``isRunning()`` on that object raises ``RuntimeError: Internal C++ object already deleted``
+    — and pre-fix that fired inside ``closeEvent``, aborting window teardown. After the fix
+    ``stop_thread`` swallows the RuntimeError and returns cleanly.
+    """
+    from PySide6.QtCore import QThread
+
+    from rosbagger_desktop.workers import stop_thread
+
+    thread = QThread()
+    thread.deleteLater()  # schedule destruction of the underlying C++ object
+    # Force the deferred delete to actually run so the C++ object is gone.
+    qtbot.wait(10)
+
+    # Pre-fix this raised RuntimeError; post-fix it is a clean no-op.
+    stop_thread(thread)
+
+
+def test_replay_panel_close_after_finished_run_is_safe(qtbot) -> None:
+    """CR-01: the replay panel's drive-thread ref is nulled on finish, so close is safe.
+
+    Directly exercises the ref-clearing slot (``_clear_drive_thread``, wired via ``on_finished``)
+    and then closes the panel. Pre-fix the stale ``_drive_thread`` wrapper survived a completed
+    run and ``closeEvent`` → ``stop_thread`` touched the destroyed C++ object; post-fix the ref
+    is ``None`` after finish and the (also-hardened) ``stop_thread`` makes close a no-op.
+    """
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+
+    # Simulate a stale ref that a finished worker would have left, then the finish callback.
+    panel._drive_thread = object()  # type: ignore[assignment]  # stand-in stale handle
+    panel._clear_drive_thread()
+    assert panel._drive_thread is None, "drive-thread ref was not cleared on finish (CR-01)"
+
+    # closeEvent must not raise even with no live transport / no thread.
+    panel.close()
+
+
+def test_record_panel_close_after_finished_run_is_safe(qtbot) -> None:
+    """CR-01: the record panel nulls its worker refs on finish, so close is safe.
+
+    Exercises both ref-clearing slots (``_clear_discover_thread`` and ``_on_record_finished``)
+    then closes the panel — the discovery + record threads must both end at ``None`` and the
+    close must not touch a destroyed C++ object.
+    """
+    from rosbagger_desktop.panels.record_panel import RecordPanel
+
+    panel = RecordPanel()
+    qtbot.addWidget(panel)
+
+    panel._discover_thread = object()  # type: ignore[assignment]
+    panel._record_thread = object()  # type: ignore[assignment]
+    panel._clear_discover_thread()
+    panel._on_record_finished()
+    assert panel._discover_thread is None, "discover-thread ref not cleared on finish (CR-01)"
+    assert panel._record_thread is None, "record-thread ref not cleared on finish (CR-01)"
+
+    panel.close()

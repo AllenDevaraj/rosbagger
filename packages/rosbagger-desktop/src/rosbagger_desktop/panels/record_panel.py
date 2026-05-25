@@ -189,7 +189,17 @@ class RecordPanel(QWidget):
             worker,
             on_result=self._populate_checklist,
             on_failed=self._status.setText,
+            on_finished=self._clear_discover_thread,  # CR-01: null the ref before deleteLater
         )
+
+    def _clear_discover_thread(self) -> None:
+        """Drop the kept discover-thread ref when the worker finishes (CR-01 — UI thread).
+
+        ``run_on_thread`` wires ``thread.finished → thread.deleteLater``; without clearing the
+        Python wrapper a later ``stop_thread``/``isRunning`` probe on close touches a deleted
+        C++ object and raises. Connected via ``on_finished`` so it runs on the UI thread.
+        """
+        self._discover_thread = None
 
     def _populate_checklist(self, mapping: object) -> None:
         """Fill the checklist from the discovered ``{topic: type}`` map (UI-thread slot).
@@ -274,8 +284,17 @@ class RecordPanel(QWidget):
             worker,
             on_result=self._finish_record,
             on_failed=self._finish_record_status,
-            on_finished=self._reset_buttons,
+            on_finished=self._on_record_finished,
         )
+
+    def _on_record_finished(self) -> None:
+        """Reset the buttons AND drop the kept record-thread ref (CR-01 — UI thread).
+
+        Runs on ``worker.finished`` (before ``thread.deleteLater``); clearing the ref keeps a
+        later ``stop_thread`` probe on close from touching the deleted C++ ``QThread``.
+        """
+        self._reset_buttons()
+        self._record_thread = None
 
     def _dismiss_record(self) -> None:
         """Dismiss the in-flight record UI; the bounded ``duration`` is what ends recording.

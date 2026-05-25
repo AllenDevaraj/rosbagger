@@ -130,9 +130,20 @@ def stop_thread(thread: QThread | None) -> None:
     objects are destroyed — avoiding "QThread: Destroyed while thread is still running".
     ``None`` / an already-finished thread is a no-op. For a *bounded* record the
     ``duration`` is what actually ends the work; this only waits for the loop to exit.
+
+    CR-01: ``thread.finished → thread.deleteLater`` destroys the underlying C++ ``QThread``
+    once a worker finishes, but a panel may still hold the stale Python wrapper (panels clear
+    their ref via ``on_finished``, but a close racing the finish — or any missed clear — would
+    leave a dangling handle). Touching ``isRunning()`` on a ``deleteLater``'d object raises
+    ``RuntimeError: Internal C++ object already deleted``; inside ``closeEvent`` that aborts
+    window teardown. So guard the ``isRunning()`` probe and treat a deleted object as a no-op.
     """
     if thread is None:
         return
-    if thread.isRunning():
+    try:
+        running = thread.isRunning()
+    except RuntimeError:  # underlying C++ QThread already deleted (finished + deleteLater'd)
+        return
+    if running:
         thread.quit()
         thread.wait()
