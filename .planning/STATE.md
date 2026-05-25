@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.2
-milestone_name: Modular cockpit
-status: milestone_complete
-stopped_at: Milestone complete (Phase 15 was final phase)
+milestone: v0.3
+milestone_name: Desktop cockpit
+status: in_progress
+stopped_at: Phase 16 (Native Desktop GUI, PySide6) added — ready to plan (/gsd-plan-phase 16)
 last_updated: 2026-05-25T00:42:37.679Z
 last_activity: 2026-05-25
 progress:
-  total_phases: 15
+  total_phases: 16
   completed_phases: 15
   total_plans: 45
   completed_plans: 45
-  percent: 100
+  percent: 94
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone complete
+**Current focus:** Milestone v0.3 (Desktop cockpit) — Phase 16: Native Desktop GUI (PySide6), ready to plan
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-25
+Phase: 16
+Plan: Not planned yet (run /gsd-plan-phase 16)
+Status: Phase 16 added — milestone v0.3 started
+Last activity: 2026-05-25 - Brainstormed + spec'd the native desktop GUI; added Phase 16 to the roadmap
 
-Progress: [██████████] 100%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -120,6 +120,7 @@ Progress: [██████████] 100%
 
 ### Roadmap Evolution
 
+- Milestone v0.3 "Desktop cockpit" started + Phase 16 added (2026-05-25): Native Desktop GUI (PySide6). A new isolated `rosbagger-desktop` package giving a real Qt desktop window with full parity to the Textual TUI's five panels, reusing the existing module APIs verbatim. User wanted a spawned GUI window (not a TUI); the existing TUI (`rosbagger-gui`) stays untouched. Hard isolation constraint: PySide6 confined to the new package, offline import graph kept ROS-free AND Qt-free. Brainstormed + spec'd at `docs/superpowers/specs/2026-05-25-rosbagger-desktop-gui-design.md`.
 - Phase 15 added (2026-05-24): Packaging & Release v0.2 — make the v0.2 packages git/path-installable into other repos (no index publish; user decision). The v0.2 milestone reopened from "complete" to add this release phase, mirroring Phase 8's v0.1 release work for the four packages Phase 8 didn't cover.
 
 ### Decisions

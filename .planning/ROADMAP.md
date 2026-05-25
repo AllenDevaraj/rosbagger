@@ -30,6 +30,10 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI) (completed 2026-05-24)
 - [x] **Phase 15: Packaging & Release v0.2** - git/path-installable packages + coherent v0.2.0 versions + per-package install docs (no index publish) (completed 2026-05-25)
 
+### Milestone v0.3 — Desktop cockpit
+
+- [ ] **Phase 16: Native Desktop GUI (PySide6)** - native Qt desktop window with full parity to the TUI's five panels, as an isolated new `rosbagger-desktop` package (TUI untouched)
+
 ## Phase Details
 
 ### Phase 1: Scaffold & Test Harness
@@ -425,3 +429,13 @@ Plans:
 **Wave 3** *(blocked on 15-01 + 15-02)*
 
 - [x] 15-03-PLAN.md — Release gate (`uv build --all-packages` + `uv sync --locked` + ruff + offline pytest/guard + proof script) + local annotated `v0.2.0` tag; push/git-recipe = sole human follow-up -> SC1/SC2/SC5
+
+### Phase 16: Native Desktop GUI (PySide6)
+
+**Goal:** Ship a native desktop GUI as a new isolated workspace package `rosbagger-desktop` (PySide6/Qt). Running `rosbagger-desktop [BAG]` spawns a real OS window with full parity to the Textual TUI's five panels (inspect/query/tf/record/replay), each a thin face calling the existing `rosbagger_core`/`rosbagger_record`/`rosbagger_replay` APIs verbatim — no new analysis logic. Hard constraint: do not modify or regress anything that already exists — the TUI (`rosbagger-gui`) is untouched, PySide6 is isolated to the new package, and the offline import graph stays both ROS-free AND Qt-free (offline guard extended). Phased internally: offline parity (inspect/query/tf) first, then live parity (record/replay). Full design: `docs/superpowers/specs/2026-05-25-rosbagger-desktop-gui-design.md`.
+**Requirements**: (new milestone v0.3 — DoD: native window launches, five panels reach feature parity with the TUI reusing module APIs, package fully isolated, offline+Qt-free guard green, headless pytest-qt tests pass at ≥80%)
+**Depends on:** Phase 15
+**Plans:** 0 plans (run /gsd-plan-phase 16 to break down)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 16 to break down)
