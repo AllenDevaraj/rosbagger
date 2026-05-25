@@ -185,6 +185,10 @@ class MainWindow(QMainWindow):
             reader.open()
         except Exception as exc:  # noqa: BLE001 - teaching dialog, not a startup crash (WR-05)
             QMessageBox.warning(self, "Could not open bag", f"Could not open {path}: {exc}")
+            # WR-04: keep _bag_path consistent with reader. The prior reader was already
+            # closed/nulled above, so a failed re-open must also drop the stale path rather
+            # than leaving _bag_path pointing at a bag the window no longer has open.
+            self._bag_path = None
             return
         self.reader = reader
         self._bag_path = path

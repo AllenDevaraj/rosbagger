@@ -461,6 +461,35 @@ def test_finish_record_guards_non_tuple_result(qtbot) -> None:
     assert "out.mcap" in panel.status_label.text()
 
 
+def test_open_reader_clears_bag_path_on_failed_open(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """WR-04: a failed re-open leaves ``reader`` None AND ``_bag_path`` consistent (cleared).
+
+    Opens a valid fixture so the window holds a reader + ``_bag_path``, stubs the warning dialog
+    (no native modal under offscreen), then re-opens a bad path. Pre-fix the failure path nulled
+    ``reader`` but left the stale ``_bag_path`` pointing at the old bag — inconsistent state. Now
+    both end consistent: ``reader is None`` and ``_bag_path is None`` after the failed open.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # First, a successful open: reader + _bag_path are both set and agree.
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window._open_reader(bag)
+    assert window.reader is not None, "valid bag should open a reader"
+    assert window._bag_path == bag, "valid open should record the bag path"
+
+    # Now a failed re-open over a non-existent path: BOTH must end consistent (None).
+    window._open_reader(tmp_path / "does-not-exist.mcap")
+    assert window.reader is None, "failed open must leave reader None"
+    assert window._bag_path is None, (
+        "failed open must clear _bag_path to stay consistent with reader (WR-04)"
+    )
+
+
 def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> None:
     """WR-03: export routes through ``QFileDialog.getSaveFileName`` to a user-chosen path.
 
