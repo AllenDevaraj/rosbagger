@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from . import capabilities
 from .panels.inspect_panel import InspectPanel
+from .panels.query_panel import QueryPanel
 from .panels.tf_panel import TfPanel
 
 # The default panel shown on launch (the first nav row).
@@ -80,12 +81,15 @@ class MainWindow(QMainWindow):
         self._ros_available: bool = capabilities.ros_available()
 
         # Panel registry — an editable list of (panel_id, label, widget, is_live)
-        # rows that LATER plans append to (Plan 02 -> query; Plan 03 -> record/replay).
-        # This plan registers the two offline panels (Inspect, TF), both is_live=False.
+        # rows that LATER plans append to (Plan 03 -> record/replay). This plan adds
+        # the Query panel (offline, is_live=False) in the TUI _PANELS order
+        # inspect/query/tf; all three offline rows are always enabled (D-08).
         self.inspect_panel = InspectPanel(self)
+        self.query_panel = QueryPanel(self)
         self.tf_panel = TfPanel(self)
         self._registry: list[tuple[str, str, QWidget, bool]] = [
             ("inspect", "Inspect", self.inspect_panel, False),
+            ("query", "Query", self.query_panel, False),
             ("tf", "TF", self.tf_panel, False),
         ]
         # Public accessor so headless tests reach the live widgets by id.
