@@ -1,0 +1,36 @@
+# rosbagger-desktop — the native PySide6 (Qt) desktop "cockpit": a thin face over
+# the offline + live module APIs (D-08, API-first), the Qt analog of rosbagger-gui.
+# It is a uv WORKSPACE MEMBER, mirroring rosbagger-gui's manifest shape (swap
+# textual for PySide6).
+#
+# ISOLATION INVARIANT (D-01/D-04): PySide6 is declared ONLY here, never in any
+# other package and never in the base/offline install graph. Its offline panels
+# (inspect/query/tf) drive rosbagger-core only; the live panels (record/replay)
+# LAZY-import the already-installed workspace siblings (rosbagger-record /
+# rosbagger-replay) inside method/worker bodies in a later wave, so `import
+# rosbagger_desktop` stays Qt-free AND ROS-free at top level. The ROS runtime is
+# environment-provided by a sourced ROS distro and never resolved by uv here.
+[project]
+name = "rosbagger-desktop"
+version = "0.2.0"
+requires-python = ">=3.10"
+# Sibling pins by SPEC ONLY (no git/path URL baked in — D-02), resolved via the
+# root [tool.uv.sources] workspace sources. PySide6 is the ONLY Qt dep and lives
+# ONLY here (D-01); RESEARCH Standard Stack pins it to the two current stable
+# minors (6.10/6.11) with a guard against an unvetted 6.12.
+dependencies = [
+    "rosbagger-core>=0.2,<0.3",
+    "rosbagger-record>=0.2,<0.3",
+    "rosbagger-replay>=0.2,<0.3",
+    "PySide6>=6.10,<6.12",
+]
+
+[project.scripts]
+# cli.py exposes a plain main() — an argparse front door that constructs
+# QApplication only AFTER parse_args, so `rosbagger-desktop --help` exits 0
+# WITHOUT building any Qt object (D-16).
+rosbagger-desktop = "rosbagger_desktop.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -33,6 +33,13 @@ dev = [
     # ships the `textual` devtools console for interactive panel work.
     "pytest-asyncio>=0.23",
     "textual-dev>=1,<2",
+    # Desktop GUI test/dev tooling (Phase 16; slopcheck [OK] — PySide6 = Qt Company,
+    # pytest-qt = pytest-dev): pytest-qt's `qtbot` fixture drives the headless PySide6
+    # window tests (Plan 16-01) under QT_QPA_PLATFORM=offscreen. PySide6 lives here
+    # in the dev group SOLELY so CI can execute those GUI tests — it is NOT added to
+    # any package's deps except rosbagger-desktop's (the D-01 isolation invariant).
+    "pytest-qt>=4.5,<5",
+    "PySide6>=6.10,<6.12",
 ]
 
 # --- Lint + format (ruff): one tool for lint, isort, and format ---
@@ -48,6 +55,7 @@ src = [
     "packages/rosbagger-record/src",
     "packages/rosbagger-replay/src",
     "packages/rosbagger-gui/src",
+    "packages/rosbagger-desktop/src",
     "tools",
     "tests",
 ]
@@ -70,6 +78,13 @@ testpaths = ["tests"]
 # markers. The GUI stays OUT of the coverage gate above (mirror Phase 13 D-12;
 # the TUI is near-zero pure logic by the thin-face rule).
 asyncio_mode = "auto"
+# pytest-qt binding selection (Phase 16): the headless PySide6 desktop-GUI tests
+# (tests/test_desktop.py) run under qtbot with PySide6. The offscreen platform
+# (QT_QPA_PLATFORM=offscreen) is set at the top of the desktop test module BEFORE
+# any PySide6 import (16-RESEARCH Pitfall 3); qt_api pins the binding so qtbot does
+# not try PyQt. The desktop GUI stays OUT of the coverage gate (thin-face rule,
+# mirror the TUI exemption — addopts covers only rosbagger_core + bagq).
+qt_api = "pyside6"
 # The `live` marker tags the Phase-12 LIVE integration tests (tests/test_record_live.py,
 # Plan 03) that require a sourced ROS 2 environment (rclpy + rosbag2_py). They are
 # SKIPPED in the offline CI (gated by importorskip("rclpy")); registering the marker
