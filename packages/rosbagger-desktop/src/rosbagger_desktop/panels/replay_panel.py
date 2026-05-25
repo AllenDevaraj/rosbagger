@@ -331,8 +331,18 @@ class ReplayPanel(QWidget):
         Parse the raw entry ONCE and branch on validity: a non-numeric or ``<= 0`` entry is
         REJECTED with a teaching status (never silently coerced to 1.0). The scheduler's
         ``set_rate`` is the single validator (it raises ``ValueError`` on ``<= 0``).
+
+        CR-02: the ``Replayer`` is a non-thread-safe state machine; ``run()`` reads ``self._rate``
+        every scheduler iteration on the worker thread, so mutating it from the UI thread
+        mid-drive is an unsynchronized read/write — the exact race the Play/Step/seek guard was
+        added to prevent. Guard this the same way (only mutate between run segments). The rate
+        input is also disabled while ``_drive_running`` (belt-and-suspenders), so this guard is
+        the second line of defence against a queued/late ``returnPressed``.
         """
         if self._replayer is None:
+            return
+        if self._drive_running():
+            self._status.setText("Pause before changing the rate (a play worker is running).")
             return
         raw = self._rate_input.text().strip()
         try:
@@ -344,9 +354,19 @@ class ReplayPanel(QWidget):
         self._status.setText(f"Rate set to {rate:g}.")
 
     def _apply_loop(self, checked: bool) -> None:
-        """Forward the loop toggle to ``replayer.loop`` (D-14; wrap rewinds to 0, WR-02)."""
-        if self._replayer is not None:
-            self._replayer.loop = checked  # type: ignore[union-attr]
+        """Forward the loop toggle to ``replayer.loop`` (D-14; wrap rewinds to 0, WR-02).
+
+        CR-02: ``run()`` reads ``self.loop`` at the end-of-stream branch on the worker thread, so
+        the UI thread must not write it mid-drive (same non-thread-safe-state-machine race as the
+        rate). Guard it like the other transport controls — ignore the toggle with a teaching
+        status while a drive worker runs. The checkbox is also disabled while ``_drive_running``.
+        """
+        if self._replayer is None:
+            return
+        if self._drive_running():
+            self._status.setText("Pause before toggling loop (a play worker is running).")
+            return
+        self._replayer.loop = checked  # type: ignore[union-attr]
 
     # ----------------------------------------------------------------- scrubber/seek
 
@@ -440,25 +460,36 @@ class ReplayPanel(QWidget):
             replayer.run()  # type: ignore[union-attr]  # BLOCKING drive loop
             return None
 
+        # CR-02: the rate/loop controls mutate the non-thread-safe Replayer; disable them for
+        # the duration of the drive so a returnPressed/toggled can't race run() on the worker
+        # thread (mirrors the record panel's Start/Dismiss enable/disable). They are re-enabled
+        # on every drive outcome via _on_drive_finished (wired on on_finished).
+        self._rate_input.setEnabled(False)
+        self._loop_checkbox.setEnabled(False)
+
         worker = BlockingWorker(work, label="Replay failed")
         self._drive_thread, _ = run_on_thread(
             self,
             worker,
             on_result=self._on_drive_done,
             on_failed=self._status.setText,
-            on_finished=self._clear_drive_thread,  # CR-01: null the ref before deleteLater
+            on_finished=self._on_drive_finished,  # CR-01/CR-02: clear ref + re-enable controls
         )
 
-    def _clear_drive_thread(self) -> None:
-        """Drop the kept drive-thread ref when the worker finishes (CR-01 — runs on UI thread).
+    def _on_drive_finished(self) -> None:
+        """Drop the drive-thread ref + re-enable rate/loop controls when the worker finishes.
 
-        ``run_on_thread`` wires ``thread.finished → thread.deleteLater``, so once the worker
-        finishes the underlying C++ ``QThread`` is destroyed; keeping the stale Python wrapper
-        in ``self._drive_thread`` makes a later ``stop_thread``/``_drive_running`` probe touch a
-        deleted object. Connected via ``on_finished`` (wired before the teardown chain), this
-        clears the ref on the UI thread so a subsequent close/control sees ``None``.
+        CR-01: ``run_on_thread`` wires ``thread.finished → thread.deleteLater``, so once the
+        worker finishes the underlying C++ ``QThread`` is destroyed; keeping the stale Python
+        wrapper in ``self._drive_thread`` makes a later ``stop_thread``/``_drive_running`` probe
+        touch a deleted object. CR-02: re-enable the rate input + loop checkbox that
+        ``_start_drive`` disabled so they are mutable again between run segments. Connected via
+        ``on_finished`` (wired before the teardown chain), this runs on the UI thread on EVERY
+        drive outcome (result OR failure).
         """
         self._drive_thread = None
+        self._rate_input.setEnabled(True)
+        self._loop_checkbox.setEnabled(True)
 
     def _on_drive_done(self, _result: object) -> None:
         """Push the final playhead + a terminal status after the drive worker returns (UI thread).

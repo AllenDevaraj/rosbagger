@@ -354,8 +354,12 @@ def test_replay_panel_close_after_finished_run_is_safe(qtbot) -> None:
 
     # Simulate a stale ref that a finished worker would have left, then the finish callback.
     panel._drive_thread = object()  # type: ignore[assignment]  # stand-in stale handle
-    panel._clear_drive_thread()
+    panel._rate_input.setEnabled(False)  # _start_drive disables these during a drive (CR-02)
+    panel._loop_checkbox.setEnabled(False)
+    panel._on_drive_finished()
     assert panel._drive_thread is None, "drive-thread ref was not cleared on finish (CR-01)"
+    assert panel._rate_input.isEnabled(), "rate input not re-enabled after drive (CR-02)"
+    assert panel._loop_checkbox.isEnabled(), "loop checkbox not re-enabled after drive (CR-02)"
 
     # closeEvent must not raise even with no live transport / no thread.
     panel.close()
@@ -381,3 +385,49 @@ def test_record_panel_close_after_finished_run_is_safe(qtbot) -> None:
     assert panel._record_thread is None, "record-thread ref not cleared on finish (CR-01)"
 
     panel.close()
+
+
+def test_replay_rate_loop_guarded_while_drive_running(qtbot, monkeypatch) -> None:
+    """CR-02: rate/loop mutations are refused while a drive worker runs (no UI-thread race).
+
+    The pure ``Replayer`` is a non-thread-safe state machine whose ``run()`` reads ``_rate`` and
+    ``loop`` on the worker thread; mutating them from the UI thread mid-drive is a data race.
+    With ``_drive_running()`` forced True and a sentinel replayer in place, ``_apply_rate`` /
+    ``_apply_loop`` must NOT touch the replayer and must show a teaching status — mirroring the
+    Play/Step/seek guard. (A real concurrent drive needs ROS; this isolates the guard logic.)
+    """
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    class _Sentinel:
+        """Stand-in Replayer that records any mutation the guard should have blocked."""
+
+        def __init__(self) -> None:
+            self.loop = False
+            self.rate_calls: list[float] = []
+
+        def set_rate(self, rate: float) -> None:
+            self.rate_calls.append(rate)
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+
+    sentinel = _Sentinel()
+    panel._replayer = sentinel  # type: ignore[assignment]
+    # Force the "a drive worker is running" condition without a real ROS thread.
+    monkeypatch.setattr(panel, "_drive_running", lambda: True)
+
+    panel._rate_input.setText("2.0")
+    panel._apply_rate()
+    assert sentinel.rate_calls == [], "rate was mutated while a drive worker was running (CR-02)"
+    assert "Pause before changing the rate" in panel.status_label.text()
+
+    panel._apply_loop(True)
+    assert sentinel.loop is False, "loop was mutated while a drive worker was running (CR-02)"
+    assert "Pause before toggling loop" in panel.status_label.text()
+
+    # Sanity: with no drive running the same calls DO apply (the guard is the only blocker).
+    monkeypatch.setattr(panel, "_drive_running", lambda: False)
+    panel._apply_rate()
+    panel._apply_loop(True)
+    assert sentinel.rate_calls == [2.0], "rate did not apply when no drive was running"
+    assert sentinel.loop is True, "loop did not apply when no drive was running"
