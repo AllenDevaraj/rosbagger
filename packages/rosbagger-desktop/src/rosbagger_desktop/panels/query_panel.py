@@ -4,7 +4,8 @@ OFFLINE PANEL (D-08): always enabled. This is the richest offline panel and a pu
 FACE: it collects a SQL *string* and forwards it VERBATIM to the ONE query API —
 :func:`rosbagger_core.backend.query.query` — against the window's single shared open
 reader, then maps the returned ``pyarrow.Table`` into the ``results`` view via a lazy
-``QAbstractTableModel`` + ``QTableView`` (16-RESEARCH Pattern 4, P2 — allocation-light). It contains ZERO SQL/format/selection logic: it never builds
+``QAbstractTableModel`` + ``QTableView`` (16-RESEARCH Pattern 4, P2 — allocation-light).
+It contains ZERO SQL/format/selection logic: it never builds
 SQL, never picks a serialization format, and never analyses anything — the string is
 the user's, the rows are core's (the thin-face rule). The Qt analog of the TUI query
 panel (``rosbagger_gui.panels.query``), ported one-to-one into PySide6 widgets.
@@ -26,17 +27,23 @@ the cursor. Two export ``QPushButton``s write the LAST result ``pyarrow.Table`` 
 serialization is chosen by the file EXTENSION, never by the panel — the panel only
 supplies a path with the matching suffix). Export is disabled until a result exists.
 
+The blocking ``query(sql, reader)`` call runs OFF the UI thread on a
+:class:`~rosbagger_desktop.workers.BlockingWorker` (P1, mirroring the replay panel's drive
+worker): Run disables + a running status shows for the flight, the result/teaching message
+arrives on a UI-thread slot, and Run re-enables on finish — so a heavy-but-bounded query
+never freezes the window. A second Run while one is in flight is refused.
+
 OFFLINE-IMPORT INVARIANT (D-08, Pitfall 4): every ``rosbagger_core`` import lives
 INSIDE a method body (the run handler / ``refresh_view`` / the export handler), never
-at module top — so this module's top level stays PySide6-only and importing it pulls
-no ``rosbags`` / heavy stack.
+at module top — the top level stays PySide6 + local (``..workers``) only, so importing
+this module pulls no ``rosbags`` / heavy stack.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QThread
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -52,6 +59,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from ..workers import BlockingWorker, run_on_thread, stop_thread
 
 # Default export file NAMES (the dialog's pre-filled name; the user picks the directory via
 # the save dialog, WR-03). The panel collects a PATH only; the FORMAT is chosen by write_table
@@ -144,6 +153,12 @@ class QueryPanel(QWidget):
         # The last result table kept for the export buttons. A pyarrow.Table or None;
         # the panel never inspects its contents beyond Pattern-4 rendering.
         self._last_result: pyarrow.Table | None = None
+
+        # The in-flight query worker thread (Pitfall 2 — kept so the GC can't collect a live
+        # thread mid-run) and the SQL captured for the in-flight run (appended to history on
+        # the result slot). Both None between runs.
+        self._query_thread: QThread | None = None
+        self._pending_sql: str | None = None
 
         self._status = QLabel("Open a bag to query")
 
@@ -295,14 +310,16 @@ class QueryPanel(QWidget):
             self._sql_input.setText(str(sql))
 
     def _run_query(self) -> None:
-        """Forward the SQL string + shared reader to ``query()`` and render the result.
+        """Forward the SQL string + shared reader to ``query()`` OFF the UI thread (P1).
 
-        Reads the SQL from the input and the window's single shared open reader,
+        Reads the SQL from the input and the window's single shared open reader, then
         lazily imports the ONE query API + the teaching errors INSIDE this handler
-        (offline invariant), and calls ``query(sql, reader)`` VERBATIM. Fills the
-        results table via the Pattern-4 mapping and appends the SQL to history. The
-        Phase-7 teaching errors are caught and rendered into the status label — never a
-        traceback. The result table is kept on ``_last_result`` for the export buttons.
+        (offline invariant) and runs ``query(sql, reader)`` VERBATIM on a
+        :class:`~rosbagger_desktop.workers.BlockingWorker` so a heavy-but-bounded query
+        never freezes the window (P1, mirroring the replay panel's drive worker). Run is
+        disabled + a running status shown for the flight; both restored on the finished
+        slot. The Phase-7 teaching errors are routed through the worker's ``failed`` signal
+        as ``str(exc)`` — never a traceback. A second Run while one is in flight is refused.
         """
         sql = self._sql_input.text().strip()
 
@@ -312,6 +329,11 @@ class QueryPanel(QWidget):
             return
         if not sql:
             self._status.setText("Enter a SQL query, then press Enter or Run.")
+            return
+        # Re-entry guard (T-is6-02): the reader/query is not driven twice — a Run while a
+        # worker runs is refused with a teaching status (mirrors the replay drive guard).
+        if self._query_thread is not None and self._query_thread.isRunning():
+            self._status.setText("A query is already running — wait for it to finish.")
             return
 
         # Lazy import (D-08): keep this module's top level PySide6-only. The teaching
@@ -324,20 +346,74 @@ class QueryPanel(QWidget):
             UnresolvedTypeError,
         )
 
-        try:
-            result = query(sql, reader)
-        except (UnknownTableError, UnknownColumnError, UnresolvedTypeError) as exc:
-            # The message CONTENT is built in core (thin-face): present str(e), no crash.
-            self._status.setText(str(exc))
-            return
+        # Capture sql + reader by value; the closure forwards the SQL VERBATIM to query()
+        # (the panel still builds no SQL — thin-face intact).
+        def work() -> object:
+            return query(sql, reader)
 
-        self._last_result = result
-        self._fill_results(result)
-        self._append_history(sql)
+        # The teaching errors emit as str(exc) via the worker's failed signal (the teaching
+        # contract: str(e), never a traceback); any other Exception emits "Query failed: <exc>".
+        worker = BlockingWorker(
+            work,
+            teaching_errors=(UnknownTableError, UnknownColumnError, UnresolvedTypeError),
+            label="Query failed",
+        )
+        # Remember the in-flight SQL so the result slot can append it to history.
+        self._pending_sql = sql
+        # Disable Run + show the running status BEFORE starting (P1 responsiveness contract).
+        self._run_button.setEnabled(False)
+        self._status.setText("Running…")
+        self._query_thread, _ = run_on_thread(
+            self,
+            worker,
+            on_result=self._on_query_result,
+            on_failed=self._on_query_failed,
+            on_finished=self._on_query_finished,
+        )
+
+    def _on_query_result(self, result: object) -> None:
+        """Render the worker's result on the UI thread: model, history, export, status.
+
+        Runs on the UI thread (worker ``result`` slot). Keeps ``_last_result`` for export,
+        populates the lazy model, appends the in-flight SQL to history, enables both export
+        buttons, and reports the row/column count.
+        """
+        self._last_result = result  # type: ignore[assignment]  # always a pyarrow.Table here
+        self._fill_results(result)  # type: ignore[arg-type]
+        if self._pending_sql is not None:
+            self._append_history(self._pending_sql)
+        self._pending_sql = None
         # A result now exists — enable export (D-06).
         self._export_csv.setEnabled(True)
         self._export_parquet.setEnabled(True)
-        self._status.setText(f"{result.num_rows} row(s) · {len(result.column_names)} column(s)")
+        self._status.setText(
+            f"{result.num_rows} row(s) · {len(result.column_names)} column(s)"  # type: ignore[attr-defined]
+        )
+
+    def _on_query_failed(self, message: str) -> None:
+        """Render the worker's teaching message VERBATIM into the status label (T-is6-01).
+
+        The worker already emitted ``str(exc)`` for the known teaching errors (or
+        ``"Query failed: <exc>"`` otherwise) — never a traceback. Export state is untouched.
+        """
+        self._pending_sql = None
+        self._status.setText(message)
+
+    def _on_query_finished(self) -> None:
+        """Clear the thread ref (CR-01) + re-enable Run on every outcome (UI thread).
+
+        ``run_on_thread`` wires ``thread.finished → thread.deleteLater``, so once the worker
+        finishes the underlying C++ ``QThread`` is destroyed; keeping the stale wrapper would
+        make a later ``stop_thread``/re-entry probe touch a deleted object. Runs on result OR
+        failure (mirrors the replay panel's ``_on_drive_finished``).
+        """
+        self._query_thread = None
+        self._run_button.setEnabled(True)
+
+    def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
+        """Stop the in-flight query thread before teardown (Pitfall 2)."""
+        stop_thread(self._query_thread)
+        super().closeEvent(event)
 
     def _fill_results(self, table: pyarrow.Table) -> None:
         """Hand the result ``pyarrow.Table`` to the lazy model (16-RESEARCH Pattern 4, P2).
