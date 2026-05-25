@@ -64,15 +64,34 @@ def _ros2_humble_typestore() -> object:
 class MainWindow(QMainWindow):
     """The desktop cockpit: a left nav + a stacked set of panels over a shared reader."""
 
-    def __init__(self, bag_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        bag_path: str | Path | None = None,
+        theme_manager: object | None = None,
+    ) -> None:
         """Build the shell, apply the capability gate (D-09), and open the launch bag.
 
         The single shared ``reader`` is ``None`` until a bag opens. ``ros_available``
         is computed ONCE here (cheap, D-09). A bad/missing launch bag surfaces a
         ``QMessageBox`` rather than crashing construction (WR-05).
+
+        ``theme_manager`` (Phase 17) is the shell's live Dark/Light toggle owner (D-06).
+        ``cli.main`` constructs+applies one and hands it in; when called directly (tests,
+        the bag-only path) it is ``None`` and the window constructs its OWN ThemeManager so a
+        directly-built window stays themeable. The manager is NOT re-applied here — cli.main
+        already applied it before show(); a self-constructed one is left unapplied (no running
+        app stylesheet is forced from a unit-test-built window).
         """
         super().__init__()
         self.setWindowTitle("rosbagger-desktop")
+
+        # Theme manager (D-06): supplied by cli.main (already applied) or self-constructed for a
+        # directly-built window so the View-menu toggle always has a manager to drive (Task 3).
+        if theme_manager is None:
+            from .theme import ThemeManager
+
+            theme_manager = ThemeManager()
+        self._theme_manager = theme_manager
 
         # The ONE shared open reader (D-07); None until a bag is opened.
         self.reader: object | None = None

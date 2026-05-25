@@ -47,11 +47,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
     # Imported INSIDE main (Qt-free top level, Pitfall 6): never reached on --help.
+    from PySide6.QtCore import QCoreApplication
     from PySide6.QtWidgets import QApplication
 
     from .main_window import MainWindow
+    from .theme import ThemeManager
 
-    app = QApplication(sys.argv if argv is None else [sys.argv[0], *argv])
-    window = MainWindow(bag_path=args.bag_path)
+    # Reuse an existing QApplication if one is already running (e.g. a test harness owns the
+    # singleton); Qt forbids a second instance. Otherwise create the one app for this process.
+    app = QApplication.instance() or QApplication(
+        sys.argv if argv is None else [sys.argv[0], *argv]
+    )
+
+    # Identity for QSettings persistence (D-06) — set ONCE, AFTER QApplication but BEFORE the
+    # ThemeManager reads ui/theme. Lands the conf at ~/.config/rosbagger/rosbagger-desktop.conf
+    # on Linux (17-RESEARCH, verified). Theme code lives entirely in rosbagger-desktop (D-08).
+    QCoreApplication.setOrganizationName("rosbagger")
+    QCoreApplication.setApplicationName("rosbagger-desktop")
+
+    # Construct + apply the theme BEFORE show() so the window paints already-themed (no flash),
+    # then hand the manager to MainWindow so the View-menu toggle can reach it (Task 3).
+    theme_manager = ThemeManager()
+    theme_manager.apply()
+
+    window = MainWindow(bag_path=args.bag_path, theme_manager=theme_manager)
     window.show()
     return app.exec()
