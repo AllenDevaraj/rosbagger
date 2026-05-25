@@ -462,7 +462,7 @@ Plans:
 **Requirements** (DoD — to be validated/refined in planning): theme toggle flips dark↔light live and persists across launches; tokens are the single source of styling (no scattered inline QSS/colors); all five panels read from the theme; the four non-query panels have no UI-thread block on their heavy paths and use model/view where they render tables; status surfaces are accessible; isolation invariant + offline/Qt-free guard stay green; headless pytest-qt suite passes at ≥80%; visuals sanity-checked on a real X11 window (offscreen can't prove appearance).
 
 **Depends on:** Phase 16 (the desktop package + thin-face/isolation invariants), quick tasks 260525-is6 + 260525-kj0 (the query-panel patterns this phase generalizes).
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 **Open scoping notes for planning (`/gsd-plan-phase 17` / `/gsd-discuss-phase 17`):**
 - Theme palettes: locked direction is "I choose per usage" (robotics engineer reading bag data at a desk → a calm, focused default); planning should pin actual OKLCH-derived token values for both themes and force a concrete scene per the "theme is never a default" rule.
@@ -470,4 +470,6 @@ Plans:
 - Token/theme mechanism: QSS variables aren't native; decide on a token→QSS approach (e.g. a Python token module that templates the stylesheet, or `qt-material`-style generation) — must stay inside the package, no new heavy deps leaking into the offline graph.
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 17 to break down)
+- [ ] 17-01-PLAN.md — Theme infrastructure: tokens (DARK+LIGHT) → build_qss → ThemeManager; QSettings identity + live View-menu toggle
+- [ ] 17-02-PLAN.md — Shared table models + inspect/tf parity: lift _ResultTableModel, add RowsTableModel + accessible status helper, move inspect/tf to QTableView + BlockingWorker
+- [ ] 17-03-PLAN.md — Visual rollout across all five panels: token-driven theming, no inline color, record/replay accessible status, edge states, real-window sanity check
