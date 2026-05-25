@@ -161,13 +161,42 @@ class MainWindow(QMainWindow):
         """Whether a ROS 2 environment is sourced (computed once at startup, D-09)."""
         return self._ros_available
 
+    @property
+    def theme_manager(self) -> object:
+        """The shell's :class:`ThemeManager` (D-06) — the live Dark/Light toggle owner."""
+        return self._theme_manager
+
+    @property
+    def theme_action(self) -> object:
+        """The checkable View-menu "Dark theme" action (a test accessor, D-06)."""
+        return self._theme_action
+
     def _build_menu(self) -> None:
-        """Add a File menu with the two ``QFileDialog`` open paths (Pattern 5, D-16)."""
+        """Add File (open paths) + View (live Dark/Light toggle) menus (Pattern 5 / D-06)."""
         file_menu = self.menuBar().addMenu("&File")
         open_file = file_menu.addAction("Open Bag File…")
         open_file.triggered.connect(self._open_bag_file)
         open_dir = file_menu.addAction("Open Bag Directory…")
         open_dir.triggered.connect(self._open_bag_directory)
+
+        # View ▸ Dark theme — a checkable action wired to ThemeManager.toggle (D-06). Lowest-
+        # friction toggle home (17-RESEARCH Open Question 1) — no new toolbar chrome. The check
+        # state reflects the manager's current name; toggling flips the theme live + persists.
+        view_menu = self.menuBar().addMenu("&View")
+        self._theme_action = view_menu.addAction("Dark theme")
+        self._theme_action.setCheckable(True)
+        self._theme_action.setChecked(self._theme_manager.name == "dark")
+        self._theme_action.triggered.connect(self._on_theme_action)
+
+    def _on_theme_action(self) -> None:
+        """View ▸ Dark theme triggered: flip the theme live, then sync the check state (D-06).
+
+        Delegates the actual dark↔light flip + persistence + live restyle to
+        ``ThemeManager.toggle`` (D-03/D-06 — the shell owns no styling logic), then reflects the
+        manager's resulting name in the action's checked state so the menu stays in sync.
+        """
+        self._theme_manager.toggle()
+        self._theme_action.setChecked(self._theme_manager.name == "dark")
 
     def _open_bag_file(self) -> None:
         """File ▸ Open Bag File… — a file picker for a ROS 1 ``.bag`` / standalone ``.mcap``."""

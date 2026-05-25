@@ -783,7 +783,7 @@ def test_qss_tokens_module_imports_no_pyside6() -> None:
     assert leaked == [], f"theme.tokens/theme.qss pulled in Qt at import: {leaked}"
 
 
-def _temp_settings_scope(monkeypatch, tmp_path: "Path") -> None:
+def _temp_settings_scope(monkeypatch, tmp_path: Path) -> None:
     """Point QSettings at a tmp .conf in a unique org/app scope (T-17-02 / 17-RESEARCH Wave 0).
 
     Sets QSettings's default IniFormat path under ``tmp_path`` and a unique org/app name so the
@@ -927,6 +927,57 @@ def test_cli_main_wires_identity_and_theme(qtbot, tmp_path: Path, monkeypatch) -
     assert QCoreApplication.applicationName() == "rosbagger-desktop", (
         "cli.main did not set app identity"
     )
+
+
+def test_view_menu_theme_toggle_flips_live(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """The View-menu checkable action flips theme_manager.name AND the live stylesheet (D-06).
+
+    Builds a MainWindow (which self-constructs a ThemeManager when none is passed), triggers
+    its View ▸ Dark theme action, and asserts BOTH the manager name and the live
+    QApplication.styleSheet() flipped to the other theme — the no-relaunch live toggle wired
+    into the shell. QSettings is scoped to tmp_path so the dev box conf is untouched (T-17-02).
+    """
+    from PySide6.QtWidgets import QApplication
+
+    from rosbagger_desktop.main_window import MainWindow
+    from rosbagger_desktop.theme import DARK, LIGHT
+
+    _temp_settings_scope(monkeypatch, tmp_path)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.theme_manager is not None, "a directly-built window must self-construct a manager"
+    assert window.theme_action.isCheckable(), "the View theme action must be checkable"
+    assert window.theme_manager.name == "dark", "fresh scope should default to dark"
+    assert window.theme_action.isChecked(), "the action should reflect the dark default as checked"
+
+    # Trigger the action (the user clicking the menu item) → live flip to light + persist.
+    window.theme_action.trigger()
+    assert window.theme_manager.name == "light", "the toggle action did not flip the manager name"
+    assert not window.theme_action.isChecked(), "the action check state did not follow the flip"
+    sheet = QApplication.instance().styleSheet()
+    assert LIGHT.bg in sheet, "the live app stylesheet did not flip to LIGHT after the action"
+    assert DARK.bg not in sheet, "the live app stylesheet still carries DARK after the action"
+
+    # Trigger again → back to dark.
+    window.theme_action.trigger()
+    assert window.theme_manager.name == "dark", "the second toggle did not flip back to dark"
+    assert window.theme_action.isChecked()
+
+
+def test_main_window_builds_without_theme_manager_arg(qtbot) -> None:
+    """An existing MainWindow() construction (no theme_manager) still builds + has a View menu.
+
+    Regression-guards the Phase 16 call sites (and the bag-only path): omitting the new
+    theme_manager arg must still build a themeable window with a working View toggle.
+    """
+    from rosbagger_desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window.theme_manager is not None, "no-arg window did not self-construct a ThemeManager"
+    assert window.theme_action is not None, "no-arg window has no View theme action"
 
 
 def test_replay_rate_loop_guarded_while_drive_running(qtbot, monkeypatch) -> None:
