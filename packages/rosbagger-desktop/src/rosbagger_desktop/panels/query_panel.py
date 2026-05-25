@@ -44,6 +44,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QThread
+from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -73,6 +74,12 @@ _PARQUET_FILTER = "Parquet (*.parquet)"
 
 # Qt item-data role carrying the verbatim SQL on a history row / column on a tree leaf.
 _SQL_ROLE = int(Qt.UserRole)
+
+# P2-a11y status styling (presentation-only): a neutral status clears the stylesheet, an
+# error status gets a distinct red foreground/border so a sighted user perceives a teaching
+# error without reading the text. The CONTENT is never changed — core still owns the message.
+_STATUS_NEUTRAL_STYLE = ""
+_STATUS_ERROR_STYLE = "color: #c0392b; border: 1px solid #c0392b; padding: 2px;"
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import pyarrow
@@ -162,7 +169,12 @@ class QueryPanel(QWidget):
         self._query_worker: BlockingWorker | None = None
         self._pending_sql: str | None = None
 
+        # P2-a11y: mark the status line as an accessibly-named status region so screen
+        # readers announce it; a stable objectName lets the error stylesheet target it.
         self._status = QLabel("Open a bag to query")
+        self._status.setObjectName("query_status")
+        self._status.setAccessibleName("Query status")
+        self._status.setAccessibleDescription("Open a bag to query")
 
         # Query bar: a SQL line-edit + a Run button (both trigger _run_query).
         self._sql_input = QLineEdit()
@@ -282,6 +294,28 @@ class QueryPanel(QWidget):
         """The window's single shared open reader (``None`` until a bag opens)."""
         return getattr(self.window(), "reader", None)
 
+    def _set_status(self, text: str, *, is_error: bool = False) -> None:
+        """Set the status text + a11y description, style on error, announce on the error path.
+
+        P2-a11y presentation-only helper (THIN-FACE: builds NO message text — ``text`` is
+        passed verbatim, teaching errors stay ``str(exc)``). It (1) sets the label text,
+        (2) applies the error stylesheet when ``is_error`` else clears it back to neutral so
+        a once-shown error style is cleared on the next success, (3) mirrors the text into
+        the accessible description so assistive tech exposes the value, and (4) on the error
+        path posts a ``QAccessible`` Alert so screen readers announce it. The announcement is
+        guarded so it never raises headlessly (offscreen Qt, T-kj0-03).
+        """
+        self._status.setText(text)
+        self._status.setStyleSheet(_STATUS_ERROR_STYLE if is_error else _STATUS_NEUTRAL_STYLE)
+        self._status.setAccessibleDescription(text)
+        if is_error:
+            try:
+                QAccessible.updateAccessibility(
+                    QAccessibleEvent(self._status, QAccessible.Alert)
+                )
+            except Exception:  # noqa: BLE001 - announcement is best-effort; never crash the GUI
+                pass
+
     def refresh_view(self) -> None:
         """Populate the schema/topic tree from ``collect_table_schemas`` (D-11).
 
@@ -294,7 +328,7 @@ class QueryPanel(QWidget):
         self._schema_tree.clear()
         reader = self._reader()
         if reader is None:
-            self._status.setText("Open a bag to query")
+            self._set_status("Open a bag to query")
             return
 
         # Lazy import (D-08): keep this module's top level PySide6-only.
@@ -345,15 +379,15 @@ class QueryPanel(QWidget):
 
         reader = self._reader()
         if reader is None:
-            self._status.setText("Open a bag to query")
+            self._set_status("Open a bag to query")
             return
         if not sql:
-            self._status.setText("Enter a SQL query, then press Enter or Run.")
+            self._set_status("Enter a SQL query, then press Enter or Run.")
             return
         # Re-entry guard (T-is6-02): the reader/query is not driven twice — a Run while a
         # worker runs is refused with a teaching status (mirrors the replay drive guard).
         if self._query_thread is not None and self._query_thread.isRunning():
-            self._status.setText("A query is already running — wait for it to finish.")
+            self._set_status("A query is already running — wait for it to finish.")
             return
 
         # Lazy import (D-08): keep this module's top level PySide6-only. The teaching
@@ -382,7 +416,7 @@ class QueryPanel(QWidget):
         self._pending_sql = sql
         # Disable Run + show the running status BEFORE starting (P1 responsiveness contract).
         self._run_button.setEnabled(False)
-        self._status.setText("Running…")
+        self._set_status("Running…")
         # Keep BOTH the thread and worker refs on the panel (Pitfall 2): the worker is
         # moved onto the thread but not Qt-reparented, so a discarded Python ref lets the GC
         # collect it before its queued `run` slot fires (a fast query never starts) — the
@@ -411,8 +445,10 @@ class QueryPanel(QWidget):
         # A result now exists — enable export (D-06).
         self._export_csv.setEnabled(True)
         self._export_parquet.setEnabled(True)
-        self._status.setText(
-            f"{result.num_rows} row(s) · {len(result.column_names)} column(s)"  # type: ignore[attr-defined]
+        # Success CLEARS any error style left by a prior teaching error (path-scoped styling).
+        self._set_status(
+            f"{result.num_rows} row(s) · {len(result.column_names)} column(s)",  # type: ignore[attr-defined]
+            is_error=False,
         )
 
     def _on_query_failed(self, message: str) -> None:
@@ -422,7 +458,8 @@ class QueryPanel(QWidget):
         ``"Query failed: <exc>"`` otherwise) — never a traceback. Export state is untouched.
         """
         self._pending_sql = None
-        self._status.setText(message)
+        # Teaching message rendered VERBATIM (THIN-FACE) with error styling + an a11y alert.
+        self._set_status(message, is_error=True)
 
     def _on_query_finished(self) -> None:
         """Clear the thread ref (CR-01) + re-enable Run on every outcome (UI thread).
@@ -473,7 +510,7 @@ class QueryPanel(QWidget):
         surfaced to the status label rather than crashing the GUI.
         """
         if self._last_result is None:  # export disabled until a result exists
-            self._status.setText("Run a query first, then export.")
+            self._set_status("Run a query first, then export.")
             return
 
         path, _selected = QFileDialog.getSaveFileName(
@@ -493,6 +530,6 @@ class QueryPanel(QWidget):
             # (ArrowInvalid / ArrowNotImplementedError for an unwritable column type) which are
             # NOT ValueError/OSError. Broaden to match the docstring's "any error is surfaced to
             # the status label rather than crashing the GUI" promise (the worker-style policy).
-            self._status.setText(f"Export failed: {exc}")
+            self._set_status(f"Export failed: {exc}", is_error=True)
             return
-        self._status.setText(f"Exported {self._last_result.num_rows} row(s) → {path}")
+        self._set_status(f"Exported {self._last_result.num_rows} row(s) → {path}")
