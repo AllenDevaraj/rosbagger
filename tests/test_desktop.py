@@ -429,10 +429,15 @@ def test_capability_gate_keeps_offline_panels_enabled(qtbot, tmp_path: Path, mon
         )
 
     # And the offline panel still works without ROS: open a fixture, refresh, get rows.
+    # 17-02 / D-02: inspect refreshes OFF the UI thread on a BlockingWorker — wait for the
+    # model to populate via the worker's result slot rather than asserting synchronously.
     bag = write_ros2_sqlite_bag(tmp_path)
     window._open_reader(bag)
     window.inspect_panel.refresh_view()
-    assert window.inspect_panel.bag_info_table.rowCount() > 0, (
+    qtbot.waitUntil(
+        lambda: window.inspect_panel.bag_info_table.model().rowCount() > 0, timeout=5000
+    )
+    assert window.inspect_panel.bag_info_table.model().rowCount() > 0, (
         "offline inspect panel did not render real topics without ROS"
     )
 
