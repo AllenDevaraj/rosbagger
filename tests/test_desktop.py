@@ -387,6 +387,49 @@ def test_record_panel_close_after_finished_run_is_safe(qtbot) -> None:
     panel.close()
 
 
+def test_replay_rate_contract_agrees_on_play_and_enter(qtbot) -> None:
+    """WR-06: an invalid rate is REJECTED on both Play(-build) and Enter — never coerced to 1.0.
+
+    Pre-fix the transport-build path (``_read_rate``) silently coerced a bad rate to 1.0 while
+    the Enter handler (``_apply_rate``) rejected it — the two paths disagreed for the same
+    widget. Both now route through ``_validated_rate``: an invalid entry sets a teaching status
+    and refuses (returns ``None`` / builds nothing), and a valid entry parses cleanly.
+    """
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+
+    # Invalid (non-numeric): the SINGLE validator rejects with a teaching status, returns None.
+    panel.rate_input.setText("fast")
+    assert panel._validated_rate() is None, "non-numeric rate was not rejected (WR-06)"
+    assert "Invalid rate" in panel.status_label.text()
+
+    # Invalid (<= 0): same rejection.
+    panel.rate_input.setText("0")
+    assert panel._validated_rate() is None, "non-positive rate was not rejected (WR-06)"
+    assert "Invalid rate" in panel.status_label.text()
+
+    # Valid: parses to the float (no coerce).
+    panel.rate_input.setText("2.5")
+    assert panel._validated_rate() == 2.5, "a valid rate did not parse cleanly (WR-06)"
+
+    # The Enter handler agrees: with a sentinel replayer, a bad rate is rejected (no set_rate).
+    class _Sentinel:
+        def __init__(self) -> None:
+            self.rate_calls: list[float] = []
+
+        def set_rate(self, rate: float) -> None:
+            self.rate_calls.append(rate)
+
+    sentinel = _Sentinel()
+    panel._replayer = sentinel  # type: ignore[assignment]
+    panel.rate_input.setText("bad")
+    panel._apply_rate()
+    assert sentinel.rate_calls == [], "Enter handler coerced an invalid rate instead of rejecting"
+    assert "Invalid rate" in panel.status_label.text()
+
+
 def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> None:
     """WR-03: export routes through ``QFileDialog.getSaveFileName`` to a user-chosen path.
 

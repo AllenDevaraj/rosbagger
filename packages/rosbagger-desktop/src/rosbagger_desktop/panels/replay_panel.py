@@ -189,14 +189,27 @@ class ReplayPanel(QWidget):
 
     # --------------------------------------------------------------- transport build
 
-    def _read_rate(self) -> float:
-        """Parse the rate line-edit to a float > 0 (default 1.0 on a blank/invalid entry)."""
+    def _validated_rate(self) -> float | None:
+        """Parse the rate line-edit to a float > 0, or set a teaching status and return ``None``.
+
+        WR-06: ``_apply_rate`` (the returnPressed handler) REJECTS an invalid rate with a
+        teaching status rather than silently coercing to 1.0, but the transport-build path used
+        to silently coerce — so pressing Play with an invalid rate quietly played at 1.0 while
+        the box showed the bad text. This is the SINGLE rate-parsing contract for the widget:
+        both Enter and Play/Step go through the same validate-or-reject logic. A non-numeric or
+        ``<= 0`` entry sets the teaching status and returns ``None`` (the caller refuses to
+        build / play); a valid entry returns the float.
+        """
         raw = self._rate_input.text().strip()
         try:
             value = float(raw)
         except ValueError:
-            return 1.0
-        return value if value > 0 else 1.0
+            self._status.setText(f"Invalid rate {raw!r}: enter a number > 0.")
+            return None
+        if value <= 0:
+            self._status.setText(f"Invalid rate {raw!r}: enter a number > 0.")
+            return None
+        return value
 
     def _ensure_transport(self) -> bool:
         """Build the pure Replayer + shared sink in the panel's OWN rclpy context (D-14/D-05).
@@ -206,7 +219,12 @@ class ReplayPanel(QWidget):
         panel's own context (only initialising it when WE created it — the re-entrant-safe
         WR-04 guard), builds the SHARED ``build_publish_sink`` (no inlined publish mechanics,
         D-05), loads the items, and constructs the ``Replayer``. Returns ``False`` (with a
-        teaching status) on a capability error or an empty/missing bag.
+        teaching status) on a capability error, an empty/missing bag, OR an invalid rate.
+
+        WR-06: the initial ``rate`` comes from :meth:`_validated_rate` (the SAME validate-or-reject
+        contract as the Enter handler) — an invalid rate refuses to build the transport with a
+        teaching status rather than silently coercing to 1.0. A seek (which calls this when the
+        transport may not yet exist) therefore inherits the same rejection.
         """
         if self._replayer is not None:
             return True
@@ -214,6 +232,10 @@ class ReplayPanel(QWidget):
         bag = self._bag_path()
         if bag is None:
             self._status.setText("Open a bag to replay (no bag loaded).")
+            return False
+
+        rate = self._validated_rate()
+        if rate is None:  # _validated_rate set the teaching status (WR-06)
             return False
 
         import rclpy
@@ -240,9 +262,7 @@ class ReplayPanel(QWidget):
             self._node = rclpy.create_node("rosbagger_desktop_replayer")
             # The SINGLE production publish sink (D-05) — same mechanics replay() drives.
             sink, self._published = build_publish_sink(self._node)
-            self._replayer = Replayer(
-                items, sink, rate=self._read_rate(), loop=self._loop_checkbox.isChecked()
-            )
+            self._replayer = Replayer(items, sink, rate=rate, loop=self._loop_checkbox.isChecked())
             self._item_count = len(items)
             self._bag_span_ns = items[-1].t_ns - items[0].t_ns
         except RosNotAvailableError as exc:
@@ -301,7 +321,10 @@ class ReplayPanel(QWidget):
         if not self._ensure_transport():
             return
         self._replayer.play()  # type: ignore[union-attr]
-        self._status.setText(f"Playing… ({self._item_count} msg, rate {self._read_rate():g})")
+        # WR-06: report the Replayer's ACTUAL rate (set_rate's validated value), not a re-read of
+        # the raw input — the input and the running scheduler can no longer disagree.
+        rate = self._replayer.rate  # type: ignore[union-attr]
+        self._status.setText(f"Playing… ({self._item_count} msg, rate {rate:g})")
         self._start_drive()
 
     def _pause(self) -> None:
@@ -344,13 +367,12 @@ class ReplayPanel(QWidget):
         if self._drive_running():
             self._status.setText("Pause before changing the rate (a play worker is running).")
             return
-        raw = self._rate_input.text().strip()
-        try:
-            rate = float(raw)
-            self._replayer.set_rate(rate)  # type: ignore[union-attr]  # raises ValueError on <= 0
-        except ValueError:
-            self._status.setText(f"Invalid rate {raw!r}: enter a number > 0.")
+        # WR-06: the SAME validate-or-reject contract the Play/Step build path uses
+        # (_validated_rate) — both paths agree on the widget's contract, never a silent coerce.
+        rate = self._validated_rate()
+        if rate is None:  # _validated_rate set the teaching status
             return
+        self._replayer.set_rate(rate)  # type: ignore[union-attr]  # set_rate also rejects <= 0
         self._status.setText(f"Rate set to {rate:g}.")
 
     def _apply_loop(self, checked: bool) -> None:
