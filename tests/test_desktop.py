@@ -1095,6 +1095,51 @@ def test_view_menu_theme_toggle_flips_live(qtbot, theme_scope) -> None:
     assert window.theme_action.isChecked()
 
 
+def test_theme_toggle_restyles_all_five_panels_live(qtbot, theme_scope) -> None:
+    """SC: the live View-menu toggle flips the theme across the shell + all five panels.
+
+    Constructs ``MainWindow`` with all five panels and applies the (dark-default) theme, then
+    captures ``QApplication.styleSheet()``, fires the View ▸ Dark theme action, and asserts the
+    app stylesheet flipped to the LIGHT bg hex (and dropped the DARK bg) AND the manager name
+    flipped — the offscreen-PROVABLE state (RESEARCH Pitfall 4: assert stylesheet content + the
+    manager's flipped name, NOT pixels). All five panels are present and themed app-level — their
+    own ``.styleSheet()`` is empty (color is the single app stylesheet, D-03), so re-polishing the
+    one app sheet reaches every panel. Toggling back restores the DARK bg.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    from rosbagger_desktop.main_window import MainWindow
+    from rosbagger_desktop.theme import DARK, LIGHT
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.theme_manager.apply()  # ensure the dark default is on the live app first
+
+    # All five panels exist and carry NO inline stylesheet — color is the single app-level sheet.
+    for panel_id in ("inspect", "query", "tf", "record", "replay"):
+        assert panel_id in window.panels, f"{panel_id} missing from the five-panel registry"
+        assert window.panels[panel_id].styleSheet() == "", (
+            f"{panel_id} panel carries an inline stylesheet — color must be app-level (D-03)"
+        )
+
+    before = QApplication.instance().styleSheet()
+    assert DARK.bg in before, "the dark-default app stylesheet was not applied before the toggle"
+
+    # Fire the live toggle (the user clicking View ▸ Dark theme).
+    window.theme_action.trigger()
+    after = QApplication.instance().styleSheet()
+    assert after != before, "the app stylesheet did not change after the live toggle"
+    assert LIGHT.bg in after, "the toggled app stylesheet did not flip to the LIGHT bg hex"
+    assert DARK.bg not in after, "the toggled app stylesheet still carries the DARK bg"
+    assert window.theme_manager.name == "light", "the toggle did not flip the manager name"
+
+    # Toggle back → the whole window restyles to DARK again (live, no relaunch).
+    window.theme_action.trigger()
+    restored = QApplication.instance().styleSheet()
+    assert DARK.bg in restored, "toggling back did not restore the DARK bg across the cockpit"
+    assert window.theme_manager.name == "dark"
+
+
 def test_main_window_builds_without_theme_manager_arg(qtbot) -> None:
     """An existing MainWindow() construction (no theme_manager) still builds + has a View menu.
 
