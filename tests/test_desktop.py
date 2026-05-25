@@ -424,6 +424,47 @@ def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> No
     assert not cancelled.exists()
 
 
+def test_query_export_surfaces_arrow_error_as_status(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """WR-05: a non-ValueError/OSError export error becomes a teaching status, not a crash.
+
+    ``write_table`` can raise Arrow's own exceptions (``ArrowInvalid`` / ``ArrowNotImplemented``)
+    which are NOT ``ValueError``/``OSError``. With the catch broadened to ``Exception``, such an
+    error must land on the status label ("Export failed: …") rather than propagating into the
+    Qt event loop. Stubs ``write_table`` to raise a non-ValueError/OSError exception.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QFileDialog
+
+    import rosbagger_core.output.export as export_mod
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+    panel = window.query_panel
+    panel.refresh_view()
+    table_name = panel.schema_tree.topLevelItem(0).text(0)
+    panel.sql_input.setText(f"SELECT * FROM {table_name} LIMIT 1")
+    qtbot.mouseClick(panel.run_button, Qt.LeftButton)
+    assert panel.results_table.rowCount() > 0, "need a result before exercising export"
+
+    class _FakeArrowError(Exception):
+        """Stand-in for an Arrow exception (not a ValueError/OSError)."""
+
+    def _boom(*_a, **_k):
+        raise _FakeArrowError("unwritable column type")
+
+    monkeypatch.setattr(export_mod, "write_table", _boom)
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "x.parquet"), "")
+    )
+
+    # Pre-fix this propagated into the event loop; post-fix it is a teaching status.
+    qtbot.mouseClick(panel.export_parquet_button, Qt.LeftButton)
+    assert "Export failed" in panel.status_label.text(), (
+        "an Arrow-style export error was not surfaced as a teaching status (WR-05)"
+    )
+
+
 def test_record_releases_replay_context_before_scan(qtbot, monkeypatch) -> None:
     """WR-01: a record scan/start tears down a replay-owned rclpy context first.
 

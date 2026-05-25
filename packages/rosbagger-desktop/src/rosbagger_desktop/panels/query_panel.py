@@ -326,7 +326,12 @@ class QueryPanel(QWidget):
 
         try:
             write_table(self._last_result, path)
-        except (ValueError, OSError) as exc:  # write_table teaches on a bad extension/path
-            self._status.setText(str(exc))
+        except Exception as exc:  # noqa: BLE001 - present as teaching text, never crash the GUI
+            # WR-05: write_table teaches on a bad extension/path (ValueError/OSError), but
+            # serializing a pyarrow.Table can also raise Arrow's own exceptions
+            # (ArrowInvalid / ArrowNotImplementedError for an unwritable column type) which are
+            # NOT ValueError/OSError. Broaden to match the docstring's "any error is surfaced to
+            # the status label rather than crashing the GUI" promise (the worker-style policy).
+            self._status.setText(f"Export failed: {exc}")
             return
         self._status.setText(f"Exported {self._last_result.num_rows} row(s) → {path}")
