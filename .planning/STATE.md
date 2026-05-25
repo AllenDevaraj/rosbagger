@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: Desktop cockpit
-status: in_progress
-stopped_at: Phase 16 (Native Desktop GUI, PySide6) added — ready to plan (/gsd-plan-phase 16)
-last_updated: 2026-05-25T00:42:37.679Z
-last_activity: 2026-05-25
+status: executing
+stopped_at: Completed 14-06-PLAN.md
+last_updated: "2026-05-25T08:46:32.189Z"
+last_activity: 2026-05-25 -- Phase 16 planning complete
 progress:
   total_phases: 16
   completed_phases: 15
-  total_plans: 45
+  total_plans: 48
   completed_plans: 45
   percent: 94
 ---
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 Phase: 16
 Plan: Not planned yet (run /gsd-plan-phase 16)
-Status: Phase 16 added — milestone v0.3 started
-Last activity: 2026-05-25 - Brainstormed + spec'd the native desktop GUI; added Phase 16 to the roadmap
+Status: Ready to execute
+Last activity: 2026-05-25 -- Phase 16 planning complete
 
 Progress: [█████████░] 94%
 
