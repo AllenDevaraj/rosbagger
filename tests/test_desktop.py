@@ -76,14 +76,89 @@ def test_app_has_offline_panels(qtbot) -> None:
     assert window.panels["query"] is window.query_panel
     assert window.panels["tf"] is window.tf_panel
 
-    # All offline nav rows are present and enabled (offline panels always enabled, D-08).
+    # The five-panel nav exists (inspect/query/tf/record/replay, Plan 03 SC1). The three
+    # OFFLINE rows are always enabled (D-08); the two live rows' enabled state depends on
+    # the gate (asserted in test_live_panels_disabled_without_ros), so this test asserts
+    # only the offline trio stays enabled.
     from PySide6.QtCore import Qt
 
-    assert window._nav.count() == 3
-    for row in range(window._nav.count()):
+    assert window._nav.count() == 5
+    offline_index = {
+        pid: i
+        for i, (pid, *_rest) in enumerate(window._registry)
+        if pid in ("inspect", "query", "tf")
+    }
+    for row in offline_index.values():
         assert bool(window._nav.item(row).flags() & Qt.ItemIsEnabled), (
             "an offline nav row was unexpectedly disabled"
         )
+
+
+def test_app_has_five_panels(qtbot) -> None:
+    """SC1: all five panels (inspect/query/tf/record/replay) are present + their nav rows.
+
+    Constructs ``MainWindow`` with no bag, asserts all five panels are reachable via the
+    public ``panels`` accessor (and the named attributes), and that the nav holds exactly
+    five rows — the full five-panel parity completeness (SC1/SC2). Record/replay are the
+    two live rows added in Plan 03; their enabled/disabled state is asserted by the
+    capability-gate test below (it depends on whether the box has ROS sourced).
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    for panel_id in ("inspect", "query", "tf", "record", "replay"):
+        assert panel_id in window.panels, f"{panel_id} panel missing from the registry"
+    assert window.panels["inspect"] is window.inspect_panel
+    assert window.panels["query"] is window.query_panel
+    assert window.panels["tf"] is window.tf_panel
+    assert window.panels["record"] is window.record_panel
+    assert window.panels["replay"] is window.replay_panel
+
+    assert window._nav.count() == 5, "expected five nav rows (inspect/query/tf/record/replay)"
+
+
+def test_live_panels_disabled_without_ros(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """SC2/SC4: with ROS forced absent the live nav rows are disabled, the offline ones aren't.
+
+    Monkeypatches ``rosbagger_desktop.capabilities.ros_available`` → ``False`` BEFORE
+    constructing the window so the D-09 gate runs deterministically on this ROS-equipped
+    dev box. Asserts the record + replay nav items are disabled (the capability gate) while
+    inspect/query/tf stay enabled, and that the offline panels still function without ROS
+    (the inspect bag-info table fills from real core output) — proving "offline panels work
+    without ROS", not merely "live panels are gated".
+    """
+    from PySide6.QtCore import Qt
+
+    monkeypatch.setattr(rosbagger_desktop.capabilities, "ros_available", lambda: False)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window.ros_available is False, "forced-no-ROS window must report ros_available False"
+
+    # Map panel id → nav row index from the registry order (inspect/query/tf/record/replay).
+    nav_index = {pid: i for i, (pid, *_rest) in enumerate(window._registry)}
+
+    # LIVE rows (record/replay): nav item disabled by the gate.
+    for live_id in ("record", "replay"):
+        item = window._nav.item(nav_index[live_id])
+        assert not bool(item.flags() & Qt.ItemIsEnabled), (
+            f"{live_id} nav row should be disabled with ROS absent (capability gate)"
+        )
+
+    # OFFLINE rows (inspect/query/tf): NOT disabled — always enabled (D-08).
+    for offline_id in ("inspect", "query", "tf"):
+        item = window._nav.item(nav_index[offline_id])
+        assert bool(item.flags() & Qt.ItemIsEnabled), (
+            f"{offline_id} nav row should stay enabled with ROS absent"
+        )
+
+    # And the offline panels WORK without ROS: open a fixture, refresh, get real rows.
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window._open_reader(bag)
+    window.inspect_panel.refresh_view()
+    assert window.inspect_panel.bag_info_table.rowCount() > 0, (
+        "offline inspect panel did not render real topics without ROS"
+    )
 
 
 def test_inspect_panel_shows_real_topics(qtbot, tmp_path: Path) -> None:
@@ -218,9 +293,16 @@ def test_capability_gate_keeps_offline_panels_enabled(qtbot, tmp_path: Path, mon
 
     from PySide6.QtCore import Qt
 
-    # The offline rows stay enabled even with ROS absent (D-08).
-    assert window._nav.count() == 3
-    for row in range(window._nav.count()):
+    # The full five-panel nav exists; the three OFFLINE rows stay enabled even with ROS
+    # absent (D-08), while the live record/replay rows are gated (asserted in detail by
+    # test_live_panels_disabled_without_ros). This test focuses on the offline trio.
+    assert window._nav.count() == 5
+    offline_index = {
+        pid: i
+        for i, (pid, *_rest) in enumerate(window._registry)
+        if pid in ("inspect", "query", "tf")
+    }
+    for row in offline_index.values():
         assert bool(window._nav.item(row).flags() & Qt.ItemIsEnabled), (
             "an offline nav row was disabled by the capability gate"
         )
