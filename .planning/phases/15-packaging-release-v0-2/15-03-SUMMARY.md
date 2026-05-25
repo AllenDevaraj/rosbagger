@@ -171,7 +171,11 @@ dispositions honored:
 - No new dependencies and no runtime code were added; the offline/no-ROS invariant and
   the >=80% coverage gate are intact.
 
-## Self-Check: PENDING (filled after write)
+## Self-Check: PASSED
+
+- FOUND: `.planning/phases/15-packaging-release-v0-2/15-03-SUMMARY.md`
+- FOUND: commit `c811b51` (Task 2 SUMMARY)
+- FOUND: local annotated `v0.2.0` tag (`git cat-file -t` == `tag`, points at `bd06d1e`)
 
 ---
 *Phase: 15-packaging-release-v0-2*

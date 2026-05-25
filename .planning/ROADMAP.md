@@ -28,7 +28,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - [x] **Phase 12: Live Record** - live topic discovery + select recording (rclpy) (completed 2026-05-23)
 - [x] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy) (completed 2026-05-23)
 - [x] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI) (completed 2026-05-24)
-- [ ] **Phase 15: Packaging & Release v0.2** - git/path-installable packages + coherent v0.2.0 versions + per-package install docs (no index publish)
+- [x] **Phase 15: Packaging & Release v0.2** - git/path-installable packages + coherent v0.2.0 versions + per-package install docs (no index publish) (completed 2026-05-25)
 
 ## Phase Details
 
@@ -411,7 +411,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
   4. Versions are coherent at v0.2.0 across all packages (+ re-locked `uv.lock`)
   5. Offline-import invariant + ROS-free core intact; full offline test suite + offline guard still green
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -424,4 +424,4 @@ Plans:
 
 **Wave 3** *(blocked on 15-01 + 15-02)*
 
-- [ ] 15-03-PLAN.md — Release gate (`uv build --all-packages` + `uv sync --locked` + ruff + offline pytest/guard + proof script) + local annotated `v0.2.0` tag; push/git-recipe = sole human follow-up -> SC1/SC2/SC5
+- [x] 15-03-PLAN.md — Release gate (`uv build --all-packages` + `uv sync --locked` + ruff + offline pytest/guard + proof script) + local annotated `v0.2.0` tag; push/git-recipe = sole human follow-up -> SC1/SC2/SC5

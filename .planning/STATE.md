@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: executing
+status: verifying
 stopped_at: Completed 14-06-PLAN.md
-last_updated: "2026-05-25T00:33:09.075Z"
+last_updated: "2026-05-25T00:38:11.489Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 15
-  completed_phases: 14
+  completed_phases: 15
   total_plans: 45
-  completed_plans: 44
-  percent: 93
+  completed_plans: 45
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 Phase: 15 (packaging-release-v0-2) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-25
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -113,6 +113,7 @@ Progress: [██████████] 98%
 | Phase 14 P07 | ~4min | 2 tasks | 5 files |
 | Phase 15 P15-01 | 2min | 3 tasks | 12 files |
 | Phase 15 P02 | 3min | 2 tasks | 2 files |
+| Phase 15 P03 | 4min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -222,6 +223,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 15-01]: Stamped v0.2.0 across all five workspace packages — 10 version sites hand-bumped (5 pyproject `version` + 5 `__version__`), mirroring the Phase 8 v0.1 hand-bump (no hatchling dynamic version). Pinned every sibling `rosbagger-core>=0.2,<0.3` by VERSION SPEC only — no git/path URL in any `[project] dependencies` (D-01 source-agnostic; threat T-15-01 mitigated, grep-confirmed). Added the declarative `rosbagger-gui[live]` extra = `rosbagger-record>=0.2,<0.3` + `rosbagger-replay>=0.2,<0.3` (D-02) with NO `__init__` import — base `import rosbagger_gui` verified to leak no rclpy/rosbag2_py (threat T-15-02 mitigated). [Rule 3] the live extra forced adding `rosbagger-record`/`rosbagger-replay` to the root `[tool.uv.sources]` (workspace=true) — uv requires a workspace source for any member named as a dependency (unpublished siblings can't resolve from PyPI); this is config wiring, NOT a package install (T-15-SC accept holds). Re-locked uv.lock (all five members 0.2.0); `uv sync --locked --dev` green, `bagq --version` -> `bagq 0.2.0`, zero 0.1.0 literals remain. Plan stayed autonomous; no runtime code changed. NOTE: this plan's SC1/SC4/SC5 are phase-local success criteria, NOT REQUIREMENTS.md domain IDs — `requirements mark-complete` correctly found nothing to mark.
 - [Phase ?]: [Phase 15-02] External-install proof encoded as committed scripts/proof_external_install.sh (path-based, throwaway non-.venv venv, neutral cwd, PYTHONPATH="") — autonomous network-free gate printing PROOF OK
 - [Phase ?]: [Phase 15-02] git+@v0.2.0 INSTALL.md recipes documented + flagged awaits-push (remote empty), NOT a blocking checkpoint — path proof is the locally-verified gate
+- [Phase ?]: [Phase 15-03] PHASE 15 COMPLETE (3/3). Full v0.2 release gate green (SC1 five 0.2.0 wheels via uv build --all-packages, no hatch config; uv sync --locked; ruff clean; pytest 466 passed/97.37% incl offline guard under the live extra = SC5; proof script PROOF OK = SC2). Local annotated v0.2.0 tag created (bd06d1e, NOT pushed); push + observe-CI + literal git recipe = sole human follow-ups (Phase 8 honest-split precedent).
 
 ### Pending Todos
 
@@ -232,6 +234,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - GSD planning agents (`gsd-project-researcher`, `gsd-research-synthesizer`, `gsd-roadmapper`) not installed — roadmap was generated inline; post-phase verifier/nyquist auditors disabled. Install via `npx get-shit-done-cc@latest --global` to enable.
 - **[ACTIVE — gates v0.1 ship] GitHub push pending auth** (no `gh`, no credential helper); `origin` set to https://github.com/AllenDevaraj/rosbagger.git. The v0.1.0 release is fully built, locally verified, and tagged; the SOLE remaining step is `git push origin main && git push origin v0.1.0` + observe CI green (08-01 SC3 remote half). The local CI-equivalent gate is green (255 passed, 97.82%) — the strongest available proxy that the pushed run will pass.
 - ~~[Phase 02-01→02-02] Project-wide coverage gate (`--cov-fail-under=80`) dips until reader tests land in 02-03.~~ RESOLVED in 02-03: tests/test_reader.py landed; full suite is 30 tests green at 96.63% with the gate enforced. Offline guard still 2/2. The gate was never weakened.
+- v0.2 milestone awaits push: git push origin main + v0.2.0 tag, then observe GitHub Actions CI green. Blocked on standing no-push-credential limitation (no gh CLI). NOT a code blocker — the local CI-equivalent gate is green (Phase 8 honest-split precedent).
 
 ### Quick Tasks Completed
 
@@ -247,7 +250,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-25T00:33:03.651Z
+Last session: 2026-05-25T00:37:59.998Z
 Stopped at: Completed 14-06-PLAN.md
 Resume file: None
 Next: Phase 14 Plan 02 (next GUI plan). Plan 14-01 COMPLETE — the shared rclpy publish path (build_publish_sink) is extracted and lazily re-exported, so the upcoming GUI replay panel drives the pure Replayer through the SAME single sink (D-09a). Phase-13 offline replay regression suite + offline-import guard green (42 tests). Historical context below.
