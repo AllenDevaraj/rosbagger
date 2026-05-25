@@ -343,17 +343,21 @@ def test_query_status_announces_and_styles_errors(qtbot, tmp_path: Path) -> None
     error_text = panel.status_label.text()
     assert error_text, "expected an UnknownTableError teaching message"
     assert "row(s)" not in error_text, "teaching error must not report a row count"
-    assert panel.status_label.styleSheet(), "error path did not apply a distinct error style"
+    # 17-02 / D-03: the error affordance is now the ``status_error`` objectName (color comes
+    # from the theme QSS ``QLabel#status_error`` selector), NOT an inline stylesheet literal.
+    assert panel.status_label.objectName() == "status_error", (
+        "error path did not toggle the status_error objectName affordance (D-03)"
+    )
 
-    # Success path: a real query CLEARS the error style and reports "row(s)" again.
+    # Success path: a real query CLEARS the error affordance and reports "row(s)" again.
     panel.sql_input.setText(f"SELECT * FROM {table_name} LIMIT 1")
     qtbot.mouseClick(panel.run_button, Qt.LeftButton)
     qtbot.waitUntil(
         lambda: "row(s)" in panel.status_label.text(),
         timeout=5000,
     )
-    assert not panel.status_label.styleSheet(), (
-        "error style was not cleared on success (styling must be path-scoped, P2-a11y)"
+    assert panel.status_label.objectName() != "status_error", (
+        "error affordance was not cleared on success (styling must be path-scoped, P2-a11y)"
     )
 
 
@@ -1019,3 +1023,82 @@ def test_replay_rate_loop_guarded_while_drive_running(qtbot, monkeypatch) -> Non
     panel._apply_loop(True)
     assert sentinel.rate_calls == [2.0], "rate did not apply when no drive was running"
     assert sentinel.loop is True, "loop did not apply when no drive was running"
+
+
+# ---------------------------------------------------------------------------
+# 17-02: shared widgets/ models + accessible status helper
+# ---------------------------------------------------------------------------
+
+
+def test_rows_model_renders_headers_and_cells() -> None:
+    """RowsTableModel renders its headers + list-of-tuple rows lazily via ``str()`` (D-02).
+
+    A pure model unit test (no QApplication needed): a two-column model over one tuple row
+    reports the right dimensions, str()-renders each cell on the DisplayRole, and exposes the
+    headers on the horizontal header. Mirrors the lifted ``_ResultTableModel`` contract for the
+    inspect/tf dataclass-row path.
+    """
+    from PySide6.QtCore import Qt
+
+    from rosbagger_desktop.widgets import RowsTableModel
+
+    model = RowsTableModel(["a", "b"], [("1", "2")])
+    assert model.rowCount() == 1, "expected one row"
+    assert model.columnCount() == 2, "expected two columns (one per header)"
+    assert model.data(model.index(0, 0)) == "1", "cell (0,0) did not str()-render"
+    assert model.data(model.index(0, 1)) == "2", "cell (0,1) did not str()-render"
+    assert model.headerData(0, Qt.Horizontal) == "a", "header section 0 wrong"
+    assert model.headerData(1, Qt.Horizontal) == "b", "header section 1 wrong"
+    # Non-str inputs are str()-rendered (temporal-safe rule: never convert, only str()).
+    model2 = RowsTableModel(["n"], [(42,)])  # type: ignore[list-item]
+    assert model2.data(model2.index(0, 0)) == "42", "non-str cell was not str()-rendered"
+
+
+def test_rows_model_set_rows_resets_bound_view(qtbot) -> None:
+    """RowsTableModel.set_rows swaps rows inside begin/endResetModel so a bound view refreshes.
+
+    Binds the model to a real ``QTableView`` and asserts the view's model sees the new row
+    count after ``set_rows`` — proving the begin/endResetModel wrapping notifies the view.
+    """
+    from PySide6.QtWidgets import QTableView
+
+    from rosbagger_desktop.widgets import RowsTableModel
+
+    model = RowsTableModel(["x", "y"])
+    view = QTableView()
+    qtbot.addWidget(view)
+    view.setModel(model)
+    assert view.model().rowCount() == 0, "fresh model should be empty"
+
+    model.set_rows([("1", "2"), ("3", "4")])
+    assert view.model().rowCount() == 2, "set_rows did not propagate the new rows to the view"
+    assert view.model().data(view.model().index(1, 0)) == "3", "swapped row not rendered"
+
+
+def test_set_status_sets_text_a11y_and_error_affordance(qtbot) -> None:
+    """set_status sets text + accessibleDescription and toggles the status_error objectName.
+
+    Under offscreen the error path is a NO-OP announce (no QAccessible Alert → no segfault)
+    but STILL sets the ``status_error`` objectName affordance (the color comes from the theme
+    QSS, D-03). A subsequent non-error call restores the label's original objectName so the
+    affordance is path-scoped, and the accessible description tracks the text both ways.
+    """
+    from PySide6.QtWidgets import QLabel
+
+    from rosbagger_desktop.widgets import set_status
+
+    label = QLabel()
+    label.setObjectName("inspect_status")  # a non-error base objectName to restore to
+    qtbot.addWidget(label)
+
+    # Error path: text + a11y description set, status_error objectName applied, no crash.
+    set_status(label, "boom — teaching message", is_error=True)
+    assert label.text() == "boom — teaching message"
+    assert label.accessibleDescription() == "boom — teaching message"
+    assert label.objectName() == "status_error", "error path did not toggle status_error (D-03)"
+
+    # Success path: original objectName restored (affordance cleared), description tracks text.
+    set_status(label, "all good")
+    assert label.text() == "all good"
+    assert label.accessibleDescription() == "all good"
+    assert label.objectName() == "inspect_status", "non-error path did not restore base objectName"

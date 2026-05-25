@@ -41,11 +41,9 @@ this module pulls no ``rosbags`` / heavy stack.
 
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QThread
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QGuiApplication
+from PySide6.QtCore import Qt, QThread
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -63,6 +61,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..widgets import _ResultTableModel, set_status
 from ..workers import BlockingWorker, run_on_thread, stop_thread
 
 # Default export file NAMES (the dialog's pre-filled name; the user picks the directory via
@@ -76,80 +75,8 @@ _PARQUET_FILTER = "Parquet (*.parquet)"
 # Qt item-data role carrying the verbatim SQL on a history row / column on a tree leaf.
 _SQL_ROLE = int(Qt.UserRole)
 
-# P2-a11y status styling (presentation-only): a neutral status clears the stylesheet, an
-# error status gets a distinct red foreground/border so a sighted user perceives a teaching
-# error without reading the text. The CONTENT is never changed — core still owns the message.
-_STATUS_NEUTRAL_STYLE = ""
-_STATUS_ERROR_STYLE = "color: #c0392b; border: 1px solid #c0392b; padding: 2px;"
-
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import pyarrow
-
-
-class _ResultTableModel(QAbstractTableModel):
-    """A lazy, allocation-light ``QAbstractTableModel`` over a ``pyarrow.Table`` (P2).
-
-    PURE presentation wrapper (thin-face): it reads the result ``pyarrow.Table`` only via
-    ``num_rows`` / ``column_names`` / ``column(...)`` — it builds no SQL, picks no format,
-    and analyses nothing. The rows are core's; this only renders them. Unlike the old
-    ``QTableWidget`` (a ``QTableWidgetItem`` allocated per cell up front), the view pulls
-    each cell lazily through :meth:`data` only when it paints — so a wide/long result is not
-    materialized into N×M widget items.
-
-    Each cell is ``str()``-rendered for display (the temporal-safe rule: an ns-timestamp →
-    datetime conversion crash class is sidestepped by never converting; we only str() it).
-    """
-
-    def __init__(self, table: pyarrow.Table | None = None) -> None:
-        """Hold an optional ``pyarrow.Table`` (``None`` → an empty 0×0 model)."""
-        super().__init__()
-        self._table: pyarrow.Table | None = table
-
-    def rowCount(self, _parent: QModelIndex | None = None) -> int:  # noqa: N802 - Qt override
-        """The result's row count (``num_rows``), or 0 when there is no table."""
-        return self._table.num_rows if self._table is not None else 0
-
-    def columnCount(self, _parent: QModelIndex | None = None) -> int:  # noqa: N802 - Qt override
-        """The result's column count (``len(column_names)``), or 0 when there is no table."""
-        return len(self._table.column_names) if self._table is not None else 0
-
-    def data(self, index: QModelIndex, role: int = int(Qt.DisplayRole)) -> object | None:
-        """Return ``str()`` of the cell at ``index`` for the DisplayRole, else ``None``.
-
-        Lazy per-cell access (P2): read ``column(col)[row].as_py()`` only for the cell being
-        painted rather than materializing ``to_pylist()`` up front. An out-of-range index or a
-        non-DisplayRole returns ``None``.
-        """
-        if role != int(Qt.DisplayRole) or self._table is None:
-            return None
-        row = index.row()
-        col = index.column()
-        if not (0 <= row < self._table.num_rows and 0 <= col < len(self._table.column_names)):
-            return None
-        value = self._table.column(col)[row].as_py()
-        return str(value)
-
-    def headerData(  # noqa: N802 - Qt override name
-        self,
-        section: int,
-        orientation: Qt.Orientation,
-        role: int = int(Qt.DisplayRole),
-    ) -> object | None:
-        """The column name for a horizontal DisplayRole header section, else ``None``."""
-        if (
-            role != int(Qt.DisplayRole)
-            or orientation != Qt.Horizontal
-            or self._table is None
-            or not (0 <= section < len(self._table.column_names))
-        ):
-            return None
-        return self._table.column_names[section]
-
-    def set_table(self, table: pyarrow.Table | None) -> None:
-        """Swap the backing table inside a begin/endResetModel so the view refreshes (P2)."""
-        self.beginResetModel()
-        self._table = table
-        self.endResetModel()
 
 
 class QueryPanel(QWidget):
@@ -300,29 +227,17 @@ class QueryPanel(QWidget):
         return getattr(self.window(), "reader", None)
 
     def _set_status(self, text: str, *, is_error: bool = False) -> None:
-        """Set the status text + a11y description, style on error, announce on the error path.
+        """Delegate to the shared accessible :func:`..widgets.set_status` helper (17-02 / D-02).
 
-        P2-a11y presentation-only helper (THIN-FACE: builds NO message text — ``text`` is
-        passed verbatim, teaching errors stay ``str(exc)``). It (1) sets the label text,
-        (2) applies the error stylesheet when ``is_error`` else clears it back to neutral so
-        a once-shown error style is cleared on the next success, (3) mirrors the text into
-        the accessible description so assistive tech exposes the value, and (4) on the error
-        path posts a ``QAccessible`` Alert so screen readers announce it. The announcement is
-        a true NO-OP under the ``offscreen`` platform — that backend has no accessibility
-        bridge and posting a ``QAccessibleEvent`` into a running event loop there can crash
-        at the C++ level (a segfault no Python ``try/except`` can catch). Skipping it
-        headlessly keeps the suite stable while preserving the announcement on a real desktop
-        (offscreen Qt, T-kj0-03).
+        Behaviour is identical to the old inline helper, now generalized into ``widgets/``
+        so inspect / tf / query share one accessible status path: it sets the label text +
+        a11y description, toggles the ``status_error`` objectName (the error color comes from
+        the theme QSS ``QLabel#status_error`` selector — D-03, no inline stylesheet), and on
+        the error path posts a ``QAccessible`` Alert guarded by ``platformName() !=
+        "offscreen"`` + ``contextlib.suppress`` (D-09 / commit 7e99a5f — posting it under
+        offscreen segfaults at the C++ level).
         """
-        self._status.setText(text)
-        self._status.setStyleSheet(_STATUS_ERROR_STYLE if is_error else _STATUS_NEUTRAL_STYLE)
-        self._status.setAccessibleDescription(text)
-        if is_error and QGuiApplication.platformName() != "offscreen":
-            # Announcement is best-effort; never crash the GUI if the a11y bridge rejects it.
-            with contextlib.suppress(Exception):
-                QAccessible.updateAccessibility(
-                    QAccessibleEvent(self._status, QAccessible.Alert)
-                )
+        set_status(self._status, text, is_error=is_error)
 
     def refresh_view(self) -> None:
         """Populate the schema/topic tree from ``collect_table_schemas`` (D-11).
