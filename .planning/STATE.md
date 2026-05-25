@@ -4,13 +4,13 @@ milestone: v0.2
 milestone_name: Modular cockpit
 status: executing
 stopped_at: Completed 14-06-PLAN.md
-last_updated: "2026-05-25T00:26:58.651Z"
+last_updated: "2026-05-25T00:33:09.075Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 15
   completed_phases: 14
   total_plans: 45
-  completed_plans: 43
+  completed_plans: 44
   percent: 93
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 15 (packaging-release-v0-2) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-25
 
-Progress: [██████████] 96%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -112,6 +112,7 @@ Progress: [██████████] 96%
 | Phase 14 P06 | ~5min | 2 tasks | 4 files |
 | Phase 14 P07 | ~4min | 2 tasks | 5 files |
 | Phase 15 P15-01 | 2min | 3 tasks | 12 files |
+| Phase 15 P02 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -219,6 +220,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 14-05] RecordPanel live thin face: @work(thread=True) discovery worker (list_record_topics -> SelectionList via call_from_thread) + @work(thread=True) record worker (real record_topics() with bounded duration, Stop = worker-group cancel). Caught the full teaching-error family incl. McapStorageUnavailableError (Rule 2). Module-top ROS imports 0; offline import graph leaks no rclpy/rosbag2_py; full offline suite 460 passed/2 skipped/97.37%.
 - [Phase ?]: [Phase 14-06] Live ReplayPanel + custom Scrubber: panel builds its OWN rclpy context (WR-04) + the SHARED build_publish_sink (D-09a, single publish path — no inlined create_publisher/deserialize_message), drives the pure Replayer.run() in a @work(thread=True) worker with the six controls; the Scrubber widget emits only a click fraction (panel owns fraction->seek), markers from list_events. Offline-import graph leaks no rclpy/rosbag2_py.
 - [Phase 15-01]: Stamped v0.2.0 across all five workspace packages — 10 version sites hand-bumped (5 pyproject `version` + 5 `__version__`), mirroring the Phase 8 v0.1 hand-bump (no hatchling dynamic version). Pinned every sibling `rosbagger-core>=0.2,<0.3` by VERSION SPEC only — no git/path URL in any `[project] dependencies` (D-01 source-agnostic; threat T-15-01 mitigated, grep-confirmed). Added the declarative `rosbagger-gui[live]` extra = `rosbagger-record>=0.2,<0.3` + `rosbagger-replay>=0.2,<0.3` (D-02) with NO `__init__` import — base `import rosbagger_gui` verified to leak no rclpy/rosbag2_py (threat T-15-02 mitigated). [Rule 3] the live extra forced adding `rosbagger-record`/`rosbagger-replay` to the root `[tool.uv.sources]` (workspace=true) — uv requires a workspace source for any member named as a dependency (unpublished siblings can't resolve from PyPI); this is config wiring, NOT a package install (T-15-SC accept holds). Re-locked uv.lock (all five members 0.2.0); `uv sync --locked --dev` green, `bagq --version` -> `bagq 0.2.0`, zero 0.1.0 literals remain. Plan stayed autonomous; no runtime code changed. NOTE: this plan's SC1/SC4/SC5 are phase-local success criteria, NOT REQUIREMENTS.md domain IDs — `requirements mark-complete` correctly found nothing to mark.
+- [Phase ?]: [Phase 15-02] External-install proof encoded as committed scripts/proof_external_install.sh (path-based, throwaway non-.venv venv, neutral cwd, PYTHONPATH="") — autonomous network-free gate printing PROOF OK
+- [Phase ?]: [Phase 15-02] git+@v0.2.0 INSTALL.md recipes documented + flagged awaits-push (remote empty), NOT a blocking checkpoint — path proof is the locally-verified gate
 
 ### Pending Todos
 
@@ -244,7 +247,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-05-25T00:26:58.594Z
+Last session: 2026-05-25T00:33:03.651Z
 Stopped at: Completed 14-06-PLAN.md
 Resume file: None
 Next: Phase 14 Plan 02 (next GUI plan). Plan 14-01 COMPLETE — the shared rclpy publish path (build_publish_sink) is extracted and lazily re-exported, so the upcoming GUI replay panel drives the pure Replayer through the SAME single sink (D-09a). Phase-13 offline replay regression suite + offline-import guard green (42 tests). Historical context below.

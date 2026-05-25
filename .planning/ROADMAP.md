@@ -411,7 +411,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
   4. Versions are coherent at v0.2.0 across all packages (+ re-locked `uv.lock`)
   5. Offline-import invariant + ROS-free core intact; full offline test suite + offline guard still green
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 **Wave 1**
@@ -420,7 +420,7 @@ Plans:
 
 **Wave 2** *(blocked on 15-01)*
 
-- [ ] 15-02-PLAN.md — Committed `scripts/proof_external_install.sh` (fresh-venv path-install proof) + central `INSTALL.md` (meta/per-package git+subdirectory + path + consumer-source recipes, live note, awaits-push git recipe; D-04) -> SC2/SC3
+- [x] 15-02-PLAN.md — Committed `scripts/proof_external_install.sh` (fresh-venv path-install proof) + central `INSTALL.md` (meta/per-package git+subdirectory + path + consumer-source recipes, live note, awaits-push git recipe; D-04) -> SC2/SC3
 
 **Wave 3** *(blocked on 15-01 + 15-02)*
 
