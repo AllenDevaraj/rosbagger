@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: Modular cockpit
-status: in_progress
-stopped_at: Phase 15 (Packaging & Release v0.2) planned — ready to execute (3 plans, 3 waves)
-last_updated: 2026-05-24T20:05:00.000Z
-last_activity: 2026-05-24
+status: executing
+stopped_at: Completed 14-06-PLAN.md
+last_updated: "2026-05-25T00:23:40.930Z"
+last_activity: 2026-05-25 -- Phase 15 execution started
 progress:
   total_phases: 15
   completed_phases: 14
-  total_plans: 42
+  total_plans: 45
   completed_plans: 42
   percent: 93
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 15 — Packaging & Release v0.2 (planned: 3 plans / 3 waves, ready to execute)
+**Current focus:** Phase 15 — packaging-release-v0-2
 
 ## Current Position
 
-Phase: 15
-Plan: 3 plans (15-01 versions/pins/extra, 15-02 proof+INSTALL.md, 15-03 release gate+tag)
-Status: Phase 15 planned + verified (PASS) — run /gsd-execute-phase 15
-Last activity: 2026-05-24 - Planned Phase 15 (research + 3 plans, plan-checker PASS)
+Phase: 15 (packaging-release-v0-2) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 15
+Last activity: 2026-05-25 -- Phase 15 execution started
 
 Progress: [█████████░] 93%
 
