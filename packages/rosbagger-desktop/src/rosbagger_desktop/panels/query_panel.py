@@ -41,10 +41,11 @@ this module pulls no ``rosbags`` / heavy stack.
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QThread
-from PySide6.QtGui import QAccessible, QAccessibleEvent
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QGuiApplication
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -155,7 +156,11 @@ class QueryPanel(QWidget):
     """Query view — run SQL over the bag's topics via the real ``query()`` backend."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        """Build the status label, query bar, and a vertical QSplitter holding the schema tree, results view, and history; export bar stays fixed-height outside it."""
+        """Build the status label, query bar, a vertical QSplitter holding the schema tree.
+
+        The splitter holds the schema tree, results view, and history; the export bar stays
+        fixed-height outside it.
+        """
         super().__init__(parent)
 
         # The last result table kept for the export buttons. A pyarrow.Table or None;
@@ -303,18 +308,21 @@ class QueryPanel(QWidget):
         a once-shown error style is cleared on the next success, (3) mirrors the text into
         the accessible description so assistive tech exposes the value, and (4) on the error
         path posts a ``QAccessible`` Alert so screen readers announce it. The announcement is
-        guarded so it never raises headlessly (offscreen Qt, T-kj0-03).
+        a true NO-OP under the ``offscreen`` platform — that backend has no accessibility
+        bridge and posting a ``QAccessibleEvent`` into a running event loop there can crash
+        at the C++ level (a segfault no Python ``try/except`` can catch). Skipping it
+        headlessly keeps the suite stable while preserving the announcement on a real desktop
+        (offscreen Qt, T-kj0-03).
         """
         self._status.setText(text)
         self._status.setStyleSheet(_STATUS_ERROR_STYLE if is_error else _STATUS_NEUTRAL_STYLE)
         self._status.setAccessibleDescription(text)
-        if is_error:
-            try:
+        if is_error and QGuiApplication.platformName() != "offscreen":
+            # Announcement is best-effort; never crash the GUI if the a11y bridge rejects it.
+            with contextlib.suppress(Exception):
                 QAccessible.updateAccessibility(
                     QAccessibleEvent(self._status, QAccessible.Alert)
                 )
-            except Exception:  # noqa: BLE001 - announcement is best-effort; never crash the GUI
-                pass
 
     def refresh_view(self) -> None:
         """Populate the schema/topic tree from ``collect_table_schemas`` (D-11).
