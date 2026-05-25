@@ -305,7 +305,7 @@ wheels = [
 
 [[package]]
 name = "bagq"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/bagq" }
 dependencies = [
     { name = "rich" },
@@ -2029,7 +2029,7 @@ wheels = [
 
 [[package]]
 name = "rosbagger-core"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/rosbagger-core" }
 dependencies = [
     { name = "duckdb" },
@@ -2048,22 +2048,31 @@ requires-dist = [
 
 [[package]]
 name = "rosbagger-gui"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/rosbagger-gui" }
 dependencies = [
     { name = "rosbagger-core" },
     { name = "textual" },
 ]
 
+[package.optional-dependencies]
+live = [
+    { name = "rosbagger-record" },
+    { name = "rosbagger-replay" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "rosbagger-core", editable = "packages/rosbagger-core" },
+    { name = "rosbagger-record", marker = "extra == 'live'", editable = "packages/rosbagger-record" },
+    { name = "rosbagger-replay", marker = "extra == 'live'", editable = "packages/rosbagger-replay" },
     { name = "textual", specifier = ">=8,<9" },
 ]
+provides-extras = ["live"]
 
 [[package]]
 name = "rosbagger-record"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/rosbagger-record" }
 dependencies = [
     { name = "rosbagger-core" },
@@ -2078,7 +2087,7 @@ requires-dist = [
 
 [[package]]
 name = "rosbagger-replay"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/rosbagger-replay" }
 dependencies = [
     { name = "rosbagger-core" },

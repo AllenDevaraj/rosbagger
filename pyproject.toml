@@ -10,7 +10,13 @@
 members = ["packages/*"]
 
 [tool.uv.sources]
+# Intra-workspace siblings resolve from the workspace, not PyPI (they are
+# unpublished). rosbagger-core is depended on by every other package; record /
+# replay are pulled by the rosbagger-gui `[live]` extra (D-02), so both need a
+# workspace source here for uv to resolve the extra against the local members.
 rosbagger-core = { workspace = true }
+rosbagger-record = { workspace = true }
+rosbagger-replay = { workspace = true }
 
 [dependency-groups]
 # matplotlib (>=3.8) is also the `bagq[plot]` extra (packages/bagq/pyproject.toml) — the
