@@ -250,6 +250,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260524-hg7 | Fix Inspect/TF GUI panels rendering blank (zero height) | 2026-05-24 | 53e1ff5 | [260524-hg7-fix-inspect-tf-blank-panels](./quick/260524-hg7-fix-inspect-tf-blank-panels/) |
+| 260525-is6 | Query panel: offload query() onto BlockingWorker thread (P1) + QAbstractTableModel/QTableView rendering (P2) | 2026-05-25 | 9b4e142..da65d96 | [260525-is6-query-panel-threaded-modelview](./quick/260525-is6-query-panel-threaded-modelview/) |
 
 ## Deferred Items
 
