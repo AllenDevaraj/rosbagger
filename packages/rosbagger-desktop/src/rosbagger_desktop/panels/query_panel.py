@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSplitter,
     QTableView,
     QTreeWidget,
     QTreeWidgetItem,
@@ -147,7 +148,7 @@ class QueryPanel(QWidget):
     """Query view — run SQL over the bag's topics via the real ``query()`` backend."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        """Build the status label, query bar, schema tree, results table, export bar, history."""
+        """Build the status label, query bar, and a vertical QSplitter holding the schema tree, results view, and history; export bar stays fixed-height outside it."""
         super().__init__(parent)
 
         # The last result table kept for the export buttons. A pyarrow.Table or None;
@@ -192,17 +193,35 @@ class QueryPanel(QWidget):
         export_bar.addWidget(self._export_csv)
         export_bar.addWidget(self._export_parquet)
 
-        # History: successfully-run SQL strings (select to repopulate the input).
+        # History: successfully-run SQL strings (select to repopulate the input). The
+        # section title travels INSIDE the splitter with its list, so wrap both in a small
+        # container that becomes one resizable splitter region.
         self._history = QListWidget()
+        history_container = QWidget()
+        history_layout = QVBoxLayout(history_container)
+        history_layout.setContentsMargins(0, 0, 0, 0)
+        history_layout.addWidget(QLabel("History"))
+        history_layout.addWidget(self._history)
 
+        # P2-layout: the three resizable regions (schema tree, results view, history) live
+        # in a vertical QSplitter the user drags to rebalance — instead of fixed stretch
+        # factors that crush each other on a short window. Initial proportions mirror the
+        # old 1:2 stretch with history smallest (results widest); a region can't be dragged
+        # to zero (setChildrenCollapsible(False)).
+        regions = QSplitter(Qt.Vertical)
+        regions.addWidget(self._schema_tree)
+        regions.addWidget(self._results_view)
+        regions.addWidget(history_container)
+        regions.setChildrenCollapsible(False)
+        regions.setSizes([1, 3, 1])
+
+        # Fixed-height controls (status, query bar, export bar) stay OUTSIDE the splitter;
+        # the splitter takes the free vertical space (stretch factor 1).
         layout = QVBoxLayout(self)
         layout.addWidget(self._status)
         layout.addLayout(query_bar)
-        layout.addWidget(self._schema_tree, 1)
-        layout.addWidget(self._results_view, 2)
+        layout.addWidget(regions, 1)
         layout.addLayout(export_bar)
-        layout.addWidget(QLabel("History"))
-        layout.addWidget(self._history)
 
         # Signal wiring: Run click + Enter in the input both run the query.
         self._run_button.clicked.connect(self._run_query)
