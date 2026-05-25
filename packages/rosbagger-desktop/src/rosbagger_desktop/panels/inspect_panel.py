@@ -166,10 +166,11 @@ class InspectPanel(QWidget):
 
         # Whole-bag header line (presentation formatting only — no new analysis).
         duration = f"{info.duration_ns / 1e9:.2f}s" if info.duration_ns is not None else _EM_DASH
-        set_status(
-            self._header,
-            f"duration: {duration} · {info.message_count} messages · {_human_size(info.size_bytes)}",
+        header_line = (
+            f"duration: {duration} · {info.message_count} messages "
+            f"· {_human_size(info.size_bytes)}"
         )
+        set_status(self._header, header_line)
 
         # Per-topic overview: one row per BagInfo.topics entry (each cell str()-formatted).
         info_rows: list[tuple[str, ...]] = []
