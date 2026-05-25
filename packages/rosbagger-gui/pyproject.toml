@@ -10,7 +10,7 @@
 # environment-provided by a sourced ROS distro and never resolved by uv here.
 [project]
 name = "rosbagger-gui"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.10"
 # ONLY rosbagger-core (the v1 reader contract the shared reader uses, resolved
 # via the root [tool.uv.sources] workspace source) and textual (the TUI face).

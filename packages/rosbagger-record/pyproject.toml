@@ -10,7 +10,7 @@
 # bagq / inspect / query tools need NO ROS at all.
 [project]
 name = "rosbagger-record"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.10"
 # ONLY rosbagger-core (the v1 reader contract, resolved via the root
 # [tool.uv.sources] workspace source) and typer (the thin-CLI face, mirroring

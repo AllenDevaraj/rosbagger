@@ -29,7 +29,7 @@ from .errors import (
     RosNotAvailableError,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Public API: the teaching capability errors, the lazy ROS-bound entry points
 # (record / list_topics — impl in .record, Plan 02), and the pure-Python discovery

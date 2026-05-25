@@ -28,7 +28,7 @@ from .errors import NoMessagesToReplayError, RosNotAvailableError
 from .scheduler import Replayer
 from .source import ReplayItem, load_items
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Public API: the teaching capability errors, the pure raw-CDR source seam
 # (ReplayItem + load_items), the pure transport scheduler (Replayer), and the lazy

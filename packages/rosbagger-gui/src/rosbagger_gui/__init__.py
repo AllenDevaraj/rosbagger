@@ -9,7 +9,7 @@ their method bodies (a later wave). The shell + offline panels need no ROS at al
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def _detect_ros() -> bool:
