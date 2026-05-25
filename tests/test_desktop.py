@@ -783,6 +783,152 @@ def test_qss_tokens_module_imports_no_pyside6() -> None:
     assert leaked == [], f"theme.tokens/theme.qss pulled in Qt at import: {leaked}"
 
 
+def _temp_settings_scope(monkeypatch, tmp_path: "Path") -> None:
+    """Point QSettings at a tmp .conf in a unique org/app scope (T-17-02 / 17-RESEARCH Wave 0).
+
+    Sets QSettings's default IniFormat path under ``tmp_path`` and a unique org/app name so the
+    dev box's real ``~/.config/rosbagger/rosbagger-desktop.conf`` is NEVER written/read by a
+    theme test. Also clears any pre-existing ``ui/theme`` so each test starts from the default.
+    """
+    from PySide6.QtCore import QCoreApplication, QSettings
+
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(
+        QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path)
+    )
+    QCoreApplication.setOrganizationName("rosbagger-test")
+    QCoreApplication.setApplicationName("rosbagger-desktop-test")
+    QSettings().remove("ui/theme")  # start each test from the dark default
+
+
+def test_theme_apply_sets_stylesheet_with_active_bg(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """ThemeManager().apply() themes the running QApplication with the active bg hex (D-06).
+
+    With a fresh (dark-default) QSettings scope, constructing a ThemeManager and calling
+    apply() must leave QApplication.instance().styleSheet() non-empty and containing the
+    DARK bg hex — proving the manager actually drives the live app stylesheet (Pitfall 4).
+    """
+    from PySide6.QtWidgets import QApplication
+
+    from rosbagger_desktop.theme import DARK, ThemeManager
+
+    _temp_settings_scope(monkeypatch, tmp_path)
+
+    manager = ThemeManager()
+    assert manager.name == "dark", "default (unset) ui/theme should report 'dark'"
+    manager.apply()
+
+    sheet = QApplication.instance().styleSheet()
+    assert sheet, "apply() left the app stylesheet empty"
+    assert DARK.bg in sheet, "applied stylesheet does not contain the active (DARK) bg hex"
+
+
+def test_theme_toggle_flips_settings_and_live_stylesheet(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    """toggle() flips the persisted ui/theme AND the live stylesheet to the other theme (D-06).
+
+    Starts dark, toggles, and asserts BOTH the QSettings ui/theme value flipped to "light"
+    AND the live app stylesheet now contains the LIGHT bg hex (and no longer the DARK bg) —
+    the no-relaunch live flip (17-RESEARCH Pattern 2), persisted immediately.
+    """
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    from rosbagger_desktop.theme import DARK, LIGHT, ThemeManager
+
+    _temp_settings_scope(monkeypatch, tmp_path)
+
+    manager = ThemeManager()
+    manager.apply()
+    assert manager.name == "dark"
+
+    manager.toggle()
+    assert manager.name == "light", "toggle() did not flip the manager name to light"
+    assert QSettings().value("ui/theme") == "light", "toggle() did not persist ui/theme=light"
+
+    sheet = QApplication.instance().styleSheet()
+    assert LIGHT.bg in sheet, "live stylesheet did not flip to the LIGHT bg hex after toggle"
+    assert DARK.bg not in sheet, "live stylesheet still carries the DARK bg after toggle"
+
+
+def test_theme_honors_persisted_light_on_construction(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    """A pre-persisted ui/theme="light" is honored on the NEXT ThemeManager construction (D-06).
+
+    Writes "light" to the temp QSettings scope, then constructs a fresh ThemeManager and
+    asserts it reports name=="light" and applies the LIGHT stylesheet — the persistence
+    round-trip across launches.
+    """
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    from rosbagger_desktop.theme import LIGHT, ThemeManager
+
+    _temp_settings_scope(monkeypatch, tmp_path)
+    QSettings().setValue("ui/theme", "light")
+
+    manager = ThemeManager()
+    assert manager.name == "light", "a persisted ui/theme=light was not honored on construction"
+    manager.apply()
+    assert LIGHT.bg in QApplication.instance().styleSheet(), (
+        "a pre-persisted light theme did not apply the LIGHT stylesheet"
+    )
+
+
+def test_theme_tolerates_garbage_persisted_value(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """A hand-edited/garbage ui/theme value degrades to the dark default, no crash (T-17-01).
+
+    A tampered .conf could carry any string. The manager must select DARK unless the stored
+    value is exactly "light" — never crash on an unexpected value.
+    """
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    from rosbagger_desktop.theme import DARK, ThemeManager
+
+    _temp_settings_scope(monkeypatch, tmp_path)
+    QSettings().setValue("ui/theme", "chartreuse-nonsense")
+
+    manager = ThemeManager()
+    manager.apply()  # must not raise
+    assert DARK.bg in QApplication.instance().styleSheet(), (
+        "a garbage persisted theme value did not fall back to the DARK default (T-17-01)"
+    )
+
+
+def test_cli_main_wires_identity_and_theme(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """cli.main sets org/app identity and applies a theme before show (no real exec loop).
+
+    Stubs QApplication.exec to return 0 immediately so main() does not block, scopes QSettings
+    to tmp_path, and asserts that after main() the QApplication carries a non-empty stylesheet
+    (the theme was applied before show) and the org/app identity was set to the rosbagger scope.
+    """
+    from PySide6.QtCore import QCoreApplication
+    from PySide6.QtWidgets import QApplication
+
+    from rosbagger_desktop import cli
+
+    _temp_settings_scope(monkeypatch, tmp_path)
+    # Override the temp scope's org/app name AFTER main sets the real one would be wrong; instead
+    # re-point the path so main()'s real ("rosbagger") scope writes under tmp, not ~/.config.
+    from PySide6.QtCore import QSettings
+
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+
+    monkeypatch.setattr(QApplication, "exec", lambda self: 0)
+
+    rc = cli.main([])
+    assert rc == 0
+    assert QApplication.instance().styleSheet(), "cli.main did not apply a theme before show"
+    assert QCoreApplication.organizationName() == "rosbagger", "cli.main did not set org identity"
+    assert QCoreApplication.applicationName() == "rosbagger-desktop", (
+        "cli.main did not set app identity"
+    )
+
+
 def test_replay_rate_loop_guarded_while_drive_running(qtbot, monkeypatch) -> None:
     """CR-02: rate/loop mutations are refused while a drive worker runs (no UI-thread race).
 
