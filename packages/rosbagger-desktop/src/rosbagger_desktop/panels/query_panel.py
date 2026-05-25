@@ -3,8 +3,8 @@
 OFFLINE PANEL (D-08): always enabled. This is the richest offline panel and a pure
 FACE: it collects a SQL *string* and forwards it VERBATIM to the ONE query API —
 :func:`rosbagger_core.backend.query.query` — against the window's single shared open
-reader, then maps the returned ``pyarrow.Table`` into the ``results`` ``QTableWidget``
-(16-RESEARCH Pattern 4). It contains ZERO SQL/format/selection logic: it never builds
+reader, then maps the returned ``pyarrow.Table`` into the ``results`` view via a lazy
+``QAbstractTableModel`` + ``QTableView`` (16-RESEARCH Pattern 4, P2 — allocation-light). It contains ZERO SQL/format/selection logic: it never builds
 SQL, never picks a serialization format, and never analyses anything — the string is
 the user's, the rows are core's (the thin-face rule). The Qt analog of the TUI query
 panel (``rosbagger_gui.panels.query``), ported one-to-one into PySide6 widgets.
@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -46,8 +46,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
+    QTableView,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -67,6 +66,72 @@ _SQL_ROLE = int(Qt.UserRole)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import pyarrow
+
+
+class _ResultTableModel(QAbstractTableModel):
+    """A lazy, allocation-light ``QAbstractTableModel`` over a ``pyarrow.Table`` (P2).
+
+    PURE presentation wrapper (thin-face): it reads the result ``pyarrow.Table`` only via
+    ``num_rows`` / ``column_names`` / ``column(...)`` — it builds no SQL, picks no format,
+    and analyses nothing. The rows are core's; this only renders them. Unlike the old
+    ``QTableWidget`` (a ``QTableWidgetItem`` allocated per cell up front), the view pulls
+    each cell lazily through :meth:`data` only when it paints — so a wide/long result is not
+    materialized into N×M widget items.
+
+    Each cell is ``str()``-rendered for display (the temporal-safe rule: an ns-timestamp →
+    datetime conversion crash class is sidestepped by never converting; we only str() it).
+    """
+
+    def __init__(self, table: pyarrow.Table | None = None) -> None:
+        """Hold an optional ``pyarrow.Table`` (``None`` → an empty 0×0 model)."""
+        super().__init__()
+        self._table: pyarrow.Table | None = table
+
+    def rowCount(self, _parent: QModelIndex | None = None) -> int:  # noqa: N802 - Qt override
+        """The result's row count (``num_rows``), or 0 when there is no table."""
+        return self._table.num_rows if self._table is not None else 0
+
+    def columnCount(self, _parent: QModelIndex | None = None) -> int:  # noqa: N802 - Qt override
+        """The result's column count (``len(column_names)``), or 0 when there is no table."""
+        return len(self._table.column_names) if self._table is not None else 0
+
+    def data(self, index: QModelIndex, role: int = int(Qt.DisplayRole)) -> object | None:
+        """Return ``str()`` of the cell at ``index`` for the DisplayRole, else ``None``.
+
+        Lazy per-cell access (P2): read ``column(col)[row].as_py()`` only for the cell being
+        painted rather than materializing ``to_pylist()`` up front. An out-of-range index or a
+        non-DisplayRole returns ``None``.
+        """
+        if role != int(Qt.DisplayRole) or self._table is None:
+            return None
+        row = index.row()
+        col = index.column()
+        if not (0 <= row < self._table.num_rows and 0 <= col < len(self._table.column_names)):
+            return None
+        value = self._table.column(col)[row].as_py()
+        return str(value)
+
+    def headerData(  # noqa: N802 - Qt override name
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = int(Qt.DisplayRole),
+    ) -> object | None:
+        """The column name for a horizontal DisplayRole header section, else ``None``."""
+        if (
+            role != int(Qt.DisplayRole)
+            or orientation != Qt.Horizontal
+            or self._table is None
+            or not (0 <= section < len(self._table.column_names))
+        ):
+            return None
+        return self._table.column_names[section]
+
+    def set_table(self, table: pyarrow.Table | None) -> None:
+        """Swap the backing table inside a begin/endResetModel so the view refreshes (P2)."""
+        self.beginResetModel()
+        self._table = table
+        self.endResetModel()
 
 
 class QueryPanel(QWidget):
@@ -94,10 +159,13 @@ class QueryPanel(QWidget):
         self._schema_tree = QTreeWidget()
         self._schema_tree.setHeaderLabels(["schema"])
 
-        # Results table (Pattern 4 rendering target).
-        self._results_table = QTableWidget(0, 0)
-        self._results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self._results_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        # Results model/view (Pattern 4 rendering target, P2): a lazy QAbstractTableModel
+        # wrapping the result pyarrow.Table behind a QTableView (no per-cell item allocation).
+        self._result_model = _ResultTableModel()
+        self._results_view = QTableView()
+        self._results_view.setModel(self._result_model)
+        self._results_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._results_view.setEditTriggers(QTableView.NoEditTriggers)
 
         # Export bar: two buttons, both disabled until a result exists.
         self._export_csv = QPushButton("Export CSV")
@@ -115,7 +183,7 @@ class QueryPanel(QWidget):
         layout.addWidget(self._status)
         layout.addLayout(query_bar)
         layout.addWidget(self._schema_tree, 1)
-        layout.addWidget(self._results_table, 2)
+        layout.addWidget(self._results_view, 2)
         layout.addLayout(export_bar)
         layout.addWidget(QLabel("History"))
         layout.addWidget(self._history)
@@ -141,9 +209,9 @@ class QueryPanel(QWidget):
         return self._run_button
 
     @property
-    def results_table(self) -> QTableWidget:
-        """The results table (tests assert ``rowCount()``/``columnCount()`` here)."""
-        return self._results_table
+    def results_table(self) -> QTableView:
+        """The results view (tests assert dimensions via ``.model().rowCount()/columnCount()``)."""
+        return self._results_view
 
     @property
     def status_label(self) -> QLabel:
@@ -272,22 +340,13 @@ class QueryPanel(QWidget):
         self._status.setText(f"{result.num_rows} row(s) · {len(result.column_names)} column(s)")
 
     def _fill_results(self, table: pyarrow.Table) -> None:
-        """Map a ``pyarrow.Table`` into the results table (16-RESEARCH Pattern 4).
+        """Hand the result ``pyarrow.Table`` to the lazy model (16-RESEARCH Pattern 4, P2).
 
-        ``query()`` already bounds the result (the user's SQL + the QURY-07 heavy-blob
-        gating), so ``to_pylist()`` is safe — this never materializes an unbounded raw
-        stream. Each cell value is ``str()``-rendered for display (the ns-timestamp →
-        datetime crash class is sidestepped; the temporal-safe rule).
+        ``set_table`` wraps the swap in begin/endResetModel so the ``QTableView`` refreshes;
+        the model renders each cell lazily via ``str()`` on demand (the temporal-safe rule —
+        no up-front ``to_pylist()`` materialization, no per-cell ``QTableWidgetItem``).
         """
-        column_names = list(table.column_names)
-        self._results_table.clear()
-        self._results_table.setColumnCount(len(column_names))
-        self._results_table.setHorizontalHeaderLabels(column_names)
-        rows = table.to_pylist()
-        self._results_table.setRowCount(len(rows))
-        for r, row in enumerate(rows):
-            for c, name in enumerate(column_names):
-                self._results_table.setItem(r, c, QTableWidgetItem(str(row[name])))
+        self._result_model.set_table(table)
 
     def _append_history(self, sql: str) -> None:
         """Append a successfully-run SQL to the history list (D-06).
