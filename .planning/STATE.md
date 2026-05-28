@@ -7,7 +7,7 @@ stopped_at: Phase 17 — all 3 plans' automated tasks done; BLOCKED on 17-03 hum
 last_updated: 2026-05-25T21:30:00.000Z
 last_activity: 2026-05-25
 progress:
-  total_phases: 17
+  total_phases: 16
   completed_phases: 16
   total_plans: 51
   completed_plans: 50

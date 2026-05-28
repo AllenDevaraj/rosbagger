@@ -11,32 +11,41 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [x] **Phase 1: Scaffold & Test Harness** - Monorepo, packaging, and no-ROS fixture bags (completed 2026-05-22)
-- [x] **Phase 2: Bag Reader Layer** - Universal ROS1/ROS2/MCAP reading via rosbags (completed 2026-05-22)
-- [x] **Phase 3: Message→Table Schema** - Flatten messages into DuckDB columns (completed 2026-05-22)
-- [x] **Phase 4: Inspect** - `bagq info` / `bagq tables` (completed 2026-05-22)
-- [x] **Phase 5: Query Engine** - DuckDB backend + sqlglot topic resolution (completed 2026-05-22)
+- [x] **Phase 1: Scaffold & Test Harness** - Monorepo, packaging, and no-ROS fixture bags (completed 2018-05-22)
+- [x] **Phase 2: Bag Reader Layer** - Universal ROS1/ROS2/MCAP reading via rosbags (completed 2018-05-22)
+- [x] **Phase 3: Message→Table Schema** - Flatten messages into DuckDB columns (completed 2018-05-22)
+- [x] **Phase 4: Inspect** - `bagq info` / `bagq tables` (completed 2018-05-22)
+- [x] **Phase 5: Query Engine** - DuckDB backend + sqlglot topic resolution (completed 2018-05-22)
 - [x] **Phase 6: Output & Export** - stdout table, CSV, Parquet, minimal plot
-- [x] **Phase 7: CLI & Teaching Errors** - `bagq query` end-to-end with helpful errors (completed 2026-05-22)
-- [x] **Phase 8: Packaging, Docs & Release** - pip-installable v0.1, offline imports (completed 2026-05-22)
+- [x] **Phase 7: CLI & Teaching Errors** - `bagq query` end-to-end with helpful errors (completed 2018-05-22)
+- [x] **Phase 8: Packaging, Docs & Release** - pip-installable v0.1, offline imports (completed 2018-05-22)
 
 ### Milestone v0.2 — Modular cockpit (TF · ergonomics · edit · live · GUI · release)
 
-- [x] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand) (completed 2026-05-22)
-- [x] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown (completed 2026-05-23)
-- [x] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar (completed 2026-05-23)
-- [x] **Phase 12: Live Record** - live topic discovery + select recording (rclpy) (completed 2026-05-23)
-- [x] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy) (completed 2026-05-23)
-- [x] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI) (completed 2026-05-24)
-- [x] **Phase 15: Packaging & Release v0.2** - git/path-installable packages + coherent v0.2.0 versions + per-package install docs (no index publish) (completed 2026-05-25)
+- [x] **Phase 9: TF Debugger** - offline `/tf` dropout/timeline report (`bagq tf` subcommand) (completed 2018-05-22)
+- [x] **Phase 10: Query Ergonomics** - alias pack + column projection pushdown (completed 2018-05-23)
+- [x] **Phase 11: Edit & Events** - trim/drop/merge/convert + queryable events sidecar (completed 2018-05-23)
+- [x] **Phase 12: Live Record** - live topic discovery + select recording (rclpy) (completed 2018-05-23)
+- [x] **Phase 13: Live Replay** - replay a bag to ROS topics with transport controls (rclpy) (completed 2018-05-23)
+- [x] **Phase 14: GUI** - capability-gated panels over module APIs (Textual TUI) (completed 2018-05-24)
+- [x] **Phase 15: Packaging & Release v0.2** - git/path-installable packages + coherent v0.2.0 versions + per-package install docs (no index publish) (completed 2018-05-25)
 
 ### Milestone v0.3 — Desktop cockpit
 
-- [x] **Phase 16: Native Desktop GUI (PySide6)** - native Qt desktop window with full parity to the TUI's five panels, as an isolated new `rosbagger-desktop` package (TUI untouched) (completed 2026-05-25)
+- [x] **Phase 16: Native Desktop GUI (PySide6)** - native Qt desktop window with full parity to the TUI's five panels, as an isolated new `rosbagger-desktop` package (TUI untouched) (completed 2018-05-25)
 
 ### Milestone v0.4 — Desktop revamp
 
 - [ ] **Phase 17: Desktop Revamp** - turn the functional-but-unstyled Qt window into a designed cockpit: a QSS design-token theme with dark+light + runtime toggle, and the query panel's robustness patterns (off-thread work, model/view, accessible status) brought to all five panels
+
+### Milestone v0.5 — Replay Playback System
+
+Turn replay from a fire-and-forget publisher into a real playback system: a live-tracking, drag-while-playing scrubber, snippet (in/out) looping, RViz-faithful seeking (`/clock` + static re-publish), and `ros2 bag play` CLI parity. All work stays behind the established invariants — `rosbagger_replay` ROS-free at module top, the offline import graph ROS-free AND Qt-free, and the desktop panels thin faces over the library.
+
+- [ ] **Phase 18: Replay live scrubbing & thread-safe transport** - make the pure `Replayer` safe to control mid-play (thread-safe command channel) so the scrubber drags live and the playhead tracks in real time
+- [ ] **Phase 19: Replay snippet loop & advanced controls panel** - in/out region loop in the scheduler + dual-handle/Set-In-Out Scrubber, housed in a collapsible side sub-panel inside the Replay tab
+- [ ] **Phase 20: Replay RViz fidelity (clock + static republish)** - publish `/clock` for `use_sim_time` and re-emit latched/`transient_local` + `/tf_static` after a seek so RViz re-primes instead of layering stale state
+- [ ] **Phase 21: Replay CLI parity flags** - close the `ros2 bag play` gap feasible in our publish model: `--start-paused`, `--remap`, `--delay`, `--clock`, bounded region `[in,out]`
 
 ## Phase Details
 
@@ -391,20 +400,20 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Scaffold & Test Harness | 3/3 | Complete   | 2026-05-22 |
-| 2. Bag Reader Layer | 3/3 | Complete    | 2026-05-22 |
-| 3. Message→Table Schema | 3/3 | Complete    | 2026-05-22 |
-| 4. Inspect | 2/2 | Complete    | 2026-05-22 |
-| 5. Query Engine | 2/2 | Complete    | 2026-05-22 |
-| 6. Output & Export | 2/2 | Complete    | 2026-05-22 |
-| 7. CLI & Teaching Errors | 2/2 | Complete    | 2026-05-22 |
-| 8. Packaging, Docs & Release | 1/1 | Complete    | 2026-05-22 |
-| 9. TF Debugger | 3/3 | Complete   | 2026-05-22 |
-| 10. Query Ergonomics | 4/4 | Complete    | 2026-05-23 |
-| 11. Edit & Events | 4/4 | Complete    | 2026-05-23 |
-| 12. Live Record | 3/3 | Complete    | 2026-05-23 |
-| 13. Live Replay | 3/3 | Complete    | 2026-05-23 |
-| 14. GUI | 7/7 | Complete    | 2026-05-24 |
+| 1. Scaffold & Test Harness | 3/3 | Complete   | 2018-05-22 |
+| 2. Bag Reader Layer | 3/3 | Complete    | 2018-05-22 |
+| 3. Message→Table Schema | 3/3 | Complete    | 2018-05-22 |
+| 4. Inspect | 2/2 | Complete    | 2018-05-22 |
+| 5. Query Engine | 2/2 | Complete    | 2018-05-22 |
+| 6. Output & Export | 2/2 | Complete    | 2018-05-22 |
+| 7. CLI & Teaching Errors | 2/2 | Complete    | 2018-05-22 |
+| 8. Packaging, Docs & Release | 1/1 | Complete    | 2018-05-22 |
+| 9. TF Debugger | 3/3 | Complete   | 2018-05-22 |
+| 10. Query Ergonomics | 4/4 | Complete    | 2018-05-23 |
+| 11. Edit & Events | 4/4 | Complete    | 2018-05-23 |
+| 12. Live Record | 3/3 | Complete    | 2018-05-23 |
+| 13. Live Replay | 3/3 | Complete    | 2018-05-23 |
+| 14. GUI | 7/7 | Complete    | 2018-05-24 |
 
 ### Phase 15: Packaging & Release v0.2
 
@@ -436,7 +445,7 @@ Plans:
 
 ### Phase 16: Native Desktop GUI (PySide6)
 
-**Goal:** Ship a native desktop GUI as a new isolated workspace package `rosbagger-desktop` (PySide6/Qt). Running `rosbagger-desktop [BAG]` spawns a real OS window with full parity to the Textual TUI's five panels (inspect/query/tf/record/replay), each a thin face calling the existing `rosbagger_core`/`rosbagger_record`/`rosbagger_replay` APIs verbatim — no new analysis logic. Hard constraint: do not modify or regress anything that already exists — the TUI (`rosbagger-gui`) is untouched, PySide6 is isolated to the new package, and the offline import graph stays both ROS-free AND Qt-free (offline guard extended). Phased internally: offline parity (inspect/query/tf) first, then live parity (record/replay). Full design: `docs/superpowers/specs/2026-05-25-rosbagger-desktop-gui-design.md`.
+**Goal:** Ship a native desktop GUI as a new isolated workspace package `rosbagger-desktop` (PySide6/Qt). Running `rosbagger-desktop [BAG]` spawns a real OS window with full parity to the Textual TUI's five panels (inspect/query/tf/record/replay), each a thin face calling the existing `rosbagger_core`/`rosbagger_record`/`rosbagger_replay` APIs verbatim — no new analysis logic. Hard constraint: do not modify or regress anything that already exists — the TUI (`rosbagger-gui`) is untouched, PySide6 is isolated to the new package, and the offline import graph stays both ROS-free AND Qt-free (offline guard extended). Phased internally: offline parity (inspect/query/tf) first, then live parity (record/replay). Full design: `docs/superpowers/specs/2018-05-25-rosbagger-desktop-gui-design.md`.
 **Requirements**: (new milestone v0.3 — DoD: native window launches, five panels reach feature parity with the TUI reusing module APIs, package fully isolated, offline+Qt-free guard green, headless pytest-qt tests pass at ≥80%)
 **Depends on:** Phase 15
 **Plans:** 3/3 plans complete
@@ -473,3 +482,71 @@ Plans:
 - [ ] 17-01-PLAN.md — Theme infrastructure: tokens (DARK+LIGHT) → build_qss → ThemeManager; QSettings identity + live View-menu toggle
 - [ ] 17-02-PLAN.md — Shared table models + inspect/tf parity: lift _ResultTableModel, add RowsTableModel + accessible status helper, move inspect/tf to QTableView + BlockingWorker
 - [ ] 17-03-PLAN.md — Visual rollout across all five panels: token-driven theming, no inline color, record/replay accessible status, edge states, real-window sanity check
+
+### Phase 18: Replay live scrubbing and thread-safe transport
+
+**Goal:** Make the pure `Replayer` safe to control *while it is playing*, so the desktop scrubber drags live and the playhead tracks in real time — the foundation for a true playback system. Today the panel hard-blocks seek/rate/loop mid-play (`_drive_running()` → "Pause before seeking") because the `Replayer` is a deliberately non-thread-safe state machine driven on a QThread worker (CR-02: `run()` reads/writes `_cursor`/`_state`/`_rate`/`loop`). This phase adds a **thread-safe command channel** (a queue/lock applied between publishes inside `run()`) so seek / set_rate / loop / pause land without a data race, plus a **periodic position signal** so the scrubber playhead moves smoothly during playback (not only at DONE). Hard truth carried into the UX: a backward drag is a *jump-to-earlier-time + forward replay*, not a visual rewind — RViz only reflects forward republish — so the status line communicates "seeking… resuming forward" rather than implying reverse playback. Invariants: `rosbagger_replay` stays ROS-free at module top, the offline import graph stays ROS-free AND Qt-free, the desktop Replay panel stays a thin face, and every existing replay test stays green.
+**Requirements**: REP-02 (live scrubbing / thread-safe transport)
+**Depends on:** Phase 13 (the `Replayer` + `build_publish_sink`), Phase 16/17 (the desktop Replay panel + `Scrubber` + `BlockingWorker` + theming)
+**Success Criteria** (what must be TRUE):
+
+  1. The `Replayer` accepts transport commands (seek / set_rate / loop / pause) while `run()` executes on another thread with NO data race — proven by a threaded unit test (fake clock + recording sink) that seeks mid-run and observes the cursor jump
+  2. In the desktop Replay panel, dragging the scrubber while playing seeks live (no "Pause before seeking" rejection) and the playhead advances in real time during playback — proven by a headless pytest-qt test
+  3. A backward drag jumps to the earlier timestamp and resumes forward publishing, with a status line that communicates the jump (no claim of reverse playback)
+  4. Offline/Qt-free guard green; `import rosbagger_replay` stays ROS-free; full headless suite passes at ≥80%
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 18 to break down)
+
+### Phase 19: Replay snippet loop and advanced controls panel
+
+**Goal:** Let the user loop a sub-region of the bag on repeat, and house the growing replay controls in a dedicated collapsible side sub-panel inside the Replay tab. Adds an **in/out region loop** `[t_in, t_out]` to the `Replayer` — distinct from the existing whole-bag `loop` (which rewinds to index 0): when region-loop is on, playback wraps from `t_out` back to `t_in`. The region is markable BOTH ways the user asked for: dragging **two In/Out handles** on the `Scrubber` AND **Set-In / Set-Out buttons** that snap to the current playhead. The `Scrubber` paints the shaded loop region + two draggable handles (extending its current playhead+markers paint), and a **collapsible side sub-panel** ("the tab on the side") collects the advanced controls (region loop, rate, and the Phase-20 clock/topic toggles) so the main strip stays clean. Builds on Phase 18's thread-safe transport so the region can be set/changed while playing. Thin-face + offline/Qt-free invariants hold; styling uses the Phase-17 theme tokens (no inline color).
+**Requirements**: REP-03 (snippet/region loop + advanced controls panel)
+**Depends on:** Phase 18 (thread-safe live transport), Phase 17 (theme tokens + accessible status patterns)
+**Success Criteria** (what must be TRUE):
+
+  1. `Replayer` supports a loop region: playing wraps from `t_out` back to `t_in` (not index 0) when region-loop is on, and clears cleanly back to whole-bag / no-loop — proven by unit tests (fake clock + recording sink)
+  2. The `Scrubber` shows a shaded loop region with two draggable In/Out handles, AND Set-In / Set-Out buttons set the region from the current playhead — a headless pytest-qt test drives both paths and asserts the resulting region
+  3. Advanced replay controls live in a collapsible side sub-panel inside the Replay tab (region loop + rate), themed via Phase-17 tokens with accessible status preserved
+  4. Region values survive pause/seek/play cycles; offline/Qt-free guard green; full headless suite passes at ≥80%
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 19 to break down)
+
+### Phase 20: Replay RViz fidelity (clock + static republish)
+
+**Goal:** Make replay "look right" in RViz across seeks/scrubs. Two mechanisms, both opt-in: (a) **publish `/clock`** (`rosgraph_msgs/Clock` at a configurable Hz, derived from the cursor item's `t_ns`) so downstream `use_sim_time` nodes track bag time instead of wall-clock; and (b) **re-publish latched / `transient_local` topics (and `/tf_static`) after a seek** so a fresh scene re-primes instead of RViz layering stale geometry over new — the concrete fix for the "backward scrub looks wrong" limitation surfaced in Phase 18. Implemented in the publish path (`build_publish_sink` / a small clock + static-tracking layer), surfaced as toggles in the Phase-19 side sub-panel and as CLI flags (wired in Phase 21). Lazy ROS imports only — the offline import graph stays ROS-free; defaults preserve today's behavior (clock off, no forced re-publish).
+**Requirements**: REP-04 (RViz fidelity — clock + static re-publish)
+**Depends on:** Phase 18 (seek mechanics), Phase 19 (side sub-panel to host the toggles)
+**Success Criteria** (what must be TRUE):
+
+  1. With clock publishing enabled, `/clock` is published at the configured rate carrying bag-relative time during replay — proven by a live (`-m live`) test subscribing to `/clock`
+  2. After a seek, latched / `transient_local` topics (and `/tf_static`) seen before the seek point are re-published so a fresh subscriber re-primes — proven by a live test, or a unit test over the publish sink's static-tracking
+  3. Both behaviors are opt-in via the side sub-panel + matching CLI flags; defaults are unchanged (clock off)
+  4. Offline/Qt-free guard green; `import rosbagger_replay` stays ROS-free; full headless suite passes at ≥80%
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 20 to break down)
+
+### Phase 21: Replay CLI parity flags
+
+**Goal:** Close the `ros2 bag play` flag gap on the `rosbagger-replay` CLI for the flags that are feasible in our custom publish model (confirmed against Humble's `ros2 bag play --help`): `--start-paused`, `--remap old:=new`, `--delay`, `--clock [Hz]` (wiring Phase-20's publisher), and a **bounded region** `--region-start` / `--region-end` (mapping to the scheduler's in/out region + bound). The CLI stays a thin front door over the library — each flag maps to an existing `Replayer` / `replay()` argument with no second publish path — and teaching errors are preserved. Runtime ROS *services* (`~/seek`, `~/set_rate`, `~/play_next`, `~/burst`) remain deferred: they require a long-lived spinning node, and the GUI already provides interactive control; this is documented as out-of-scope, not silently dropped.
+**Requirements**: REP-05 (CLI parity flags)
+**Depends on:** Phase 18 (region/seek mechanics), Phase 20 (`/clock` publisher for `--clock`)
+**Success Criteria** (what must be TRUE):
+
+  1. `rosbagger-replay --help` exposes `--start-paused`, `--remap`, `--delay`, `--clock`, and bounded-region options; each maps to the library with no new publish path
+  2. `--remap` publishes on the remapped topic name; `--start-paused` begins paused; `--delay` sleeps before play; the bounded region plays only `[in,out]` — proven by tests (live where publishing is required, unit where the mapping suffices)
+  3. Deferred runtime-service controls are documented as out-of-scope (not silently missing)
+  4. Offline/Qt-free guard green; CLI stays thin; full headless suite passes at ≥80%
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 21 to break down)

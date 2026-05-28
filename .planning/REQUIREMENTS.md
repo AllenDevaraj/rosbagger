@@ -69,6 +69,12 @@ Deferred to later milestones (roadmap modules beyond v1 core+bagq).
 - **REC-01** ✓ (Phase 12 — Complete): Live topic discovery + checkbox-select recording (needs rclpy)
 - **REP-01**: Replay a bag to ROS topics with transport controls (play/pause/step/seek/rate/loop)
 
+### Replay Playback System (Milestone v0.5)
+- **REP-02** (Phase 18 — planned): Live scrubbing — control the `Replayer` (seek/rate/loop/pause) *while playing* via a thread-safe command channel; the desktop playhead tracks in real time and the scrubber drags live (backward drag = jump + forward replay, not a visual rewind)
+- **REP-03** (Phase 19 — planned): Snippet (in/out region) loop + a collapsible advanced-controls side sub-panel in the Replay tab; the region is markable by dual `Scrubber` handles AND Set-In/Set-Out buttons
+- **REP-04** (Phase 20 — planned): RViz fidelity — opt-in `/clock` publishing (for `use_sim_time`) + re-publish of latched/`transient_local`/`/tf_static` topics after a seek so the scene re-primes
+- **REP-05** (Phase 21 — planned): `rosbagger-replay` CLI parity flags (`--start-paused`, `--remap`, `--delay`, `--clock`, bounded region) feasible in the custom publish model; runtime ROS services deferred
+
 ### GUI
 - **GUI-01** ✓ (Phase 14 — Complete): Five capability-gated panels (record/inspect/query/tf/replay) over module APIs
 
