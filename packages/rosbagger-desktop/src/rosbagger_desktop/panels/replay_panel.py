@@ -193,6 +193,16 @@ class ReplayPanel(QWidget):
         paths = reader.paths
         return paths[0] if paths else None
 
+    def _default_typestore(self) -> object | None:
+        """The window's ROS-2-Humble typestore (Pitfall 5), or ``None`` with no window.
+
+        A real ``rosbag2`` sqlite3 recording embeds no message definitions, so ``load_items``
+        must be handed this typestore or ``rosbags`` raises "Bag contains no type definitions".
+        The same channel as ``_bag_path`` / ``_ros_available`` — reach the window for the shared
+        typestore the OFFLINE reader was built with, so replay deserializes identically (D-02).
+        """
+        return getattr(self.window(), "default_typestore", None)
+
     # --------------------------------------------------------------- transport build
 
     def _validated_rate(self) -> float | None:
@@ -255,7 +265,7 @@ class ReplayPanel(QWidget):
         )
 
         try:
-            items = load_items(bag)
+            items = load_items(bag, default_typestore=self._default_typestore())
             if not items:
                 raise NoMessagesToReplayError(bag_paths=bag, topics=None)
 
@@ -467,7 +477,7 @@ class ReplayPanel(QWidget):
 
             from rosbagger_replay import load_items
 
-            items = load_items(bag)
+            items = load_items(bag, default_typestore=self._default_typestore())
             if not items:
                 return
             bag_start_ns = items[0].t_ns

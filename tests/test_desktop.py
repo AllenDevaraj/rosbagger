@@ -52,7 +52,11 @@ for _p in (
     if _p.is_dir() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from tools.make_fixtures import write_ros2_sqlite_bag, write_tf_bag  # noqa: E402
+from tools.make_fixtures import (  # noqa: E402
+    write_ros2_sqlite_bag,
+    write_ros2_sqlite_bag_defless,
+    write_tf_bag,
+)
 
 import rosbagger_desktop.capabilities  # noqa: E402  (forced-no-ROS monkeypatch target)
 from rosbagger_desktop.main_window import MainWindow  # noqa: E402
@@ -308,9 +312,7 @@ def test_tf_panel_renders_or_teaches(qtbot, tmp_path: Path) -> None:
     tf_window = MainWindow(bag_path=str(tf_bag))
     qtbot.addWidget(tf_window)
     tf_window.tf_panel.refresh_view()
-    qtbot.waitUntil(
-        lambda: tf_window.tf_panel.edges_table.model().rowCount() > 0, timeout=5000
-    )
+    qtbot.waitUntil(lambda: tf_window.tf_panel.edges_table.model().rowCount() > 0, timeout=5000)
     assert tf_window.tf_panel.edges_table.model().rowCount() > 0, (
         "tf edges table had 0 rows on a /tf bag; expected real collect_tf_report edges"
     )
@@ -394,8 +396,10 @@ def test_query_panel_runs_real_core(qtbot, tmp_path: Path) -> None:
     panel.sql_input.setText("SELECT * FROM definitely_not_a_real_table")
     qtbot.mouseClick(panel.run_button, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: "row(s)" not in panel.status_label.text()
-        and panel.status_label.text() not in ("", "Running…"),
+        lambda: (
+            "row(s)" not in panel.status_label.text()
+            and panel.status_label.text() not in ("", "Running…")
+        ),
         timeout=5000,
     )
     status_text = panel.status_label.text()
@@ -461,8 +465,10 @@ def test_query_status_announces_and_styles_errors(qtbot, tmp_path: Path) -> None
     panel.sql_input.setText("SELECT * FROM definitely_not_a_real_table")
     qtbot.mouseClick(panel.run_button, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: "row(s)" not in panel.status_label.text()
-        and panel.status_label.text() not in ("", "Running…"),
+        lambda: (
+            "row(s)" not in panel.status_label.text()
+            and panel.status_label.text() not in ("", "Running…")
+        ),
         timeout=5000,
     )
     error_text = panel.status_label.text()
@@ -1277,3 +1283,83 @@ def test_set_status_sets_text_a11y_and_error_affordance(qtbot) -> None:
     assert label.text() == "all good"
     assert label.accessibleDescription() == "all good"
     assert label.objectName() == "inspect_status", "non-error path did not restore base objectName"
+
+
+# --------------------------------------------------------------------------- #
+# quick-260528-3w6: replay of a typestore-less ROS 2 sqlite3 bag (real rosbag2 #
+# recording) must thread the window's ROS2_HUMBLE typestore into load_items so #
+# rosbags can deserialize — otherwise Play raises AnyReaderError "Bag contains  #
+# no type definitions". The OFFLINE reader already passes it (main_window.py    #
+# Pitfall 5); these guard the replay face passing the SAME typestore.           #
+# --------------------------------------------------------------------------- #
+
+
+def test_window_typestore_resolves_defless_sqlite_bag(qtbot, tmp_path: Path) -> None:
+    """quick-3w6 (A): MainWindow exposes a typestore that loads a def-less sqlite3 bag.
+
+    A real rosbag2 sqlite3 recording embeds NO message definitions, so the replay
+    loader needs a typestore. The window must expose the SAME ROS2_HUMBLE typestore the
+    offline reader uses (Pitfall 5). Asserts ``window.default_typestore`` is non-None AND
+    that feeding it to ``rosbagger_replay.load_items`` resolves the def-less fixture that
+    fails WITHOUT it — i.e. the window provides what the replay path needs.
+    """
+    from rosbagger_replay import load_items
+
+    bag = write_ros2_sqlite_bag_defless(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+
+    # The fixture is genuinely def-less: load_items with no typestore reproduces the bug.
+    import pytest
+    from rosbags.highlevel import AnyReaderError
+
+    with pytest.raises(AnyReaderError):
+        load_items(bag)
+
+    # The window exposes the resolving typestore, and it actually loads the bag.
+    assert window.default_typestore is not None, "MainWindow did not expose default_typestore"
+    items = load_items(bag, default_typestore=window.default_typestore)
+    assert len(items) > 0, "window.default_typestore did not resolve the def-less sqlite3 bag"
+
+
+def test_replay_panel_threads_typestore_into_load_items(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """quick-3w6 (B): the replay panel passes window.default_typestore into load_items.
+
+    Drives the rclpy-FREE ``_load_markers`` path (the marker overlay also reads the bag via
+    ``load_items``) so this runs headlessly in CI. Stubs ``list_events`` to a one-row sidecar
+    so the method proceeds past the events gate, and spies ``rosbagger_replay.load_items`` to
+    capture its kwargs. Asserts the panel forwarded ``default_typestore=window.default_typestore``
+    — before the fix the panel called ``load_items(bag)`` with no typestore (kwargs empty).
+    """
+    import pyarrow as pa
+
+    import rosbagger_core.events as events_mod
+    import rosbagger_replay as replay_mod
+
+    bag = write_ros2_sqlite_bag_defless(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+
+    # One-row event sidecar so _load_markers proceeds to load_items (num_rows > 0).
+    monkeypatch.setattr(
+        events_mod,
+        "list_events",
+        lambda _bag: pa.table({"t_start_ns": [0], "label": ["e"]}),
+    )
+
+    captured: dict[str, object] = {}
+    real_load = replay_mod.load_items
+
+    def spy(_bag, **kwargs):
+        captured["kwargs"] = kwargs
+        return real_load(_bag, **kwargs)  # honestly load with whatever the panel passed
+
+    monkeypatch.setattr(replay_mod, "load_items", spy)
+
+    window.replay_panel._load_markers()
+
+    assert "kwargs" in captured, "replay panel never reached load_items in _load_markers"
+    assert captured["kwargs"].get("default_typestore") is window.default_typestore, (
+        "replay panel did not thread window.default_typestore into load_items"
+    )
+    assert captured["kwargs"]["default_typestore"] is not None

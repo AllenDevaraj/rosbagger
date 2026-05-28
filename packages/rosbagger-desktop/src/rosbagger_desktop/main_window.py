@@ -96,6 +96,10 @@ class MainWindow(QMainWindow):
         # The ONE shared open reader (D-07); None until a bag is opened.
         self.reader: object | None = None
         self._bag_path: Path | None = None
+        # The ROS-2-Humble typestore for legacy/def-less ROS 2 sqlite3 bags (Pitfall 5), built
+        # once on first access (see the default_typestore property). Cached here so the offline
+        # reader AND the live replay panel deserialize through the SAME typestore instance.
+        self._default_typestore: object | None = None
         # Called via the module (not a bound name) so a test can monkeypatch
         # ``rosbagger_desktop.capabilities.ros_available`` to force the gate path
         # deterministically — the documented analog of the TUI's _detect_ros patch.
@@ -172,6 +176,20 @@ class MainWindow(QMainWindow):
     def ros_available(self) -> bool:
         """Whether a ROS 2 environment is sourced (computed once at startup, D-09)."""
         return self._ros_available
+
+    @property
+    def default_typestore(self) -> object:
+        """The ROS-2-Humble typestore used to read legacy/def-less ROS 2 sqlite3 bags.
+
+        Built once and cached (the ``rosbags`` import stays lazy inside
+        ``_ros2_humble_typestore`` — the offline/Qt-free top-level invariant, D-08). Exposed
+        publicly so the live replay panel deserializes through the SAME typestore the offline
+        reader uses (Pitfall 5): a real ``rosbag2`` sqlite3 recording embeds no message
+        definitions, so ``load_items`` needs this or ``rosbags`` raises "no type definitions".
+        """
+        if self._default_typestore is None:
+            self._default_typestore = _ros2_humble_typestore()
+        return self._default_typestore
 
     def _ensure_theme_manager(self) -> object:
         """Return the shell's :class:`ThemeManager`, constructing one on first need (D-06).
@@ -261,7 +279,7 @@ class MainWindow(QMainWindow):
             self.reader.close()
             self.reader = None
 
-        reader = RosbagsReader(path, default_typestore=_ros2_humble_typestore())
+        reader = RosbagsReader(path, default_typestore=self.default_typestore)
         try:
             reader.open()
         except Exception as exc:  # noqa: BLE001 - teaching dialog, not a startup crash (WR-05)
