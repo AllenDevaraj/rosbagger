@@ -253,12 +253,13 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 260524-hg7 | Fix Inspect/TF GUI panels rendering blank (zero height) | 2026-05-24 | 53e1ff5 | [260524-hg7-fix-inspect-tf-blank-panels](./quick/260524-hg7-fix-inspect-tf-blank-panels/) |
 | 260525-is6 | Query panel: offload query() onto BlockingWorker thread (P1) + QAbstractTableModel/QTableView rendering (P2) | 2026-05-25 | 9b4e142..da65d96 | [260525-is6-query-panel-threaded-modelview](./quick/260525-is6-query-panel-threaded-modelview/) |
 | 260525-kj0 | Query panel: vertical QSplitter for resizable regions + accessible/error-styled status live region | 2026-05-25 | da5a94f..9d272cc | [260525-kj0-query-panel-layout-a11y](./quick/260525-kj0-query-panel-layout-a11y/) |
+| 260528-3w6 | Replay panel: thread MainWindow's ROS2_HUMBLE typestore into load_items so typestore-less ROS 2 sqlite3 bags (real rosbag2 recordings) replay instead of raising "no type definitions" | 2026-05-28 | 23017f4..b504ac6 | [260528-3w6-fix-desktop-replay-panel-thread-the-wind](./quick/260528-3w6-fix-desktop-replay-panel-thread-the-wind/) |
 
 ## Deferred Items
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| chore/format | `ruff format --check .` flags two files no recent task touched — `rosbagger-desktop/.../panels/inspect_panel.py` and `.../widgets/rows_model.py` (pre-existing drift at HEAD, likely a ruff-version nudge since Phase 17). Needs a scoped `chore(format)` pass. | open | 260528-3w6 |
 
 ## Session Continuity
 
