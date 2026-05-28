@@ -265,6 +265,41 @@ def write_def_less_bag(dest_dir: Path | str, *, msgtype: str = "my_pkg/msg/Widge
     return path
 
 
+def write_ros2_sqlite_bag_defless(dest_dir: Path | str) -> Path:
+    """Write a STANDARD-type ROS 2 sqlite bag, then strip its embedded definitions.
+
+    Reproduces a REAL ``rosbag2``-recorded sqlite3 bag: the C++ recorder stores no
+    inline message definitions, so re-opening with a plain ``AnyReader`` (no
+    ``default_typestore``) raises ``AnyReaderError('Bag contains no type
+    definitions...')``. Unlike :func:`write_def_less_bag` (a CUSTOM ``my_pkg/msg/Widget``
+    type → unresolvable even WITH a typestore, the CLI-04 ``UnresolvedTypeError`` signal),
+    this writes the standard Twist/Imu/Image topics via :func:`_populate`, so re-opening
+    WITH ``get_typestore(Stores.ROS2_HUMBLE)`` resolves cleanly. It is the desktop
+    replay-panel regression fixture: ``load_items(bag)`` fails, ``load_items(bag,
+    default_typestore=ROS2_HUMBLE)`` succeeds.
+
+    The ``DELETE`` runs on a ``.db3`` this function just created in a throwaway dir —
+    never an untrusted/user bag (mirrors :func:`write_def_less_bag`, threat T-07-06).
+    Returns the bag directory path.
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / "ros2_sqlite_defless"
+    ts = get_typestore(Stores.ROS2_HUMBLE)
+    # version=9 + StoragePlugin.SQLITE3 mirror _write_ros2_bag (Pitfalls 1/2); sqlite3 is the
+    # only rosbags-writable format whose embedded defs are separable (DELETE-able post-write).
+    with Ros2Writer(path, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
+        _populate(writer, ts, ros1=False)
+    db = next(path.glob("*.db3"))
+    conn_db = sqlite3.connect(db)
+    try:
+        conn_db.execute("DELETE FROM message_definitions")  # strip defs -> needs a typestore
+        conn_db.commit()
+    finally:
+        conn_db.close()
+    return path
+
+
 def write_tf_bag(dest_dir: Path | str, *, ros1: bool, storage: str = "sqlite3") -> Path:
     """Write a TF fixture bag (``/tf`` + ``/tf_static``) with a seeded ~800ms gap.
 
