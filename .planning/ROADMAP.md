@@ -562,7 +562,13 @@ Plans:
   3. Deferred runtime-service controls are documented as out-of-scope (not silently missing)
   4. Offline/Qt-free guard green; CLI stays thin; full headless suite passes at ≥80%
 
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 21 to break down)
+**Wave 1**
+
+- [ ] 21-01-PLAN.md — Library param plumbing: replay() gains delay/start_paused/publish_clock/remap/region_start/region_end (mapping to sleep-before-play / skip-play() / build_publish_sink / seek+set_loop_region) + build_publish_sink gains remap (name lookup inside the single sink); offline unit tests + a -m live remap/clock proof -> SC2/SC4 (+SC1 partial)
+
+**Wave 2** *(blocked on 21-01)*
+
+- [ ] 21-02-PLAN.md — CLI surface: add --clock/--delay/--remap(old:=new)/--start-paused(-p)/--region-start/--region-end to cli.py, parse remap, forward to replay_bag, document the deferred runtime ROS services + single-pass region stop as out-of-scope; CliRunner unit tests; phase gate -> SC1/SC2/SC3/SC4
