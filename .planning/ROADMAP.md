@@ -535,10 +535,20 @@ Plans:
   3. Both behaviors are opt-in via the side sub-panel + matching CLI flags; defaults are unchanged (clock off)
   4. Offline/Qt-free guard green; `import rosbagger_replay` stays ROS-free; full headless suite passes at ≥80%
 
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 20 to break down)
+**Wave 1**
+
+- [ ] 20-01-PLAN.md — Pure fidelity logic: `StaticTracker` (latest-per-static-topic, default `/tf_static`) + `clock_stamp_ns` time-split in a new stdlib-only `fidelity.py`, re-exported ROS-free -> SC2 (unit route), SC4
+
+**Wave 2** *(blocked on 20-01)*
+
+- [ ] 20-02-PLAN.md — Live publish wiring: opt-in `publish_clock` + `static_topics` on `build_publish_sink` (lazy ROS, defaults off, back-compatible 2-tuple) + `republish_static` helper + `-m live` test -> SC1, SC2 (live), SC3 (library half)
+
+**Wave 3** *(blocked on 20-01 + 20-02)*
+
+- [ ] 20-03-PLAN.md — Desktop toggles: 'Publish /clock' + 'Re-publish static on seek' QCheckBoxes in the Phase-19 Advanced sub-panel, threaded into `build_publish_sink` + republish-after-seek (thin face) -> SC3 (UI half), SC4
 
 ### Phase 21: Replay CLI parity flags
 
