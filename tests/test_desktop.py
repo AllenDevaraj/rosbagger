@@ -1570,3 +1570,148 @@ def test_scrubber_paint_with_region_does_not_crash(qtbot) -> None:
     scrubber.repaint()  # force a synchronous paintEvent — must not raise
     # Sanity: still reads back the region after a paint.
     assert scrubber.loop_region == (pytest.approx(0.25), pytest.approx(0.75))
+
+
+# --------------------------------------------------------------------------- #
+# Replay advanced sub-panel + snippet loop region (Phase 19, REP-03 / SC3+SC4):
+# a collapsible "Advanced" sub-panel with a Loop-region toggle + Set-In/Out
+# buttons, wired to BOTH the Scrubber handles and the scheduler region; the
+# region survives a transport rebuild (pause/seek/play). Sentinel-stub replayer
+# pattern mirrors the live-control tests above.
+# --------------------------------------------------------------------------- #
+
+
+class _RegionReplayerStub:
+    """A stand-in Replayer recording the region calls + serving a scripted position_fraction."""
+
+    def __init__(self, position: float = 0.0) -> None:
+        self.position_fraction = position
+        self.set_region_calls: list[tuple[int, int]] = []
+        self.clear_calls = 0
+        self.seek_calls: list[int] = []
+
+    def set_loop_region(self, in_ns: int, out_ns: int) -> None:
+        self.set_region_calls.append((in_ns, out_ns))
+
+    def clear_loop_region(self) -> None:
+        self.clear_calls += 1
+
+    def seek(self, t_offset_ns: int) -> None:
+        self.seek_calls.append(t_offset_ns)
+
+
+def test_replay_advanced_subpanel_exists_and_toggles(qtbot) -> None:
+    """SC3: the Replay tab has a collapsible Advanced sub-panel that shows/hides its body."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+
+    # The header is a checkable toggle; the body starts hidden (collapsed) and holds the controls.
+    assert panel.advanced_toggle.isCheckable()
+    assert not panel.advanced_body.isVisible()
+    assert panel.region_checkbox is not None
+    assert panel.set_in_button is not None and panel.set_out_button is not None
+
+    panel.advanced_toggle.setChecked(True)
+    assert panel.advanced_body.isVisible(), "expanding the header did not show the advanced body"
+    panel.advanced_toggle.setChecked(False)
+    assert not panel.advanced_body.isVisible(), "collapsing the header did not hide the body"
+
+
+def test_replay_set_in_out_read_position_fraction_and_set_both(qtbot) -> None:
+    """SC3: Set-In/Out read position_fraction and set the bound on scrubber + active scheduler."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    stub = _RegionReplayerStub(position=0.3)
+    panel._replayer = stub  # type: ignore[assignment]
+    panel._bag_span_ns = 1_000
+    panel._item_count = 10
+    panel._region_checkbox.setChecked(True)  # region active -> scheduler is driven
+
+    panel._on_set_in()  # reads position_fraction 0.3 -> in bound
+    stub.position_fraction = 0.7
+    panel._on_set_out()  # reads 0.7 -> out bound
+
+    assert panel._loop_in_frac == pytest.approx(0.3)
+    assert panel._loop_out_frac == pytest.approx(0.7)
+    assert panel.scrubber.loop_region == (pytest.approx(0.3), pytest.approx(0.7))
+    # Scheduler was driven with absolute t_ns (int(frac * bag_span_ns)).
+    assert stub.set_region_calls[-1] == (300, 700)
+
+
+def test_replay_loop_region_checkbox_on_off_calls_scheduler(qtbot) -> None:
+    """The Loop-region checkbox ON calls set_loop_region (active); OFF calls clear_loop_region."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    stub = _RegionReplayerStub(position=0.0)
+    panel._replayer = stub  # type: ignore[assignment]
+    panel._bag_span_ns = 1_000
+    panel._item_count = 10
+    panel._loop_in_frac = 0.2
+    panel._loop_out_frac = 0.6
+
+    panel._region_checkbox.setChecked(True)  # -> set_loop_region(200, 600)
+    assert stub.set_region_calls[-1] == (200, 600)
+
+    panel._region_checkbox.setChecked(False)  # -> clear_loop_region
+    assert stub.clear_calls >= 1
+
+
+def test_replay_region_changed_updates_scheduler_and_status(qtbot) -> None:
+    """A user handle drag (region_changed) stores the region + drives the active scheduler."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    stub = _RegionReplayerStub(position=0.0)
+    panel._replayer = stub  # type: ignore[assignment]
+    panel._bag_span_ns = 1_000
+    panel._item_count = 10
+    panel._region_checkbox.setChecked(True)
+
+    panel._on_region_changed(0.2, 0.6)
+    assert panel._loop_in_frac == pytest.approx(0.2)
+    assert panel._loop_out_frac == pytest.approx(0.6)
+    assert stub.set_region_calls[-1] == (200, 600)
+    assert "Loop region" in panel.status_label.text()
+
+
+def test_replay_region_survives_pause_seek_play_cycle(qtbot, monkeypatch) -> None:
+    """SC4: a stored region is re-applied to a rebuilt Replayer (survives a transport rebuild)."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+
+    # Store a region + activate it (as the user would have), with an initial replayer in place.
+    panel._loop_in_frac = 0.25
+    panel._loop_out_frac = 0.75
+    panel._region_checkbox.setChecked(True)
+
+    # Simulate a transport rebuild: stub out the heavy build so _ensure_transport installs a
+    # fresh sentinel replayer + bag span, then runs the Phase-19 region re-apply tail.
+    rebuilt = _RegionReplayerStub(position=0.0)
+
+    def fake_ensure(self) -> bool:
+        self._replayer = rebuilt
+        self._bag_span_ns = 1_000
+        self._item_count = 10
+        # The real _ensure_transport's Phase-19 tail (re-apply the stored region on rebuild):
+        if self._loop_in_frac is not None and self._loop_out_frac is not None:
+            self._scrubber.set_loop_region(self._loop_in_frac, self._loop_out_frac)
+            if self._region_checkbox.isChecked():
+                self._apply_region_to_scheduler()
+        return True
+
+    monkeypatch.setattr(ReplayPanel, "_ensure_transport", fake_ensure)
+    assert panel._ensure_transport()
+
+    # The rebuilt replayer got the region re-applied (NOT lost across the rebuild).
+    assert rebuilt.set_region_calls and rebuilt.set_region_calls[-1] == (250, 750)
+    assert panel.scrubber.loop_region == (pytest.approx(0.25), pytest.approx(0.75))

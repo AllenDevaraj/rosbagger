@@ -42,13 +42,15 @@ from __future__ import annotations
 
 import contextlib
 
-from PySide6.QtCore import QThread, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -114,10 +116,40 @@ class ReplayPanel(QWidget):
         control_bar.addWidget(self._rate_input)
         control_bar.addWidget(self._loop_checkbox)
 
+        # Snippet loop region (Phase 19, REP-03): the durable unit is the FRACTION (the bag span
+        # can change on a transport rebuild); converted to absolute t_ns at apply time the same
+        # way seek maps a fraction. Re-applied in _ensure_transport so it survives pause/seek/play.
+        self._loop_in_frac: float | None = None
+        self._loop_out_frac: float | None = None
+
+        # Collapsible "Advanced" sub-panel (the side sub-panel the user asked for): a checkable
+        # QToolButton header toggles a QGroupBox body holding the region-loop controls, so the
+        # main transport strip stays uncluttered. Starts collapsed.
+        self._advanced_toggle = QToolButton()
+        self._advanced_toggle.setText("Advanced")
+        self._advanced_toggle.setCheckable(True)
+        self._advanced_toggle.setChecked(False)
+        self._advanced_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._advanced_toggle.setArrowType(Qt.RightArrow)
+        self._region_checkbox = QCheckBox("Loop region")
+        self._set_in_button = QPushButton("Set In")
+        self._set_out_button = QPushButton("Set Out")
+        region_row = QHBoxLayout()
+        region_row.addWidget(self._region_checkbox)
+        region_row.addWidget(self._set_in_button)
+        region_row.addWidget(self._set_out_button)
+        region_row.addStretch(1)
+        self._advanced_body = QGroupBox("Replay region")
+        body_layout = QVBoxLayout(self._advanced_body)
+        body_layout.addLayout(region_row)
+        self._advanced_body.setVisible(False)
+
         layout = QVBoxLayout(self)
         layout.addWidget(self._status)
         layout.addWidget(self._scrubber)
         layout.addLayout(control_bar)
+        layout.addWidget(self._advanced_toggle)
+        layout.addWidget(self._advanced_body)
         layout.addStretch(1)
 
         self._play_button.clicked.connect(self._play)
@@ -126,6 +158,11 @@ class ReplayPanel(QWidget):
         self._rate_input.returnPressed.connect(self._apply_rate)
         self._loop_checkbox.toggled.connect(self._apply_loop)
         self._scrubber.seeked.connect(self._on_seeked)
+        self._advanced_toggle.toggled.connect(self._on_advanced_toggled)
+        self._region_checkbox.toggled.connect(self._on_region_toggled)
+        self._set_in_button.clicked.connect(self._on_set_in)
+        self._set_out_button.clicked.connect(self._on_set_out)
+        self._scrubber.region_changed.connect(self._on_region_changed)
 
     # ------------------------------------------------------------------ accessors
 
@@ -133,6 +170,31 @@ class ReplayPanel(QWidget):
     def status_label(self) -> QLabel:
         """The status/teaching line (tests assert the transport + terminal messages here)."""
         return self._status
+
+    @property
+    def advanced_toggle(self) -> QToolButton:
+        """The collapsible advanced sub-panel header (checkable; toggles the body, Phase 19)."""
+        return self._advanced_toggle
+
+    @property
+    def advanced_body(self) -> QGroupBox:
+        """The advanced sub-panel body (region-loop controls; hidden until expanded)."""
+        return self._advanced_body
+
+    @property
+    def region_checkbox(self) -> QCheckBox:
+        """The 'Loop region' toggle (on => scheduler region active; off => cleared)."""
+        return self._region_checkbox
+
+    @property
+    def set_in_button(self) -> QPushButton:
+        """The 'Set In' button (snaps the region in-bound to the live playhead)."""
+        return self._set_in_button
+
+    @property
+    def set_out_button(self) -> QPushButton:
+        """The 'Set Out' button (snaps the region out-bound to the live playhead)."""
+        return self._set_out_button
 
     @property
     def scrubber(self) -> Scrubber:
@@ -290,6 +352,13 @@ class ReplayPanel(QWidget):
             self._replayer = Replayer(items, sink, rate=rate, loop=self._loop_checkbox.isChecked())
             self._item_count = len(items)
             self._bag_span_ns = items[-1].t_ns - items[0].t_ns
+            # Phase 19: re-apply a region set before this (re)build so it survives pause/seek/play.
+            # The fraction is the durable unit; reflect it onto the scrubber band, and onto the
+            # rebuilt scheduler when region-loop is active (set_loop_region + seek into the region).
+            if self._loop_in_frac is not None and self._loop_out_frac is not None:
+                self._scrubber.set_loop_region(self._loop_in_frac, self._loop_out_frac)
+                if self._region_checkbox.isChecked():
+                    self._apply_region_to_scheduler()
         except RosNotAvailableError as exc:
             set_status(self._status, str(exc), is_error=True)
             self._teardown_transport()
@@ -452,6 +521,101 @@ class ReplayPanel(QWidget):
             return
         fraction = self._replayer.position_fraction  # type: ignore[union-attr]
         self._scrubber.set_position(fraction)
+
+    # --------------------------------------------------------- region loop (Phase 19)
+
+    def _on_advanced_toggled(self, checked: bool) -> None:
+        """Show/hide the advanced sub-panel body + flip the header arrow (collapsible, Phase 19)."""
+        self._advanced_body.setVisible(checked)
+        self._advanced_toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+
+    def _region_abs_ns(self, in_frac: float, out_frac: float) -> tuple[int, int]:
+        """Map region fractions to ABSOLUTE bag-relative t_ns the SAME way ``seek`` maps a fraction.
+
+        ``seek`` treats ``int(fraction * bag_span_ns)`` as a bag-relative offset (t0-relative),
+        and ``Replayer.seek`` adds ``items[0].t_ns`` internally; ``set_loop_region`` takes
+        absolute t_ns, so the scheduler's ``seek`` scan and the region bounds share one basis.
+        We pass the offset form (``int(frac * bag_span_ns)``) as the absolute bound because the
+        scheduler compares against ``items[cursor].t_ns`` — see the note in 19-03 RESEARCH; the
+        panel always seeks to the in-bound when enabling region-loop so the cursor enters the
+        region. Both bounds use the identical mapping for consistency.
+        """
+        return int(in_frac * self._bag_span_ns), int(out_frac * self._bag_span_ns)
+
+    def _apply_region_to_scheduler(self) -> None:
+        """Push the stored region onto the scheduler when active + seek into it (UI-thread helper).
+
+        Called when the region checkbox is on and both bounds are set. Converts the durable
+        fractions to absolute t_ns and calls ``replayer.set_loop_region`` (lock-guarded in
+        19-01); also seeks the cursor to the in-bound so playback enters the region (the
+        scheduler only wraps AFTER the cursor passes the out-bound).
+        """
+        if self._replayer is None:
+            return
+        if self._loop_in_frac is None or self._loop_out_frac is None:
+            return
+        in_ns, out_ns = self._region_abs_ns(self._loop_in_frac, self._loop_out_frac)
+        self._replayer.set_loop_region(in_ns, out_ns)  # type: ignore[union-attr]
+        self._replayer.seek(in_ns)  # type: ignore[union-attr]  # enter the region
+        self._update_position()
+
+    def _set_region_bound(self, which: str) -> None:
+        """Snap the in/out region bound to the live playhead (Set-In / Set-Out, Phase 19).
+
+        Reads ``position_fraction`` (the live cursor), stores it as the chosen bound (keeping
+        in<=out), reflects BOTH bounds onto the scrubber band, and — when region-loop is active
+        — onto the scheduler. The durable unit is the fraction (survives a transport rebuild).
+        """
+        if not self._ensure_transport():
+            return
+        frac = self._replayer.position_fraction  # type: ignore[union-attr]
+        if which == "in":
+            self._loop_in_frac = frac
+            if self._loop_out_frac is None or self._loop_out_frac < frac:
+                self._loop_out_frac = frac  # keep in<=out
+        else:  # "out"
+            self._loop_out_frac = frac
+            if self._loop_in_frac is None or self._loop_in_frac > frac:
+                self._loop_in_frac = frac  # keep in<=out
+        self._scrubber.set_loop_region(self._loop_in_frac, self._loop_out_frac)
+        if self._region_checkbox.isChecked():
+            self._apply_region_to_scheduler()
+        set_status(
+            self._status,
+            f"Loop region {self._loop_in_frac * 100:.0f}%–{self._loop_out_frac * 100:.0f}%.",
+        )
+
+    def _on_set_in(self) -> None:
+        """Set the region in-bound to the current playhead (Set-In button)."""
+        self._set_region_bound("in")
+
+    def _on_set_out(self) -> None:
+        """Set the region out-bound to the current playhead (Set-Out button)."""
+        self._set_region_bound("out")
+
+    def _on_region_toggled(self, checked: bool) -> None:
+        """Loop-region checkbox: ON => scheduler region active (+seek in); OFF => cleared."""
+        if self._replayer is None:
+            return
+        if checked and self._loop_in_frac is not None and self._loop_out_frac is not None:
+            self._apply_region_to_scheduler()
+            set_status(self._status, "Loop region on.")
+        else:
+            self._replayer.clear_loop_region()  # type: ignore[union-attr]
+            set_status(self._status, "Loop region off.")
+
+    def _on_region_changed(self, in_frac: float, out_frac: float) -> None:
+        """A USER scrubber handle drag updated the region — store it + sync the scheduler.
+
+        Stores the durable fractions and, when region-loop is active, pushes them onto the
+        scheduler (converted to absolute t_ns). The scrubber is already showing the new band
+        (it emitted this), so we do NOT call set_loop_region back on it (no feedback loop).
+        """
+        self._loop_in_frac = in_frac
+        self._loop_out_frac = out_frac
+        if self._replayer is not None and self._region_checkbox.isChecked():
+            self._apply_region_to_scheduler()
+        set_status(self._status, f"Loop region {in_frac * 100:.0f}%–{out_frac * 100:.0f}%.")
 
     # --------------------------------------------------------------- event markers
 
