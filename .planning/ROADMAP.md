@@ -562,12 +562,12 @@ Plans:
   3. Deferred runtime-service controls are documented as out-of-scope (not silently missing)
   4. Offline/Qt-free guard green; CLI stays thin; full headless suite passes at ≥80%
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 21-01-PLAN.md — Library param plumbing: replay() gains delay/start_paused/publish_clock/remap/region_start/region_end (mapping to sleep-before-play / skip-play() / build_publish_sink / seek+set_loop_region) + build_publish_sink gains remap (name lookup inside the single sink); offline unit tests + a -m live remap/clock proof -> SC2/SC4 (+SC1 partial)
+- [x] 21-01-PLAN.md — Library param plumbing: replay() gains delay/start_paused/publish_clock/remap/region_start/region_end (mapping to sleep-before-play / skip-play() / build_publish_sink / seek+set_loop_region) + build_publish_sink gains remap (name lookup inside the single sink); offline unit tests + a -m live remap/clock proof -> SC2/SC4 (+SC1 partial)
 
 **Wave 2** *(blocked on 21-01)*
 

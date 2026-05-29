@@ -4,14 +4,14 @@ milestone: v0.5
 milestone_name: Replay Playback System
 status: executing
 stopped_at: Completed 16-03-PLAN.md (PHASE 16 COMPLETE)
-last_updated: "2026-05-29T08:31:30.684Z"
-last_activity: 2026-05-29 -- Phase 20 execution started
+last_updated: "2026-05-29T08:48:39.475Z"
+last_activity: 2026-05-29 -- Phase 21 execution started
 progress:
   total_phases: 21
   completed_phases: 20
   total_plans: 59
-  completed_plans: 56
-  percent: 90
+  completed_plans: 59
+  percent: 95
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 20 — replay-rviz-fidelity-clock-and-static-republish
+**Current focus:** Phase 21 — replay-cli-parity-flags
 
 ## Current Position
 
-Phase: 20 (replay-rviz-fidelity-clock-and-static-republish) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 20
-Last activity: 2026-05-29 -- Phase 20 execution started
+Phase: 21 (replay-cli-parity-flags) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 21
+Last activity: 2026-05-29 -- Phase 21 execution started
 
 Progress: [██████████] 100%
 
