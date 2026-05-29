@@ -44,7 +44,7 @@ Turn replay from a fire-and-forget publisher into a real playback system: a live
 
 - [x] **Phase 18: Replay live scrubbing & thread-safe transport** - make the pure `Replayer` safe to control mid-play (thread-safe command channel) so the scrubber drags live and the playhead tracks in real time (completed 2026-05-29)
 - [x] **Phase 19: Replay snippet loop & advanced controls panel** - in/out region loop in the scheduler + dual-handle/Set-In-Out Scrubber, housed in a collapsible side sub-panel inside the Replay tab (completed 2026-05-29)
-- [ ] **Phase 20: Replay RViz fidelity (clock + static republish)** - publish `/clock` for `use_sim_time` and re-emit latched/`transient_local` + `/tf_static` after a seek so RViz re-primes instead of layering stale state
+- [x] **Phase 20: Replay RViz fidelity (clock + static republish)** - publish `/clock` for `use_sim_time` and re-emit latched/`transient_local` + `/tf_static` after a seek so RViz re-primes instead of layering stale state (completed 2026-05-29)
 - [ ] **Phase 21: Replay CLI parity flags** - close the `ros2 bag play` gap feasible in our publish model: `--start-paused`, `--remap`, `--delay`, `--clock`, bounded region `[in,out]`
 
 ## Phase Details
@@ -535,7 +535,7 @@ Plans:
   3. Both behaviors are opt-in via the side sub-panel + matching CLI flags; defaults are unchanged (clock off)
   4. Offline/Qt-free guard green; `import rosbagger_replay` stays ROS-free; full headless suite passes at ≥80%
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -548,7 +548,7 @@ Plans:
 
 **Wave 3** *(blocked on 20-01 + 20-02)*
 
-- [ ] 20-03-PLAN.md — Desktop toggles: 'Publish /clock' + 'Re-publish static on seek' QCheckBoxes in the Phase-19 Advanced sub-panel, threaded into `build_publish_sink` + republish-after-seek (thin face) -> SC3 (UI half), SC4
+- [x] 20-03-PLAN.md — Desktop toggles: 'Publish /clock' + 'Re-publish static on seek' QCheckBoxes in the Phase-19 Advanced sub-panel, threaded into `build_publish_sink` + republish-after-seek (thin face) -> SC3 (UI half), SC4
 
 ### Phase 21: Replay CLI parity flags
 
