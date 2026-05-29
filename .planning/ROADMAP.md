@@ -43,7 +43,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 Turn replay from a fire-and-forget publisher into a real playback system: a live-tracking, drag-while-playing scrubber, snippet (in/out) looping, RViz-faithful seeking (`/clock` + static re-publish), and `ros2 bag play` CLI parity. All work stays behind the established invariants — `rosbagger_replay` ROS-free at module top, the offline import graph ROS-free AND Qt-free, and the desktop panels thin faces over the library.
 
 - [x] **Phase 18: Replay live scrubbing & thread-safe transport** - make the pure `Replayer` safe to control mid-play (thread-safe command channel) so the scrubber drags live and the playhead tracks in real time (completed 2026-05-29)
-- [ ] **Phase 19: Replay snippet loop & advanced controls panel** - in/out region loop in the scheduler + dual-handle/Set-In-Out Scrubber, housed in a collapsible side sub-panel inside the Replay tab
+- [x] **Phase 19: Replay snippet loop & advanced controls panel** - in/out region loop in the scheduler + dual-handle/Set-In-Out Scrubber, housed in a collapsible side sub-panel inside the Replay tab (completed 2026-05-29)
 - [ ] **Phase 20: Replay RViz fidelity (clock + static republish)** - publish `/clock` for `use_sim_time` and re-emit latched/`transient_local` + `/tf_static` after a seek so RViz re-primes instead of layering stale state
 - [ ] **Phase 21: Replay CLI parity flags** - close the `ros2 bag play` gap feasible in our publish model: `--start-paused`, `--remap`, `--delay`, `--clock`, bounded region `[in,out]`
 
@@ -516,12 +516,12 @@ Plans:
   3. Advanced replay controls live in a collapsible side sub-panel inside the Replay tab (region loop + rate), themed via Phase-17 tokens with accessible status preserved
   4. Region values survive pause/seek/play cycles; offline/Qt-free guard green; full headless suite passes at ≥80%
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 19-01-PLAN.md — Scheduler region loop (pure, ROS/Qt-free) — set_loop_region/clear_loop_region + run() region-wrap branch [wave 1]
 - [x] 19-02-PLAN.md — Scrubber dual In/Out handles + shaded region paint + region_fill/region_handle theme tokens [wave 1]
-- [ ] 19-03-PLAN.md — Panel collapsible advanced sub-panel + Set-In/Out + wiring (survives pause/seek/play) [wave 2, depends 19-01+19-02]
+- [x] 19-03-PLAN.md — Panel collapsible advanced sub-panel + Set-In/Out + wiring (survives pause/seek/play) [wave 2, depends 19-01+19-02]
 
 ### Phase 20: Replay RViz fidelity (clock + static republish)
 

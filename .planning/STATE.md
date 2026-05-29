@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.4
-milestone_name: Desktop revamp
-status: executing
-stopped_at: Completed 16-03-PLAN.md (PHASE 16 COMPLETE)
+milestone: v0.5
+milestone_name: Replay Playback System
+status: phase_complete
+stopped_at: Phase 19 COMPLETE (region loop + advanced sub-panel; verification PASSED) — Phase 20 next
 last_updated: "2026-05-29T08:03:49.130Z"
-last_activity: 2026-05-29 -- Phase 19 execution started
+last_activity: 2026-05-29 -- Phase 19 complete (snippet loop + advanced controls panel)
 progress:
   total_phases: 21
-  completed_phases: 18
+  completed_phases: 19
   total_plans: 56
-  completed_plans: 53
-  percent: 86
+  completed_plans: 56
+  percent: 90
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 19 — replay-snippet-loop-and-advanced-controls-panel
+**Current focus:** Milestone v0.5 — Replay Playback System. Phases 18 + 19 COMPLETE; Phase 20 (RViz fidelity — /clock + static republish) next, then Phase 21 (CLI parity flags).
 
 ## Current Position
 
-Phase: 19 (replay-snippet-loop-and-advanced-controls-panel) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 19
-Last activity: 2026-05-29 -- Phase 19 execution started
+Phase: 19 (replay-snippet-loop-and-advanced-controls-panel) — COMPLETE (verification PASSED)
+Plan: 3 of 3 (all complete)
+Status: Phase 19 done — Replayer has an in/out region loop, the Scrubber has dual draggable In/Out handles + a shaded band, and the Replay tab has a collapsible Advanced sub-panel (Loop-region toggle + Set-In/Out) that survives pause/seek/play. 533 passed, 86.90% coverage. Next: autonomous /gsd-plan-phase 20 + /gsd-execute-phase 20.
+Last activity: 2026-05-29 -- Phase 19 complete
 
 Progress: [██████████] 100%
 
