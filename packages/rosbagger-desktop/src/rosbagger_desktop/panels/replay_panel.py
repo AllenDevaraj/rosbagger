@@ -80,6 +80,9 @@ class ReplayPanel(QWidget):
         self._node: object | None = None
         self._created_ctx: bool = False
         self._published: dict[str, int] | None = None
+        # The publish sink (Phase 20): kept so a static re-publish after a seek can push the
+        # tracked latched topics back through it (republish_static reads sink.tracker).
+        self._sink: object | None = None
         self._bag_span_ns: int = 0
         self._item_count: int = 0
         # Kept drive-thread ref (Pitfall 2 — the GC must not collect a live thread).
@@ -139,9 +142,18 @@ class ReplayPanel(QWidget):
         region_row.addWidget(self._set_in_button)
         region_row.addWidget(self._set_out_button)
         region_row.addStretch(1)
-        self._advanced_body = QGroupBox("Replay region")
+        # Phase 20 (REP-04): opt-in RViz-fidelity toggles, default OFF — publish /clock for
+        # use_sim_time nodes, and re-publish latched/static topics (/tf_static) after a seek so a
+        # fresh scene re-primes (the concrete fix for the Phase-18 backward-scrub limitation).
+        self._clock_checkbox = QCheckBox("Publish /clock")
+        self._static_seek_checkbox = QCheckBox("Re-publish static on seek")
+        self._clock_checkbox.setChecked(False)
+        self._static_seek_checkbox.setChecked(False)
+        self._advanced_body = QGroupBox("Replay region & fidelity")
         body_layout = QVBoxLayout(self._advanced_body)
         body_layout.addLayout(region_row)
+        body_layout.addWidget(self._clock_checkbox)
+        body_layout.addWidget(self._static_seek_checkbox)
         self._advanced_body.setVisible(False)
 
         layout = QVBoxLayout(self)
@@ -195,6 +207,16 @@ class ReplayPanel(QWidget):
     def set_out_button(self) -> QPushButton:
         """The 'Set Out' button (snaps the region out-bound to the live playhead)."""
         return self._set_out_button
+
+    @property
+    def clock_checkbox(self) -> QCheckBox:
+        """The 'Publish /clock' toggle (Phase 20; on => build_publish_sink(publish_clock=True))."""
+        return self._clock_checkbox
+
+    @property
+    def static_seek_checkbox(self) -> QCheckBox:
+        """The 'Re-publish static on seek' toggle (Phase 20; on => track + re-prime /tf_static)."""
+        return self._static_seek_checkbox
 
     @property
     def scrubber(self) -> Scrubber:
@@ -348,7 +370,18 @@ class ReplayPanel(QWidget):
                 rclpy.init()
             self._node = rclpy.create_node("rosbagger_desktop_replayer")
             # The SINGLE production publish sink (D-05) — same mechanics replay() drives.
-            sink, self._published = build_publish_sink(self._node)
+            # Phase 20 (REP-04): thread the opt-in RViz-fidelity toggles (default off => today's
+            # call). publish_clock emits /clock per publish; static_topics tracks /tf_static so a
+            # post-seek republish_static (in _on_seeked) re-primes a fresh scene. Keep the sink
+            # ref so the republish-after-seek path can reach sink.tracker.
+            publish_clock = self._clock_checkbox.isChecked()
+            static_topics = (
+                frozenset({"/tf_static"}) if self._static_seek_checkbox.isChecked() else frozenset()
+            )
+            sink, self._published = build_publish_sink(
+                self._node, publish_clock=publish_clock, static_topics=static_topics
+            )
+            self._sink = sink
             self._replayer = Replayer(items, sink, rate=rate, loop=self._loop_checkbox.isChecked())
             self._item_count = len(items)
             self._bag_span_ns = items[-1].t_ns - items[0].t_ns
@@ -380,6 +413,7 @@ class ReplayPanel(QWidget):
         self._replayer = None
         self._node = None
         self._published = None
+        self._sink = None
         self._created_ctx = False
         if node is not None:
             with contextlib.suppress(Exception):
@@ -496,7 +530,8 @@ class ReplayPanel(QWidget):
         only ever renders what we publish from the seek point onward. The status says
         "resuming forward" so the user never reads it as reverse playback. (Making a backward
         scrub *look* right in RViz — re-publishing latched/static topics + ``/clock`` — is the
-        Phase-20 fidelity work, deliberately out of scope here.)
+        Phase-20 fidelity work, opt-in via the Advanced sub-panel's "Re-publish static on seek"
+        toggle: when on, this re-primes the tracked static topics through the sink AFTER the jump.)
         """
         if not self._ensure_transport():
             return
@@ -509,6 +544,14 @@ class ReplayPanel(QWidget):
             set_status(self._status, f"Seeking to {fraction * 100:.0f}% — resuming forward.")
         else:
             set_status(self._status, f"Seeked to {fraction * 100:.0f}% of the bag.")
+        # Phase 20 (REP-04): when enabled, re-publish the tracked latched/static topics AFTER the
+        # seek so a fresh scene re-primes in RViz (the concrete fix for the backward-scrub
+        # limitation). republish_static is a no-op when the sink has no tracker. Lazy import keeps
+        # the panel module top ROS-free; the scheduler is NOT involved (publish-path concern).
+        if self._static_seek_checkbox.isChecked() and self._sink is not None:
+            from rosbagger_replay import republish_static
+
+            republish_static(self._sink)
 
     def _update_position(self) -> None:
         """Reflect the Replayer cursor onto the scrubber playhead (UI-thread helper).

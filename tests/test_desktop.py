@@ -1715,3 +1715,169 @@ def test_replay_region_survives_pause_seek_play_cycle(qtbot, monkeypatch) -> Non
     # The rebuilt replayer got the region re-applied (NOT lost across the rebuild).
     assert rebuilt.set_region_calls and rebuilt.set_region_calls[-1] == (250, 750)
     assert panel.scrubber.loop_region == (pytest.approx(0.25), pytest.approx(0.75))
+
+
+# --------------------------------------------------------------------------- #
+# Replay RViz-fidelity toggles (Phase 20, REP-04 / SC3): "Publish /clock" +
+# "Re-publish static on seek" in the Advanced sub-panel, default OFF, threaded
+# into build_publish_sink at transport build, and a post-seek static re-prime.
+# --------------------------------------------------------------------------- #
+
+
+def test_replay_fidelity_toggles_exist_and_default_off(qtbot) -> None:
+    """SC3: the two fidelity toggles live in the Advanced sub-panel and default OFF."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+
+    assert not panel.clock_checkbox.isChecked()
+    assert not panel.static_seek_checkbox.isChecked()
+    # Both ride inside the Phase-19 collapsible Advanced body.
+    assert panel.clock_checkbox.parent() is panel.advanced_body
+    assert panel.static_seek_checkbox.parent() is panel.advanced_body
+
+
+def _drive_ensure_transport_with_sink_spy(panel, monkeypatch, qtbot):
+    """Stub the lazy ROS bits so _ensure_transport runs offline + spy build_publish_sink kwargs.
+
+    Returns the captured-kwargs dict. Mirrors the typestore-threading spy pattern: monkeypatch
+    the front-door rosbagger_replay symbols the panel lazy-imports inside _ensure_transport.
+    """
+    import types
+
+    captured: dict = {}
+
+    def fake_build_publish_sink(node, **kwargs):
+        captured.update(kwargs)
+        sink = lambda item: None  # noqa: E731 - a trivial stub sink
+        sink.tracker = None
+        return sink, {"n": 0}
+
+    # A fake rosbagger_replay module exposing exactly what _ensure_transport imports.
+    fake = types.ModuleType("rosbagger_replay")
+    fake.NoMessagesToReplayError = type("NoMessagesToReplayError", (Exception,), {})
+    fake.RosNotAvailableError = type("RosNotAvailableError", (Exception,), {})
+    fake.build_publish_sink = fake_build_publish_sink
+    fake.load_items = lambda *a, **k: [
+        types.SimpleNamespace(t_ns=0, topic="/a"),
+        types.SimpleNamespace(t_ns=1000, topic="/a"),
+    ]
+
+    class _Replayer:
+        def __init__(self, items, sink, **kwargs):
+            self._items = items
+
+        position_fraction = 0.0
+
+    fake.Replayer = _Replayer
+    monkeypatch.setitem(sys.modules, "rosbagger_replay", fake)
+
+    # Stub rclpy so _ensure_transport's `import rclpy` + node/context calls succeed offline.
+    fake_rclpy = types.ModuleType("rclpy")
+    fake_rclpy.ok = lambda: True  # we did NOT create the context -> no init/shutdown
+    fake_rclpy.create_node = lambda name: types.SimpleNamespace(
+        create_publisher=lambda *a, **k: None, destroy_node=lambda: None
+    )
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+
+    # A bag path so _bag_path() is non-None (the window getattr default is None otherwise).
+    monkeypatch.setattr(panel, "_bag_path", lambda: "/tmp/fake.bag")
+    monkeypatch.setattr(panel, "_default_typestore", lambda: object())
+
+    assert panel._ensure_transport() is True
+    return captured
+
+
+def test_replay_clock_toggle_threads_publish_clock_into_sink(qtbot, monkeypatch) -> None:
+    """SC3: checking 'Publish /clock' threads publish_clock=True into build_publish_sink."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel.clock_checkbox.setChecked(True)
+
+    captured = _drive_ensure_transport_with_sink_spy(panel, monkeypatch, qtbot)
+    assert captured.get("publish_clock") is True
+
+
+def test_replay_static_toggle_threads_static_topics_into_sink(qtbot, monkeypatch) -> None:
+    """SC3: checking 'Re-publish static on seek' threads static_topics={'/tf_static'}."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel.static_seek_checkbox.setChecked(True)
+
+    captured = _drive_ensure_transport_with_sink_spy(panel, monkeypatch, qtbot)
+    assert captured.get("static_topics") == frozenset({"/tf_static"})
+
+
+def test_replay_fidelity_toggles_default_off_passes_no_new_kwargs(qtbot, monkeypatch) -> None:
+    """Defaults OFF preserve today's call shape: publish_clock False + static_topics empty."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    # both unchecked (default)
+
+    captured = _drive_ensure_transport_with_sink_spy(panel, monkeypatch, qtbot)
+    assert captured.get("publish_clock") is False
+    assert captured.get("static_topics") == frozenset()
+
+
+def test_replay_seek_with_static_toggle_republishes_after_seek(qtbot, monkeypatch) -> None:
+    """SC3: a seek with the static toggle on calls republish_static AFTER replayer.seek."""
+    import types
+
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel.static_seek_checkbox.setChecked(True)
+
+    order: list[str] = []
+
+    class _Replayer:
+        position_fraction = 0.5
+
+        def seek(self, t_offset_ns):
+            order.append("seek")
+
+    panel._replayer = _Replayer()
+    panel._bag_span_ns = 1_000
+    panel._item_count = 10
+    panel._sink = types.SimpleNamespace(tracker=object())  # non-None sink
+    monkeypatch.setattr(panel, "_ensure_transport", lambda: True)  # transport already built
+
+    # Spy republish_static on the front door the panel lazy-imports.
+    fake = types.ModuleType("rosbagger_replay")
+    fake.republish_static = lambda sink: order.append("republish") or 1
+    monkeypatch.setitem(sys.modules, "rosbagger_replay", fake)
+
+    panel._on_seeked(0.2)
+    assert order == ["seek", "republish"], f"expected seek before republish, got {order}"
+
+
+def test_replay_seek_static_republish_noop_when_no_sink(qtbot, monkeypatch) -> None:
+    """The republish-after-seek is a safe no-op when no sink is built (toggle on, _sink None)."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel.static_seek_checkbox.setChecked(True)
+
+    class _Replayer:
+        position_fraction = 0.5
+
+        def seek(self, t_offset_ns):
+            pass
+
+    panel._replayer = _Replayer()
+    panel._bag_span_ns = 1_000
+    panel._item_count = 10
+    panel._sink = None  # transport not built
+    monkeypatch.setattr(panel, "_ensure_transport", lambda: True)
+
+    # Must not raise (the `self._sink is not None` guard skips republish_static).
+    panel._on_seeked(0.2)
