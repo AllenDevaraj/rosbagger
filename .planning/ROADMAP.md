@@ -535,7 +535,7 @@ Plans:
   3. Both behaviors are opt-in via the side sub-panel + matching CLI flags; defaults are unchanged (clock off)
   4. Offline/Qt-free guard green; `import rosbagger_replay` stays ROS-free; full headless suite passes at ≥80%
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 **Wave 1**
@@ -544,7 +544,7 @@ Plans:
 
 **Wave 2** *(blocked on 20-01)*
 
-- [ ] 20-02-PLAN.md — Live publish wiring: opt-in `publish_clock` + `static_topics` on `build_publish_sink` (lazy ROS, defaults off, back-compatible 2-tuple) + `republish_static` helper + `-m live` test -> SC1, SC2 (live), SC3 (library half)
+- [x] 20-02-PLAN.md — Live publish wiring: opt-in `publish_clock` + `static_topics` on `build_publish_sink` (lazy ROS, defaults off, back-compatible 2-tuple) + `republish_static` helper + `-m live` test -> SC1, SC2 (live), SC3 (library half)
 
 **Wave 3** *(blocked on 20-01 + 20-02)*
 
