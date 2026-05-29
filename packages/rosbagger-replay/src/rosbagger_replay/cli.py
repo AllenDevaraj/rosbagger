@@ -135,6 +135,52 @@ def replay(
         int | None,
         typer.Option("--max-messages", help="Stop after publishing this many messages (D-10)."),
     ] = None,
+    clock: Annotated[
+        bool,
+        typer.Option(
+            "--clock",
+            help="Publish /clock (rosgraph_msgs/Clock) per message for use_sim_time nodes.",
+        ),
+    ] = False,
+    delay: Annotated[
+        float,
+        typer.Option(
+            "--delay",
+            help="Sleep N seconds after building the transport but BEFORE publishing "
+            "(lets subscribers discover; ros2 bag play --delay parity).",
+        ),
+    ] = 0.0,
+    remap: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--remap",
+            help="Publish a topic under a new name: --remap old:=new (repeatable).",
+        ),
+    ] = None,
+    start_paused: Annotated[
+        bool,
+        typer.Option(
+            "--start-paused",
+            "-p",
+            help="Begin PAUSED (publish nothing). Non-interactive here — this CLI has no "
+            "resume; interactive control is in the GUI.",
+        ),
+    ] = False,
+    region_start: Annotated[
+        float | None,
+        typer.Option(
+            "--region-start",
+            help="Play from this many SECONDS in (bounded-region in-point).",
+        ),
+    ] = None,
+    region_end: Annotated[
+        float | None,
+        typer.Option(
+            "--region-end",
+            help="Play to this many SECONDS in (region out-point); pair with --loop to REPEAT "
+            "the [in,out] snippet. A single-pass [in,out] stop is deferred (see --end/--duration).",
+        ),
+    ] = None,
 ) -> None:
     """Replay ``bag`` to live ROS 2 topics with transport controls (REP-01 / SC1).
 
@@ -144,6 +190,18 @@ def replay(
     end-of-bag; ``--duration`` / ``--max-messages`` bound the run (D-10 — the bounded mode
     the live test relies on; ``--end`` is folded into ``--duration`` for v1, see the
     module docstring + the ``--duration`` help).
+
+    Phase-21 parity flags (REP-05): ``--clock`` publishes /clock per message; ``--delay``
+    sleeps before publishing; ``--remap old:=new`` (repeatable) publishes a topic under a new
+    name; ``--start-paused``/``-p`` begins paused; ``--region-start``/``--region-end`` (seconds)
+    bound a snippet region (pair with ``--loop`` to repeat it).
+
+    OUT OF SCOPE (deferred, NOT silently missing — SC3): the runtime ROS playback services
+    ``~/seek`` / ``~/set_rate`` / ``~/play_next`` / ``~/burst`` / ``~/toggle_paused`` are not
+    exposed — they need a long-lived spinning node, and interactive transport control lives in
+    the GUI (rosbagger-desktop). A single-pass ``[in,out]`` region stop is also deferred: the
+    region REPEATS with ``--loop`` (the scheduler bounds on monotonic duration / max-messages,
+    not a bag-timestamp horizon — the same deferral ``--end``-folded-into-``--duration`` records).
 
     Thin verb over ``rosbagger_replay.replay_bag`` (API-first, D-02): it forwards the
     parsed flags and prints the published count. ``replay_bag()`` is the single
@@ -157,6 +215,17 @@ def replay(
     # (which would rebind the bare `replay` attribute to the module).
     from rosbagger_replay import replay_bag as replay_api
 
+    # Parse --remap old:=new pairs into a dict; a malformed value is a clean usage error
+    # (typer.BadParameter -> non-zero exit, no traceback), never a silent accept.
+    parsed_remap: dict[str, str] | None = None
+    if remap:
+        parsed_remap = {}
+        for pair in remap:
+            old, sep, new = pair.partition(":=")
+            if not sep or not old or not new:
+                raise typer.BadParameter(f"--remap expects old:=new, got {pair!r}")
+            parsed_remap[old] = new
+
     n = replay_api(
         bag,
         # WR-06: explicit `is not None` (matches the scheduler's is-not-None discipline) — an
@@ -168,6 +237,13 @@ def replay(
         start=start,
         duration=duration,
         max_messages=max_messages,
+        # Phase-21 parity flags forwarded to the library params (21-01).
+        publish_clock=clock,
+        delay=delay,
+        remap=parsed_remap,
+        start_paused=start_paused,
+        region_start=region_start,
+        region_end=region_end,
     )
     typer.echo(f"Published {n} messages from {bag}")
 

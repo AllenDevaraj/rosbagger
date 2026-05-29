@@ -867,3 +867,95 @@ def test_cli_replay_no_messages_exits_one_cleanly(monkeypatch):
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert not isinstance(result.exception, NoMessagesToReplayError)
     assert "No messages to replay" in result.output
+
+
+def test_cli_replay_help_exposes_parity_flags():
+    """SC1: --help exposes the Phase-21 parity flags alongside the existing ones."""
+    result = _runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    for flag in (
+        "--clock",
+        "--delay",
+        "--remap",
+        "--start-paused",
+        "-p",
+        "--region-start",
+        "--region-end",
+    ):
+        assert flag in result.output, f"{flag} missing from --help:\n{result.output}"
+
+
+def test_cli_replay_help_documents_deferred_services():
+    """SC3: --help documents the deferred runtime services + single-pass region stop."""
+    result = _runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    # At least one deferred runtime service is named, and the single-pass deferral is noted.
+    assert "toggle_paused" in result.output or "~/seek" in result.output
+    assert "single-pass" in result.output
+
+
+def test_cli_replay_forwards_parity_flags(monkeypatch):
+    """SC2: --clock/--delay/--start-paused/--region-start/--region-end forward the right kwargs."""
+    calls = {}
+
+    def fake_replay_bag(bag, **kwargs):
+        calls.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", fake_replay_bag)
+
+    result = _runner.invoke(
+        app,
+        [
+            "/tmp/bag",
+            "--clock",
+            "--delay",
+            "2",
+            "--start-paused",
+            "--region-start",
+            "1",
+            "--region-end",
+            "3",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert calls["publish_clock"] is True
+    assert calls["delay"] == 2.0
+    assert calls["start_paused"] is True
+    assert calls["region_start"] == 1.0
+    assert calls["region_end"] == 3.0
+
+    # The -p short alias also flips start_paused.
+    calls.clear()
+    result = _runner.invoke(app, ["/tmp/bag", "-p"])
+    assert result.exit_code == 0, result.output
+    assert calls["start_paused"] is True
+
+
+def test_cli_replay_remap_parses_pairs(monkeypatch):
+    """--remap a:=b --remap c:=d -> remap={'a':'b','c':'d'}; no --remap -> remap=None."""
+    calls = {}
+
+    def fake_replay_bag(bag, **kwargs):
+        calls.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", fake_replay_bag)
+
+    result = _runner.invoke(app, ["/tmp/bag", "--remap", "a:=b", "--remap", "c:=d"])
+    assert result.exit_code == 0, result.output
+    assert calls["remap"] == {"a": "b", "c": "d"}
+
+    calls.clear()
+    result = _runner.invoke(app, ["/tmp/bag"])
+    assert result.exit_code == 0, result.output
+    assert calls["remap"] is None
+
+
+def test_cli_replay_remap_malformed_errors_cleanly(monkeypatch):
+    """A malformed --remap (no ':=') is a clean usage error, not a raw traceback."""
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", lambda bag, **kwargs: 0)
+    result = _runner.invoke(app, ["/tmp/bag", "--remap", "foo"])
+    assert result.exit_code != 0
+    # typer renders BadParameter as a usage error (SystemExit), not an escaping exception.
+    assert result.exception is None or isinstance(result.exception, SystemExit)
