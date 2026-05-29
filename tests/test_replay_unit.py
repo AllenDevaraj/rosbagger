@@ -591,6 +591,156 @@ def test_scheduler_injected_sleep_still_honored():
 
 
 # --------------------------------------------------------------------------- #
+# scheduler — in/out region loop (Phase 19, REP-03 / SC1): set_loop_region wraps
+# a SNIPPET on repeat (cursor jumps from past t_out back to the first item at/after
+# t_in), DISTINCT from the whole-bag loop (index-0 rewind). The region branch sits
+# AFTER the bound guards (W4 — DONE/bound still wins) and takes precedence over the
+# whole-bag _loop when both are on. Select with `-k region`.
+# --------------------------------------------------------------------------- #
+
+
+def test_scheduler_region_setters_normalize_and_read_back():
+    """The region setters normalize in<=out and loop_region reads them back (both/neither)."""
+    r = Replayer(_items([0, 100, 200]), lambda i: None, sleep=lambda s: None)
+    assert r.loop_region is None  # no region by default
+
+    r.set_loop_region(200, 500)
+    assert r.loop_region == (200, 500)
+
+    r.set_loop_region(500, 200)  # reversed -> normalized to (200, 500)
+    assert r.loop_region == (200, 500)
+
+    r.clear_loop_region()
+    assert r.loop_region is None
+
+
+def test_scheduler_region_setters_are_threadsafe_midrun():
+    """SC4/T-19-01-A: a set_loop_region issued WHILE run() executes is honored race-free.
+
+    Reuses the Phase-18 _BarrierSleep so the interleave is deterministic. The worker parks in
+    the first paced wait after item[0]; the main thread sets a region [300, 600] + caps the run
+    with max_messages so it terminates, releases the barrier, and joins. The region read is
+    observable immediately (lock-guarded mutation, lock-free read) and the worker ends cleanly.
+    """
+    items = _items([i * 100 for i in range(10)])  # t_ns 0..900
+    recorded = []
+    sleep = _BarrierSleep()
+    # max_messages caps the run so a region that would otherwise loop forever terminates.
+    r = Replayer(items, recorded.append, sleep=sleep, max_messages=6)
+    r.play()
+    worker = threading.Thread(target=r.run)
+    worker.start()
+
+    assert sleep.entered.wait(timeout=5.0)  # parked mid-run after item[0]
+    r.set_loop_region(300, 600)
+    assert r.loop_region == (300, 600)  # observable immediately
+    sleep.go()
+    worker.join(timeout=5.0)
+    assert not worker.is_alive()
+    assert r.state is State.DONE  # the max_messages bound terminated it (no infinite loop)
+
+
+def test_scheduler_region_wrap_repeats():
+    """SC1: with a region [200,500], playback wraps the snippet on repeat (NOT a rewind to 0).
+
+    The region branch wraps the cursor only AFTER it passes ``t_out`` — it does not auto-seek
+    into the region on the first pass. So the realistic flow (the one the 19-03 panel drives) is
+    to seek to the in-bound first, then play; the run then stays inside the region and repeats.
+    """
+    items = _items([i * 100 for i in range(10)])  # t_ns 0,100,...,900
+    recorded = []
+    # Cap at 10 publishes so we observe ≥2 passes through the 4-item region then stop.
+    r = Replayer(items, recorded.append, sleep=lambda s: None, loop=False, max_messages=10)
+    r.set_loop_region(200, 500)
+    r.seek(200)  # the panel seeks to t_in when enabling region-loop (offset == t_in, t0==0)
+    r.play()
+    r.run()
+
+    # Every published item is inside the region [200..500]; the snippet repeats (never t_ns 0).
+    published_t = [it.t_ns for it in recorded]
+    assert all(200 <= t <= 500 for t in published_t), published_t
+    assert 0 not in published_t  # NOT a whole-bag rewind to index 0
+    # The region's four items {200,300,400,500} cycle in order across the passes.
+    assert published_t[:4] == [200, 300, 400, 500]
+    assert published_t[4] == 200  # wrapped back to the in-bound, not to 0
+
+
+def test_scheduler_region_plus_max_messages_bound_wins_done():
+    """W4: a region + a max_messages bound stops at DONE on the bound — the bound beats the wrap."""
+    items = _items([i * 100 for i in range(10)])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, max_messages=3)
+    r.set_loop_region(200, 800)
+    r.play()
+    r.run()
+
+    assert len(recorded) == 3  # exactly the bound — the region wrap did not defeat it
+    assert r.state is State.DONE
+
+
+def test_scheduler_clear_region_restores_whole_bag_loop():
+    """clear_loop_region restores the EXACT whole-bag loop=True behavior (index-0 rewind)."""
+    n = 4
+    items = _items([i * 100 for i in range(n)])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, loop=True, max_messages=2 * n)
+    r.set_loop_region(100, 200)
+    r.clear_loop_region()  # back to whole-bag loop
+    r.play()
+    r.run()
+
+    # Whole-bag loop=True + max=2*n: the full stream republishes from index 0 (NOT the region).
+    assert [it.t_ns for it in recorded] == [0, 100, 200, 300, 0, 100, 200, 300]
+
+
+def test_scheduler_clear_region_restores_no_loop_done():
+    """clear_loop_region with loop=False restores the clean whole-bag DONE at end-of-stream."""
+    items = _items([0, 100, 200])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, loop=False)
+    r.set_loop_region(0, 100)
+    r.clear_loop_region()
+    r.play()
+    r.run()
+
+    assert [it.t_ns for it in recorded] == [0, 100, 200]  # whole bag once, then DONE
+    assert r.state is State.DONE
+
+
+def test_scheduler_region_precedence_over_whole_bag_loop():
+    """A region wins over whole-bag loop=True: the cursor wraps to the in-index, NOT index 0."""
+    items = _items([i * 100 for i in range(10)])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, loop=True, max_messages=10)
+    r.set_loop_region(300, 500)
+    r.seek(300)  # seek into the region first (the panel's flow)
+    r.play()
+    r.run()
+
+    published_t = [it.t_ns for it in recorded]
+    assert all(300 <= t <= 500 for t in published_t), published_t
+    assert 0 not in published_t  # the region wins; no whole-bag rewind to 0
+    assert published_t[:3] == [300, 400, 500]
+    assert published_t[3] == 300  # wrapped to the in-bound
+
+
+def test_scheduler_region_in_bound_past_end_done():
+    """An in-bound past the last t_ns resolves to DONE on wrap — no infinite no-publish loop."""
+    items = _items([0, 100, 200, 300])  # last t_ns is 300
+    recorded = []
+    # in-bound 1000 is past the end; out-bound 2000 keeps the region "active" until the wrap.
+    r = Replayer(items, recorded.append, sleep=lambda s: None, max_messages=100)
+    r.set_loop_region(1000, 2000)
+    r.play()
+    r.run()
+
+    # Nothing is in [1000,2000], so the whole stream plays once, then the wrap scan finds no
+    # item at/after 1000 -> cursor == len -> DONE (not an infinite empty loop).
+    assert [it.t_ns for it in recorded] == [0, 100, 200, 300]
+    assert r.state is State.DONE
+
+
+# --------------------------------------------------------------------------- #
 # cli — the thin rosbagger-replay CLI (Plan 03), via typer's CliRunner (ENV=offline)
 # --------------------------------------------------------------------------- #
 #

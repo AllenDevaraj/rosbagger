@@ -134,6 +134,12 @@ class Replayer:
         self._duration = duration
         self._cursor = 0
         self._state = State.PAUSED
+        # In/out region loop (Phase 19, REP-03) — ABSOLUTE t_ns bounds (None = no region). When
+        # BOTH are set, run() wraps the cursor from the item past _loop_out_ns back to the first
+        # item at/after _loop_in_ns (a snippet on repeat), DISTINCT from the whole-bag _loop
+        # (which rewinds to index 0). Absolute t_ns so it shares position_fraction's basis.
+        self._loop_in_ns: int | None = None
+        self._loop_out_ns: int | None = None
 
     # --- introspection (read-only) ---
     @property
@@ -186,6 +192,18 @@ class Replayer:
         with self._lock:
             self._loop = bool(value)
         self._wake.set()
+
+    @property
+    def loop_region(self) -> tuple[int, int] | None:
+        """The active loop region as ``(in_ns, out_ns)`` absolute t_ns, or ``None`` (Phase 19).
+
+        Lock-free single read (the setters always set/clear both bounds together, so this is a
+        both-or-neither check). When a region is set, ``run()`` wraps a snippet on repeat
+        instead of reaching the whole-bag end; see :meth:`set_loop_region`.
+        """
+        if self._loop_in_ns is not None and self._loop_out_ns is not None:
+            return (self._loop_in_ns, self._loop_out_ns)
+        return None
 
     # --- pacing wait (interruptible default — Phase 18) ---
     def _interruptible_sleep(self, seconds: float) -> None:
@@ -250,6 +268,33 @@ class Replayer:
                 (i for i, it in enumerate(self._items) if it.t_ns >= target),
                 len(self._items),
             )
+        self._wake.set()
+
+    # --- region loop (Phase 19, REP-03); lock-guarded + wake, the Phase-18 contract ---
+    def set_loop_region(self, in_ns: int, out_ns: int) -> None:
+        """Set the in/out loop region to ABSOLUTE t_ns bounds (a snippet to repeat, D-09 / REP-03).
+
+        Normalizes so the lower value is the in-bound (``set_loop_region(500, 200)`` ==
+        ``set_loop_region(200, 500)``). When a region is set, ``run()`` wraps the cursor from the
+        item past ``out_ns`` back to the first item at/after ``in_ns`` — DISTINCT from the
+        whole-bag :attr:`loop` (index-0 rewind), and taking PRECEDENCE over it when both are on.
+        Lock-guarded + wakes the pacing wait so a region set WHILE ``run()`` executes on another
+        thread is honored at the next advance with no data race (the Phase-18 contract).
+        """
+        lo, hi = (in_ns, out_ns) if in_ns <= out_ns else (out_ns, in_ns)
+        with self._lock:
+            self._loop_in_ns = lo
+            self._loop_out_ns = hi
+        self._wake.set()
+
+    def clear_loop_region(self) -> None:
+        """Clear the loop region; ``run()`` reverts to the whole-bag loop/DONE branch (Phase 19).
+
+        Lock-guarded + wakes (the Phase-18 contract) so clearing mid-run is race-free.
+        """
+        with self._lock:
+            self._loop_in_ns = None
+            self._loop_out_ns = None
         self._wake.set()
 
     # --- the drive loop (D-08 pacing + D-09 step/loop/DONE + WR-01/WR-02 bound, W4 ordering) ---
@@ -345,7 +390,27 @@ class Replayer:
                 if stepping:
                     self._state = State.PAUSED  # step = one-then-pause (D-09)
                     return
-                if self._cursor >= len(self._items):
+                # Region loop (Phase 19) takes PRECEDENCE over the whole-bag _loop when a region
+                # is set (a snippet is the more specific intent), but the bound guards above still
+                # win over BOTH (W4 — DONE/bound beats any wrap). When NO region is set the
+                # existing whole-bag _loop / DONE branch is UNCHANGED.
+                if self._loop_in_ns is not None and self._loop_out_ns is not None:
+                    # Wrap when we ran off the end OR the next item is past the region's out-bound.
+                    if (
+                        self._cursor >= len(self._items)
+                        or self._items[self._cursor].t_ns > self._loop_out_ns
+                    ):
+                        # Jump back to the first item at/after the in-bound (the same scan seek
+                        # uses). An in-bound past the end lands cursor == len -> DONE, so a region
+                        # whose in-bound is past the stream never spins as a no-publish loop.
+                        self._cursor = next(
+                            (i for i, it in enumerate(self._items) if it.t_ns >= self._loop_in_ns),
+                            len(self._items),
+                        )
+                        if self._cursor >= len(self._items):
+                            self._state = State.DONE
+                    # else: keep playing forward toward the out-bound.
+                elif self._cursor >= len(self._items):
                     if self._loop:
                         # loop restart (D-09): rewind to index 0, NOT the last seek target (WR-02).
                         self._cursor = 0
