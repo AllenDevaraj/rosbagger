@@ -4,8 +4,8 @@ milestone: v0.5
 milestone_name: Replay Playback System
 status: executing
 stopped_at: Completed 16-03-PLAN.md (PHASE 16 COMPLETE)
-last_updated: "2026-05-29T08:48:39.475Z"
-last_activity: 2026-05-29 -- Phase 21 execution started
+last_updated: "2026-05-29T20:31:56.192Z"
+last_activity: 2026-05-29 -- Quick task 260529-k6m: fixed desktop live replay/record drive-worker GC (Play published nothing)
 progress:
   total_phases: 21
   completed_phases: 21
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 21 (replay-cli-parity-flags) — EXECUTING
 Plan: 1 of 2
 Status: Executing Phase 21
-Last activity: 2026-05-29 -- Phase 21 execution started
+Last activity: 2026-05-29 -- Quick task 260529-k6m: fixed desktop live replay/record drive-worker GC (Play published nothing)
 
 Progress: [██████████] 100%
 
@@ -254,6 +254,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 260525-is6 | Query panel: offload query() onto BlockingWorker thread (P1) + QAbstractTableModel/QTableView rendering (P2) | 2026-05-25 | 9b4e142..da65d96 | [260525-is6-query-panel-threaded-modelview](./quick/260525-is6-query-panel-threaded-modelview/) |
 | 260525-kj0 | Query panel: vertical QSplitter for resizable regions + accessible/error-styled status live region | 2026-05-25 | da5a94f..9d272cc | [260525-kj0-query-panel-layout-a11y](./quick/260525-kj0-query-panel-layout-a11y/) |
 | 260528-3w6 | Replay panel: thread MainWindow's ROS2_HUMBLE typestore into load_items so typestore-less ROS 2 sqlite3 bags (real rosbag2 recordings) replay instead of raising "no type definitions" | 2026-05-28 | 23017f4..b504ac6 | [260528-3w6-fix-desktop-replay-panel-thread-the-wind](./quick/260528-3w6-fix-desktop-replay-panel-thread-the-wind/) |
+| 260529-k6m | Desktop live replay/record drives were a no-op: keep the BlockingWorker ref (it was dropped into `_` and GC'd before `thread.started→worker.run` fired) so Play actually publishes and record discovers/captures; also made the live replay test exercise Play (click() vs a dropped coordinate click) | 2026-05-29 | d307d71 | [260529-k6m-replay-record-worker-gc-fix](./quick/260529-k6m-replay-record-worker-gc-fix/) |
 
 ## Deferred Items
 
