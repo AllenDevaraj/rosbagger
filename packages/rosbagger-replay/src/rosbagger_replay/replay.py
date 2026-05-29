@@ -36,7 +36,7 @@ from __future__ import annotations
 import contextlib
 
 
-def build_publish_sink(node):
+def build_publish_sink(node, *, publish_clock: bool = False, static_topics=frozenset()):
     """Build the single rclpy publish sink + its source-of-truth count dict (D-09a).
 
     This is the ONE reusable publish-mechanics function shared by BOTH ``replay()``
@@ -52,20 +52,54 @@ def build_publish_sink(node):
     ``rosbagger_replay`` stays ROS-free; this function is only ever called behind the
     package front door's ``_require_ros()`` guard.
 
+    Phase-20 RViz fidelity (REP-04) — two OPT-IN, keyword-only behaviors, DEFAULT OFF
+    (so ``build_publish_sink(node)`` and its existing 2-tuple unpacking are byte-for-byte
+    unchanged):
+
+    * ``publish_clock=True`` — also publish ``rosgraph_msgs/msg/Clock`` on ``/clock`` once
+      per published item, carrying that item's bag time (``clock_stamp_ns(item.t_ns)``), so
+      downstream ``use_sim_time`` nodes (incl. RViz) track bag time instead of wall-clock.
+      The Clock class + the ``/clock`` publisher are resolved ONCE (captured in the closure),
+      never per-item. The ``get_message`` import stays lazy (offline invariant).
+    * ``static_topics`` (a set of topic names, e.g. ``{"/tf_static"}``) — feed each published
+      item to a :class:`~rosbagger_replay.fidelity.StaticTracker`, retaining the latest message
+      per static (latched / ``transient_local``) topic. After a seek a caller invokes
+      :func:`republish_static` to re-push the tracked set through THIS sink so a fresh
+      subscriber re-primes its scene (the concrete fix for the Phase-18 backward-scrub
+      limitation). This is a publish-path concern layered around seek — the pure scheduler is
+      untouched.
+
     Args:
         node: an initialized ``rclpy`` node used to create the per-topic publishers.
+        publish_clock: when ``True``, publish ``/clock`` per item (default ``False``).
+        static_topics: topic names to track for static re-publish (default empty = off).
 
     Returns:
         A ``(sink, published)`` pair where ``sink(item) -> None`` is the publish
         closure the :class:`Replayer` drives and ``published`` is the ``{"n": 0}``
-        count dict (the WR-07 source-of-truth published-message counter).
+        count dict (the WR-07 source-of-truth published-message counter). When
+        ``static_topics`` is set, the :class:`StaticTracker` is reachable as
+        ``sink.tracker`` (a back-compatible attribute — the 2-tuple return is unchanged so
+        both existing ``sink, published = build_publish_sink(node)`` call sites still work);
+        :func:`republish_static` reads it after a seek.
     """
     from rclpy.serialization import deserialize_message
     from rosidl_runtime_py.utilities import get_message
 
+    from .fidelity import StaticTracker, clock_stamp_ns
+
     published = {"n": 0}
     # topic -> (msg_cls, publisher); built lazily on first sight of each topic.
     pubs: dict[str, tuple] = {}
+
+    # Phase-20 opt-ins, both off by default. The StaticTracker is pure (20-01); the /clock
+    # publisher + Clock class are resolved ONCE here (never per-item — Pitfall C publisher churn).
+    tracker = StaticTracker(static_topics) if static_topics else None
+    clock_pub = None
+    clock_cls = None
+    if publish_clock:
+        clock_cls = get_message("rosgraph_msgs/msg/Clock")
+        clock_pub = node.create_publisher(clock_cls, "/clock", 10)
 
     def sink(item) -> None:
         if item.topic not in pubs:
@@ -83,8 +117,39 @@ def build_publish_sink(node):
         # or dropped a message, this counter and the scheduler's bound would need to be
         # reconciled (the bound would over-run); they agree only under the one-fire coupling.
         published["n"] += 1
+        # Phase-20: record static-topic state + emit /clock (both no-ops when opted out).
+        if tracker is not None:
+            tracker.record(item)
+        if clock_pub is not None:
+            cmsg = clock_cls()
+            cmsg.clock.sec, cmsg.clock.nanosec = clock_stamp_ns(item.t_ns)
+            clock_pub.publish(cmsg)
 
+    # Expose the tracker on the sink (back-compatible: the 2-tuple return is unchanged, so the
+    # existing `sink, published = build_publish_sink(node)` unpackings keep working). A caller
+    # that opted into static_topics reaches it via sink.tracker for republish_static after a seek.
+    sink.tracker = tracker  # type: ignore[attr-defined]
     return sink, published
+
+
+def republish_static(sink) -> int:
+    """Re-push a sink's tracked static items through it (call AFTER a seek) — returns the count.
+
+    Reads the :class:`~rosbagger_replay.fidelity.StaticTracker` attached to ``sink`` by
+    :func:`build_publish_sink` (``sink.tracker``); for each tracked latest static item, calls
+    ``sink(item)`` so a fresh subscriber re-primes its scene after a replay seek jumped past the
+    one-shot latched publish (the Phase-18 backward-scrub fidelity fix). A no-op (returns ``0``)
+    when the sink has no tracker (static re-publish not enabled). The pure scheduler is NOT
+    involved — this is a publish-path concern layered around seek by the caller (the desktop
+    panel's ``_on_seeked`` in 20-03).
+    """
+    tracker = getattr(sink, "tracker", None)
+    if tracker is None:
+        return 0
+    items = tracker.republish_items()
+    for item in items:
+        sink(item)
+    return len(items)
 
 
 def replay(

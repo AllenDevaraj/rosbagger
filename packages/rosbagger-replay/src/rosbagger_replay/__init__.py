@@ -48,6 +48,7 @@ __all__ = [
     "load_items",
     "replay",
     "replay_bag",
+    "republish_static",
 ]
 
 
@@ -100,6 +101,22 @@ def build_publish_sink(*args: object, **kwargs: object) -> object:
     from .replay import build_publish_sink as _build_publish_sink
 
     return _build_publish_sink(*args, **kwargs)
+
+
+def republish_static(*args: object, **kwargs: object) -> object:
+    """Re-push a sink's tracked static items after a seek (Phase-20 RViz fidelity, REP-04).
+
+    Lazy front door over :func:`rosbagger_replay.replay.republish_static`: re-publishes the
+    latest static-topic messages a :func:`build_publish_sink` (with ``static_topics``) tracked,
+    so a fresh subscriber re-primes its scene after a replay seek. ``republish_static`` itself
+    only drives the given sink (it imports no ROS), but it lives in ``.replay`` (which does the
+    lazy rclpy import for the sink), so it is exposed through the same lazy front door + guard
+    to keep ``import rosbagger_replay`` ROS-free.
+    """
+    _require_ros()
+    from .replay import republish_static as _republish_static
+
+    return _republish_static(*args, **kwargs)
 
 
 # Submodule-shadow-proof alias to the lazy front-door FUNCTION above.
