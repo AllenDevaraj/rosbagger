@@ -14,7 +14,19 @@ toggle an objectName instead of writing inline QSS (D-03 anti-pattern).
 
 from __future__ import annotations
 
-from .tokens import Tokens
+from .tokens import DARK, Tokens
+
+
+def region_colors(t: Tokens = DARK) -> tuple[str, str]:
+    """The replay loop-region (fill, handle) baked sRGB hex for a palette (Phase 19).
+
+    The ``Scrubber`` paints its region band + handles with a ``QPainter`` (not QSS), so it
+    cannot read them from the stylesheet — it resolves them through THIS accessor instead, so
+    the values still live in the token module (D-03: no inline color in the widget). Defaults
+    to the ``DARK`` palette (the app's default theme); a future theme-aware Scrubber can pass
+    the active ``Tokens``.
+    """
+    return (t.region_fill, t.region_handle)
 
 
 def build_qss(t: Tokens) -> str:

@@ -40,6 +40,11 @@ class Tokens:
     accent: str
     error: str
     border: str
+    # Replay loop-region overlay (Phase 19): the shaded snippet band + its two In/Out handle
+    # glyphs on the Scrubber timeline. Baked sRGB (authored in OKLCH); the band's translucency
+    # is applied in the painter (QColor.setAlpha), so these stay opaque #rrggbb here.
+    region_fill: str
+    region_handle: str
     # Spacing + shape (px).
     space_sm: int
     space_md: int
@@ -60,6 +65,8 @@ DARK = Tokens(
     accent="#5b9dd6",  # oklch(0.68 0.10 245) — restrained blue selection/links
     error="#e06c75",  # oklch(0.66 0.16 22)  — single warm-red semantic error
     border="#34373d",  # oklch(0.31 0.006 260) — hairline dividers / gridlines
+    region_fill="#5b9dd6",  # oklch(0.68 0.10 245) — accent-family band (alpha applied in painter)
+    region_handle="#7fb8e6",  # oklch(0.76 0.10 245) — brighter accent for the In/Out handle bars
     space_sm=4,
     space_md=8,
     radius=4,
@@ -77,6 +84,8 @@ LIGHT = Tokens(
     accent="#2f6fb0",  # oklch(0.52 0.12 250) — deeper blue accent for light-field contrast
     error="#c0392b",  # oklch(0.52 0.17 27)  — darker red error for light-field contrast
     border="#d8dbdf",  # oklch(0.88 0.004 260) — hairline dividers / gridlines
+    region_fill="#2f6fb0",  # oklch(0.52 0.12 250) — accent-family band (alpha applied in painter)
+    region_handle="#1f5b96",  # oklch(0.45 0.12 250) — deeper accent handle bars for light field
     space_sm=4,
     space_md=8,
     radius=4,

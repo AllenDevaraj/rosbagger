@@ -1451,3 +1451,122 @@ def test_replay_panel_threads_typestore_into_load_items(qtbot, tmp_path: Path, m
         "replay panel did not thread window.default_typestore into load_items"
     )
     assert captured["kwargs"]["default_typestore"] is not None
+
+
+# --------------------------------------------------------------------------- #
+# Scrubber loop-region (Phase 19, REP-03 / SC2): dual In/Out handles + shaded
+# region band. Region markable programmatically (panel Set-In/Out buttons,
+# silent) AND by a user handle drag (emits region_changed). The region/handle
+# colours come from theme tokens (region_fill / region_handle) — no inline hex.
+# --------------------------------------------------------------------------- #
+
+
+def test_tokens_have_region_fields() -> None:
+    """DARK/LIGHT carry region_fill/region_handle and qss surfaces them (no inline widget hex)."""
+    from rosbagger_desktop.theme.qss import region_colors
+    from rosbagger_desktop.theme.tokens import DARK, LIGHT
+
+    for tok in (DARK, LIGHT):
+        for value in (tok.region_fill, tok.region_handle):
+            assert isinstance(value, str) and value.startswith("#") and len(value) == 7, value
+    # The accessor returns the active palette's (fill, handle) so the widget never inlines hex.
+    assert region_colors(DARK) == (DARK.region_fill, DARK.region_handle)
+    assert region_colors(LIGHT) == (LIGHT.region_fill, LIGHT.region_handle)
+
+
+def test_scrubber_set_and_clear_loop_region(qtbot) -> None:
+    """set_loop_region normalizes in<=out + clamps; loop_region reads back; clear -> None."""
+    from rosbagger_desktop.widgets import Scrubber
+
+    scrubber = Scrubber()
+    qtbot.addWidget(scrubber)
+
+    assert scrubber.loop_region is None  # no region by default
+
+    scrubber.set_loop_region(0.2, 0.6)
+    assert scrubber.loop_region == (pytest.approx(0.2), pytest.approx(0.6))
+
+    scrubber.set_loop_region(0.6, 0.2)  # reversed -> normalized to (0.2, 0.6)
+    assert scrubber.loop_region == (pytest.approx(0.2), pytest.approx(0.6))
+
+    scrubber.set_loop_region(-0.5, 1.5)  # out-of-range -> clamped to (0.0, 1.0)
+    assert scrubber.loop_region == (pytest.approx(0.0), pytest.approx(1.0))
+
+    scrubber.clear_loop_region()
+    assert scrubber.loop_region is None
+
+
+def test_scrubber_programmatic_set_does_not_emit_region_changed(qtbot) -> None:
+    """A programmatic set_loop_region/clear_loop_region is SILENT — only a user drag emits."""
+    from rosbagger_desktop.widgets import Scrubber
+
+    scrubber = Scrubber()
+    qtbot.addWidget(scrubber)
+
+    emitted: list[tuple[float, float]] = []
+    scrubber.region_changed.connect(lambda a, b: emitted.append((a, b)))
+
+    scrubber.set_loop_region(0.1, 0.9)
+    scrubber.clear_loop_region()
+    assert emitted == [], "programmatic region set/clear must not emit region_changed"
+
+
+def test_scrubber_handle_drag_emits_region_changed(qtbot) -> None:
+    """SC2: dragging a handle updates that bound (clamped, in<=out) and emits region_changed."""
+    from rosbagger_desktop.widgets import Scrubber
+
+    scrubber = Scrubber()
+    qtbot.addWidget(scrubber)
+
+    emitted: list[tuple[float, float]] = []
+    scrubber.region_changed.connect(lambda a, b: emitted.append((a, b)))
+
+    scrubber.set_loop_region(0.2, 0.6)
+    emitted.clear()  # ignore the programmatic set (it is silent anyway)
+
+    # Drag the OUT handle right to 0.8 — IN unchanged, region_changed fires with (0.2, 0.8).
+    scrubber._update_drag_handle("out", 0.8)
+    assert scrubber.loop_region == (pytest.approx(0.2), pytest.approx(0.8))
+    assert emitted[-1] == (pytest.approx(0.2), pytest.approx(0.8))
+
+    # Drag the IN handle PAST out (0.95) — clamped so in<=out (lands at the out bound, 0.8).
+    scrubber._update_drag_handle("in", 0.95)
+    in_frac, out_frac = scrubber.loop_region
+    assert in_frac <= out_frac
+    assert in_frac == pytest.approx(0.8)
+
+
+def test_scrubber_click_far_from_handle_falls_through_to_seek(qtbot) -> None:
+    """A press far from any handle is NOT a region grab — the playhead seek path is preserved."""
+    from rosbagger_desktop.widgets import Scrubber
+
+    scrubber = Scrubber()
+    qtbot.addWidget(scrubber)
+    scrubber.resize(200, 30)
+
+    # With a region near the left edge, a hit-test far to the right finds no handle.
+    scrubber.set_loop_region(0.05, 0.10)
+    assert scrubber._handle_at(190) is None  # far right -> no handle -> falls through to seek
+    # And a press near the OUT handle's pixel DOES grab it.
+    width = max(1, scrubber.width() - 1)
+    assert scrubber._handle_at(round(0.10 * width)) == "out"
+
+    # The base playhead path still emits seeked on a programmatic-free value change.
+    seeked: list[float] = []
+    scrubber.seeked.connect(seeked.append)
+    scrubber.setValue(500)  # a user-style value change (not _suppress_emit) -> seeked
+    assert seeked and seeked[-1] == pytest.approx(0.5)
+
+
+def test_scrubber_paint_with_region_does_not_crash(qtbot) -> None:
+    """paintEvent with a region set draws the band + two handles without raising (token colours)."""
+    from rosbagger_desktop.widgets import Scrubber
+
+    scrubber = Scrubber()
+    qtbot.addWidget(scrubber)
+    scrubber.resize(200, 30)
+    scrubber.set_loop_region(0.25, 0.75)
+    scrubber.show()
+    scrubber.repaint()  # force a synchronous paintEvent — must not raise
+    # Sanity: still reads back the region after a paint.
+    assert scrubber.loop_region == (pytest.approx(0.25), pytest.approx(0.75))
