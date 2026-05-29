@@ -45,7 +45,7 @@ Turn replay from a fire-and-forget publisher into a real playback system: a live
 - [x] **Phase 18: Replay live scrubbing & thread-safe transport** - make the pure `Replayer` safe to control mid-play (thread-safe command channel) so the scrubber drags live and the playhead tracks in real time (completed 2026-05-29)
 - [x] **Phase 19: Replay snippet loop & advanced controls panel** - in/out region loop in the scheduler + dual-handle/Set-In-Out Scrubber, housed in a collapsible side sub-panel inside the Replay tab (completed 2026-05-29)
 - [x] **Phase 20: Replay RViz fidelity (clock + static republish)** - publish `/clock` for `use_sim_time` and re-emit latched/`transient_local` + `/tf_static` after a seek so RViz re-primes instead of layering stale state (completed 2026-05-29)
-- [ ] **Phase 21: Replay CLI parity flags** - close the `ros2 bag play` gap feasible in our publish model: `--start-paused`, `--remap`, `--delay`, `--clock`, bounded region `[in,out]`
+- [x] **Phase 21: Replay CLI parity flags** - close the `ros2 bag play` gap feasible in our publish model: `--start-paused`, `--remap`, `--delay`, `--clock`, bounded region `[in,out]` (completed 2026-05-29)
 
 ## Phase Details
 
@@ -562,7 +562,7 @@ Plans:
   3. Deferred runtime-service controls are documented as out-of-scope (not silently missing)
   4. Offline/Qt-free guard green; CLI stays thin; full headless suite passes at ≥80%
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 **Wave 1**
@@ -571,4 +571,4 @@ Plans:
 
 **Wave 2** *(blocked on 21-01)*
 
-- [ ] 21-02-PLAN.md — CLI surface: add --clock/--delay/--remap(old:=new)/--start-paused(-p)/--region-start/--region-end to cli.py, parse remap, forward to replay_bag, document the deferred runtime ROS services + single-pass region stop as out-of-scope; CliRunner unit tests; phase gate -> SC1/SC2/SC3/SC4
+- [x] 21-02-PLAN.md — CLI surface: add --clock/--delay/--remap(old:=new)/--start-paused(-p)/--region-start/--region-end to cli.py, parse remap, forward to replay_bag, document the deferred runtime ROS services + single-pass region stop as out-of-scope; CliRunner unit tests; phase gate -> SC1/SC2/SC3/SC4
