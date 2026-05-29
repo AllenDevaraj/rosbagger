@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import contextlib
 
-from PySide6.QtCore import QThread
+from PySide6.QtCore import QThread, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -82,6 +82,14 @@ class ReplayPanel(QWidget):
         self._item_count: int = 0
         # Kept drive-thread ref (Pitfall 2 — the GC must not collect a live thread).
         self._drive_thread: QThread | None = None
+        # Live-playhead poll (Phase 18 / SC2): a UI-thread QTimer that, while the drive worker
+        # runs Replayer.run() on its thread, periodically reads the now-thread-safe
+        # position_fraction and advances the scrubber playhead so the timeline tracks playback
+        # in real time (previously the playhead only updated at DONE). Started in _start_drive,
+        # stopped in _on_drive_finished AND closeEvent. ~60ms ≈ 16 fps — smooth without churn.
+        self._position_timer = QTimer(self)
+        self._position_timer.setInterval(60)
+        self._position_timer.timeout.connect(self._update_position)
 
         # Status line as an accessibly-named region (D-02 a11y parity); a stable objectName lets
         # the shared status helper restore it after an error toggle and the theme style it.
@@ -170,7 +178,8 @@ class ReplayPanel(QWidget):
         self._load_markers()
 
     def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
-        """Stop the drive thread + tear down the panel's own rclpy context (Pitfalls 2 / WR-05)."""
+        """Stop the playhead timer + drive thread + tear down the rclpy context (WR-05)."""
+        self._position_timer.stop()  # Phase 18: never fire the poll after teardown
         stop_thread(self._drive_thread)
         self._teardown_transport()
         super().closeEvent(event)
@@ -375,21 +384,12 @@ class ReplayPanel(QWidget):
         REJECTED with a teaching status (never silently coerced to 1.0). The scheduler's
         ``set_rate`` is the single validator (it raises ``ValueError`` on ``<= 0``).
 
-        CR-02: the ``Replayer`` is a non-thread-safe state machine; ``run()`` reads ``self._rate``
-        every scheduler iteration on the worker thread, so mutating it from the UI thread
-        mid-drive is an unsynchronized read/write — the exact race the Play/Step/seek guard was
-        added to prevent. Guard this the same way (only mutate between run segments). The rate
-        input is also disabled while ``_drive_running`` (belt-and-suspenders), so this guard is
-        the second line of defence against a queued/late ``returnPressed``.
+        Phase 18 (REP-02): ``set_rate`` is now LIVE — the rate can change while the drive worker
+        runs. 18-01 made ``Replayer.set_rate`` thread-safe (lock-guarded mutation + a wake so the
+        change takes effect at the next paced gap), so the old "pause before changing the rate"
+        guard is gone and the rate input stays enabled throughout playback (see ``_start_drive``).
         """
         if self._replayer is None:
-            return
-        if self._drive_running():
-            set_status(
-                self._status,
-                "Pause before changing the rate (a play worker is running).",
-                is_error=True,
-            )
             return
         # WR-06: the SAME validate-or-reject contract the Play/Step build path uses
         # (_validated_rate) — both paths agree on the widget's contract, never a silent coerce.
@@ -402,19 +402,12 @@ class ReplayPanel(QWidget):
     def _apply_loop(self, checked: bool) -> None:
         """Forward the loop toggle to ``replayer.loop`` (D-14; wrap rewinds to 0, WR-02).
 
-        CR-02: ``run()`` reads ``self.loop`` at the end-of-stream branch on the worker thread, so
-        the UI thread must not write it mid-drive (same non-thread-safe-state-machine race as the
-        rate). Guard it like the other transport controls — ignore the toggle with a teaching
-        status while a drive worker runs. The checkbox is also disabled while ``_drive_running``.
+        Phase 18 (REP-02): the loop toggle is now LIVE. 18-01 made ``Replayer.loop`` a
+        lock-guarded property, so writing it from the UI thread while ``run()`` reads it at the
+        end-of-stream branch is race-free — the old "pause before toggling loop" guard is gone
+        and the checkbox stays enabled throughout playback (see ``_start_drive``).
         """
         if self._replayer is None:
-            return
-        if self._drive_running():
-            set_status(
-                self._status,
-                "Pause before toggling loop (a play worker is running).",
-                is_error=True,
-            )
             return
         self._replayer.loop = checked  # type: ignore[union-attr]
 
@@ -424,21 +417,29 @@ class ReplayPanel(QWidget):
         """A scrubber/marker seek maps a fraction onto ``replayer.seek`` (D-14, the only setter).
 
         ``seek`` is the ONLY position-setter: fraction → bag-relative nanoseconds. A
-        seek-past-end lands ``cursor == len(items)`` (a clean DONE). A seek while a drive
-        worker runs is ignored with a teaching status (the Replayer is non-thread-safe; only
-        mutate it between run segments — WR-06).
+        seek-past-end lands ``cursor == len(items)`` (a clean DONE).
+
+        Phase 18 (REP-02): seeking is now LIVE — the user can drag the scrubber back and forth
+        WHILE it plays. 18-01 made ``Replayer.seek`` thread-safe (lock-guarded jump + a wake +
+        the cursor-unchanged advance guard so a mid-publish seek is honored, not clobbered), so
+        the old "pause before seeking" guard is gone. HONESTY: a backward drag is a *jump to an
+        earlier timestamp + forward republish*, NOT a visual rewind — RViz (any live subscriber)
+        only ever renders what we publish from the seek point onward. The status says
+        "resuming forward" so the user never reads it as reverse playback. (Making a backward
+        scrub *look* right in RViz — re-publishing latched/static topics + ``/clock`` — is the
+        Phase-20 fidelity work, deliberately out of scope here.)
         """
-        if self._drive_running():
-            set_status(
-                self._status, "Pause before seeking (a play worker is running).", is_error=True
-            )
-            return
         if not self._ensure_transport():
             return
+        # Compare against the current playhead BEFORE the jump to detect a backward drag.
+        prev_fraction = self._replayer.position_fraction  # type: ignore[union-attr]
         t_offset_ns = int(fraction * self._bag_span_ns)
         self._replayer.seek(t_offset_ns)  # type: ignore[union-attr]
         self._update_position()
-        set_status(self._status, f"Seeked to {fraction * 100:.0f}% of the bag.")
+        if fraction < prev_fraction:
+            set_status(self._status, f"Seeking to {fraction * 100:.0f}% — resuming forward.")
+        else:
+            set_status(self._status, f"Seeked to {fraction * 100:.0f}% of the bag.")
 
     def _update_position(self) -> None:
         """Reflect the Replayer cursor onto the scrubber playhead (UI-thread helper).
@@ -512,12 +513,11 @@ class ReplayPanel(QWidget):
             replayer.run()  # type: ignore[union-attr]  # BLOCKING drive loop
             return None
 
-        # CR-02: the rate/loop controls mutate the non-thread-safe Replayer; disable them for
-        # the duration of the drive so a returnPressed/toggled can't race run() on the worker
-        # thread (mirrors the record panel's Start/Dismiss enable/disable). They are re-enabled
-        # on every drive outcome via _on_drive_finished (wired on on_finished).
-        self._rate_input.setEnabled(False)
-        self._loop_checkbox.setEnabled(False)
+        # Phase 18 (REP-02): rate/loop/seek are now LIVE — 18-01 made the Replayer thread-safe,
+        # so the controls stay ENABLED for the whole drive (no setEnabled(False) here, no
+        # re-enable in _on_drive_finished). Start the live-playhead poll so the scrubber tracks
+        # playback in real time; it is stopped in _on_drive_finished (every outcome) + closeEvent.
+        self._position_timer.start()
 
         worker = BlockingWorker(work, label="Replay failed")
         self._drive_thread, _ = run_on_thread(
@@ -525,7 +525,7 @@ class ReplayPanel(QWidget):
             worker,
             on_result=self._on_drive_done,
             on_failed=self._on_drive_failed,
-            on_finished=self._on_drive_finished,  # CR-01/CR-02: clear ref + re-enable controls
+            on_finished=self._on_drive_finished,  # clear ref + stop the live-playhead poll
         )
 
     def _on_drive_failed(self, message: str) -> None:
@@ -538,19 +538,19 @@ class ReplayPanel(QWidget):
         set_status(self._status, message, is_error=True)
 
     def _on_drive_finished(self) -> None:
-        """Drop the drive-thread ref + re-enable rate/loop controls when the worker finishes.
+        """Drop the drive-thread ref + stop the live-playhead poll when the worker finishes.
 
         CR-01: ``run_on_thread`` wires ``thread.finished → thread.deleteLater``, so once the
         worker finishes the underlying C++ ``QThread`` is destroyed; keeping the stale Python
         wrapper in ``self._drive_thread`` makes a later ``stop_thread``/``_drive_running`` probe
-        touch a deleted object. CR-02: re-enable the rate input + loop checkbox that
-        ``_start_drive`` disabled so they are mutable again between run segments. Connected via
-        ``on_finished`` (wired before the teardown chain), this runs on the UI thread on EVERY
-        drive outcome (result OR failure).
+        touch a deleted object. Phase 18: stop the live-playhead QTimer (the drive is over, so
+        the poll has nothing to track) — bounded start↔stop with ``_start_drive``. The rate/loop
+        controls are NOT re-enabled here because Phase 18 never disables them (they are live).
+        Connected via ``on_finished`` (wired before the teardown chain), this runs on the UI
+        thread on EVERY drive outcome (result OR failure).
         """
         self._drive_thread = None
-        self._rate_input.setEnabled(True)
-        self._loop_checkbox.setEnabled(True)
+        self._position_timer.stop()
 
     def _on_drive_done(self, _result: object) -> None:
         """Push the final playhead + a terminal status after the drive worker returns (UI thread).

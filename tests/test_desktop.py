@@ -574,24 +574,30 @@ def test_stop_thread_survives_deleted_qthread(qtbot) -> None:
 def test_replay_panel_close_after_finished_run_is_safe(qtbot) -> None:
     """CR-01: the replay panel's drive-thread ref is nulled on finish, so close is safe.
 
-    Directly exercises the ref-clearing slot (``_clear_drive_thread``, wired via ``on_finished``)
+    Directly exercises the ref-clearing slot (``_on_drive_finished``, wired via ``on_finished``)
     and then closes the panel. Pre-fix the stale ``_drive_thread`` wrapper survived a completed
     run and ``closeEvent`` → ``stop_thread`` touched the destroyed C++ object; post-fix the ref
     is ``None`` after finish and the (also-hardened) ``stop_thread`` makes close a no-op.
+
+    Phase 18 (REP-02): ``_on_drive_finished`` no longer re-enables rate/loop (they stay live
+    throughout the drive — never disabled) and now STOPS the live-playhead timer. Assert the
+    timer is stopped on finish; the controls are simply expected to remain enabled.
     """
     from rosbagger_desktop.panels.replay_panel import ReplayPanel
 
     panel = ReplayPanel()
     qtbot.addWidget(panel)
 
-    # Simulate a stale ref that a finished worker would have left, then the finish callback.
+    # Simulate a stale ref that a finished worker would have left + a running live-playhead
+    # timer (as _start_drive leaves it), then the finish callback.
     panel._drive_thread = object()  # type: ignore[assignment]  # stand-in stale handle
-    panel._rate_input.setEnabled(False)  # _start_drive disables these during a drive (CR-02)
-    panel._loop_checkbox.setEnabled(False)
+    panel._position_timer.start()
     panel._on_drive_finished()
     assert panel._drive_thread is None, "drive-thread ref was not cleared on finish (CR-01)"
-    assert panel._rate_input.isEnabled(), "rate input not re-enabled after drive (CR-02)"
-    assert panel._loop_checkbox.isEnabled(), "loop checkbox not re-enabled after drive (CR-02)"
+    assert not panel._position_timer.isActive(), "playhead timer not stopped on finish (Phase 18)"
+    # Phase 18: rate/loop are LIVE — never disabled, so they remain enabled after a drive.
+    assert panel._rate_input.isEnabled()
+    assert panel._loop_checkbox.isEnabled()
 
     # closeEvent must not raise even with no live transport / no thread.
     panel.close()
@@ -1160,50 +1166,132 @@ def test_main_window_builds_without_theme_manager_arg(qtbot) -> None:
     assert window.theme_action is not None, "no-arg window has no View theme action"
 
 
-def test_replay_rate_loop_guarded_while_drive_running(qtbot, monkeypatch) -> None:
-    """CR-02: rate/loop mutations are refused while a drive worker runs (no UI-thread race).
+def test_replay_rate_loop_seek_live_while_drive_running(qtbot, monkeypatch) -> None:
+    """Phase 18 (REP-02): rate/loop/seek apply LIVE while a drive worker runs — no "pause" gate.
 
-    The pure ``Replayer`` is a non-thread-safe state machine whose ``run()`` reads ``_rate`` and
-    ``loop`` on the worker thread; mutating them from the UI thread mid-drive is a data race.
-    With ``_drive_running()`` forced True and a sentinel replayer in place, ``_apply_rate`` /
-    ``_apply_loop`` must NOT touch the replayer and must show a teaching status — mirroring the
-    Play/Step/seek guard. (A real concurrent drive needs ROS; this isolates the guard logic.)
+    18-01 made the ``Replayer`` thread-safe (lock-guarded setters + a wake + the cursor-unchanged
+    advance guard), so the desktop no longer refuses mid-play control. With ``_drive_running()``
+    forced True and a sentinel replayer in place, ``_apply_rate`` / ``_apply_loop`` / ``_on_seeked``
+    MUST reach the replayer (the inverse of the old CR-02 guard) and must NOT show any "Pause
+    before …" teaching status. (A real concurrent drive needs ROS; this isolates the control
+    logic.) The rate input + loop checkbox also stay ENABLED throughout a drive (see
+    ``test_replay_controls_stay_enabled_during_drive``).
     """
     from rosbagger_desktop.panels.replay_panel import ReplayPanel
 
     class _Sentinel:
-        """Stand-in Replayer that records any mutation the guard should have blocked."""
+        """Stand-in Replayer that records the mutations the panel forwards while playing."""
 
         def __init__(self) -> None:
             self.loop = False
             self.rate_calls: list[float] = []
+            self.seek_calls: list[int] = []
+            self.position_fraction = 0.5
 
         def set_rate(self, rate: float) -> None:
             self.rate_calls.append(rate)
+
+        def seek(self, t_offset_ns: int) -> None:
+            self.seek_calls.append(t_offset_ns)
 
     panel = ReplayPanel()
     qtbot.addWidget(panel)
 
     sentinel = _Sentinel()
     panel._replayer = sentinel  # type: ignore[assignment]
+    panel._bag_span_ns = 1_000  # so a fraction maps to a concrete ns offset
+    panel._item_count = 10  # _update_position is a no-op when item_count == 0
     # Force the "a drive worker is running" condition without a real ROS thread.
     monkeypatch.setattr(panel, "_drive_running", lambda: True)
 
     panel._rate_input.setText("2.0")
     panel._apply_rate()
-    assert sentinel.rate_calls == [], "rate was mutated while a drive worker was running (CR-02)"
-    assert "Pause before changing the rate" in panel.status_label.text()
+    assert sentinel.rate_calls == [2.0], "rate did not apply LIVE while the drive worker ran"
+    assert "Pause before" not in panel.status_label.text()
 
     panel._apply_loop(True)
-    assert sentinel.loop is False, "loop was mutated while a drive worker was running (CR-02)"
-    assert "Pause before toggling loop" in panel.status_label.text()
+    assert sentinel.loop is True, "loop did not apply LIVE while the drive worker ran"
+    assert "Pause before" not in panel.status_label.text()
 
-    # Sanity: with no drive running the same calls DO apply (the guard is the only blocker).
-    monkeypatch.setattr(panel, "_drive_running", lambda: False)
-    panel._apply_rate()
-    panel._apply_loop(True)
-    assert sentinel.rate_calls == [2.0], "rate did not apply when no drive was running"
-    assert sentinel.loop is True, "loop did not apply when no drive was running"
+    # A forward seek applies live (no _ensure_transport rebuild — transport already exists).
+    panel._on_seeked(0.8)
+    assert sentinel.seek_calls == [800], "seek did not apply LIVE while the drive worker ran"
+    assert "Pause before" not in panel.status_label.text()
+
+
+def test_replay_backward_seek_status_says_resuming_forward(qtbot) -> None:
+    """Phase 18 (REP-02 / SC3): a backward drag honestly reports a forward resume, not a rewind.
+
+    A backward scrub is a JUMP to an earlier timestamp + forward republish — RViz only renders
+    what we publish from the seek point onward. ``_on_seeked`` compares the requested fraction to
+    the current playhead and, when seeking backward, sets a "resuming forward" status (never
+    implying reverse playback). A forward seek keeps the plain "Seeked to N%" status.
+    """
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    class _Sentinel:
+        def __init__(self) -> None:
+            self.position_fraction = 0.6  # current playhead at 60%
+            self.seek_calls: list[int] = []
+
+        def seek(self, t_offset_ns: int) -> None:
+            self.seek_calls.append(t_offset_ns)
+            # Reflect the jump so a subsequent read mirrors a real Replayer.
+            self.position_fraction = t_offset_ns / 1_000
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    sentinel = _Sentinel()
+    panel._replayer = sentinel  # type: ignore[assignment]
+    panel._bag_span_ns = 1_000
+    panel._item_count = 10
+
+    # Backward: from 60% to 20% — must say "resuming forward", never "rewind".
+    panel._on_seeked(0.2)
+    assert sentinel.seek_calls[-1] == 200
+    text = panel.status_label.text()
+    assert "resuming forward" in text
+    assert "rewind" not in text.lower()
+
+    # Forward: from 20% to 90% — the plain seeked status.
+    panel._on_seeked(0.9)
+    assert "resuming forward" not in panel.status_label.text()
+    assert "90%" in panel.status_label.text()
+
+
+def test_replay_controls_stay_enabled_during_drive(qtbot, monkeypatch) -> None:
+    """Phase 18 (REP-02 / SC2): _start_drive keeps rate/loop enabled and starts the playhead poll.
+
+    Pre-Phase-18 ``_start_drive`` disabled the rate input + loop checkbox for the drive's
+    duration (the CR-02 belt-and-suspenders for the non-thread-safe Replayer). Now that the
+    Replayer is thread-safe the controls stay live, and ``_start_drive`` starts the QTimer that
+    polls ``position_fraction`` so the playhead tracks playback. Stub ``run_on_thread`` so no
+    real thread/ROS is needed — we only assert the enable state + the timer is active.
+    """
+    import rosbagger_desktop.panels.replay_panel as rp
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    class _Replayer:
+        position_fraction = 0.0
+
+        def run(self) -> None:  # never actually called — run_on_thread is stubbed
+            pass
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel._replayer = _Replayer()  # type: ignore[assignment]
+    panel._item_count = 5
+
+    # Stub the thread launcher so _start_drive does not spawn a real QThread/worker.
+    monkeypatch.setattr(rp, "run_on_thread", lambda *a, **k: (object(), object()))
+
+    panel._start_drive()
+
+    assert panel._rate_input.isEnabled(), "rate input must stay enabled during a live drive"
+    assert panel._loop_checkbox.isEnabled(), "loop checkbox must stay enabled during a live drive"
+    assert panel._position_timer.isActive(), "playhead poll timer was not started by _start_drive"
+
+    panel._position_timer.stop()  # clean up so the timer does not fire after the test
 
 
 # ---------------------------------------------------------------------------
