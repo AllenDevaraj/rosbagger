@@ -535,12 +535,12 @@ Plans:
   3. Both behaviors are opt-in via the side sub-panel + matching CLI flags; defaults are unchanged (clock off)
   4. Offline/Qt-free guard green; `import rosbagger_replay` stays ROS-free; full headless suite passes at ≥80%
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 20-01-PLAN.md — Pure fidelity logic: `StaticTracker` (latest-per-static-topic, default `/tf_static`) + `clock_stamp_ns` time-split in a new stdlib-only `fidelity.py`, re-exported ROS-free -> SC2 (unit route), SC4
+- [x] 20-01-PLAN.md — Pure fidelity logic: `StaticTracker` (latest-per-static-topic, default `/tf_static`) + `clock_stamp_ns` time-split in a new stdlib-only `fidelity.py`, re-exported ROS-free -> SC2 (unit route), SC4
 
 **Wave 2** *(blocked on 20-01)*
 
