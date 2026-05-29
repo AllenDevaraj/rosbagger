@@ -495,11 +495,11 @@ Plans:
   3. A backward drag jumps to the earlier timestamp and resumes forward publishing, with a status line that communicates the jump (no claim of reverse playback)
   4. Offline/Qt-free guard green; `import rosbagger_replay` stays ROS-free; full headless suite passes at ≥80%
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 18-01-PLAN.md — Scheduler thread-safety (pure, ROS/Qt-free): threading.Lock + Event wake + interruptible default sleep + lock-guarded synchronous setters + run() critical-section restructure with the cursor-unchanged advance guard; threaded race unit test + full Phase-13 regression -> SC1
+- [x] 18-01-PLAN.md — Scheduler thread-safety (pure, ROS/Qt-free): threading.Lock + Event wake + interruptible default sleep + lock-guarded synchronous setters + run() critical-section restructure with the cursor-unchanged advance guard; threaded race unit test + full Phase-13 regression -> SC1
 
 **Wave 2** *(blocked on 18-01)*
 - [ ] 18-02-PLAN.md — Desktop live-scrub wiring (thin face): QTimer live playhead + remove the three mid-play guard branches + keep rate/loop enabled mid-play + backward-seek "resuming forward" status; headless pytest-qt tests + offline/Qt-free guard + phase gate -> SC2/SC3/SC4

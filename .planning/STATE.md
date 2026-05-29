@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.4
 milestone_name: Desktop revamp
-status: phase_executed_pending_human_verify
-stopped_at: Phase 17 — all 3 plans' automated tasks done; BLOCKED on 17-03 human visual checkpoint (real-window dark/light verify)
-last_updated: 2026-05-25T21:30:00.000Z
-last_activity: 2026-05-25
+status: executing
+stopped_at: Completed 16-03-PLAN.md (PHASE 16 COMPLETE)
+last_updated: "2026-05-29T02:35:36.474Z"
+last_activity: 2026-05-29 -- Phase 18 execution started
 progress:
-  total_phases: 16
-  completed_phases: 16
-  total_plans: 51
-  completed_plans: 50
-  percent: 98
+  total_phases: 21
+  completed_phases: 17
+  total_plans: 53
+  completed_plans: 51
+  percent: 81
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone v0.4 — Desktop revamp (Phase 17 executed; awaiting human visual sign-off)
+**Current focus:** Phase 18 — replay-live-scrubbing-and-thread-safe-transport
 
 ## Current Position
 
-Phase: 17
-Plan: 17-03 (final task is a blocking human-verify checkpoint)
-Status: All 3 plans' automated tasks complete + committed (505 passed, 84.74%, offline guard green, no inline color). BLOCKED on the 17-03 real-window visual checkpoint — launch `PYTHONPATH="" uv run rosbagger-desktop <bag>`, verify both themes + live toggle + persistence, then the phase can be verified/closed.
-Last activity: 2026-05-25
+Phase: 18 (replay-live-scrubbing-and-thread-safe-transport) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 18
+Last activity: 2026-05-29 -- Phase 18 execution started
 
 Progress: [██████████] 100%
 
