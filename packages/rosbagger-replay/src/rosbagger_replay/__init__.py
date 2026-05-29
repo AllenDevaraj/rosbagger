@@ -25,22 +25,26 @@ asserts a fresh interpreter that does ``import rosbagger_replay`` leaks no ``rcl
 from __future__ import annotations
 
 from .errors import NoMessagesToReplayError, RosNotAvailableError
+from .fidelity import StaticTracker, clock_stamp_ns
 from .scheduler import Replayer
 from .source import ReplayItem, load_items
 
 __version__ = "0.2.0"
 
 # Public API: the teaching capability errors, the pure raw-CDR source seam
-# (ReplayItem + load_items), the pure transport scheduler (Replayer), and the lazy
-# ROS-bound front door (replay / replay_bag — impl in .replay). Re-exporting the
-# errors / source / scheduler binds NO ROS — errors.py is stdlib-only, source.py
-# imports rosbags only (lazily inside load_items), and scheduler.py is stdlib-only.
+# (ReplayItem + load_items), the pure transport scheduler (Replayer), the pure RViz-fidelity
+# decision tier (StaticTracker + clock_stamp_ns, Phase 20), and the lazy ROS-bound front door
+# (replay / replay_bag — impl in .replay). Re-exporting errors / source / scheduler / fidelity
+# binds NO ROS — errors.py and fidelity.py are stdlib-only, source.py imports rosbags only
+# (lazily inside load_items), and scheduler.py is stdlib-only.
 __all__ = [
     "NoMessagesToReplayError",
     "ReplayItem",
     "Replayer",
     "RosNotAvailableError",
+    "StaticTracker",
     "build_publish_sink",
+    "clock_stamp_ns",
     "load_items",
     "replay",
     "replay_bag",

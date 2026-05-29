@@ -377,6 +377,19 @@ def test_import_replay_submodules_do_not_pull_ros():
     assert leaked == [], f"import rosbagger_replay submodules pulled in ROS modules: {leaked}"
 
 
+def test_import_replay_fidelity_does_not_pull_ros():
+    """`rosbagger_replay.fidelity` (StaticTracker + clock_stamp_ns) must NOT pull rclpy/rosbag2_py.
+
+    The Phase-20 RViz-fidelity DECISION tier is stdlib-only and operates on the rosbags-free
+    ReplayItem — the actual ``pub.publish()`` / ``Clock`` build is the live boundary in
+    ``replay.py``. So importing the fidelity module (and the symbols re-exported from the
+    front door) binds none of the ROS runtime, mirroring the scheduler/source guards: the
+    static-republish + clock-stamp logic stays ROS-free so SC2 has a deterministic CI proof.
+    """
+    leaked = _ros_modules_after_import("rosbagger_replay.fidelity")
+    assert leaked == [], f"import rosbagger_replay.fidelity pulled in ROS modules: {leaked}"
+
+
 def test_import_gui_does_not_pull_ros():
     """`import rosbagger_gui` / `.app` must NOT pull rclpy/rosbag2_py (the GUI offline invariant).
 
