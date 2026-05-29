@@ -37,6 +37,7 @@ final item wins over ``loop``'s wraparound (DONE wins over loop-reset, the W4 bo
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
 from enum import Enum
@@ -84,6 +85,21 @@ class Replayer:
         There is NO ``start`` index parameter (W3): :meth:`seek` is the single position
         control. The CLI's ``--start``/``--seek`` (seconds) maps to
         ``replayer.seek(int(start * 1e9))`` in Plan 03.
+
+    Thread-safety (Phase 18, REP-02):
+        :meth:`run` is meant to be driven on a worker thread while another thread (the
+        desktop UI thread) issues transport commands LIVE — seek / set_rate / pause / play /
+        step / ``loop=`` mid-playback. A ``threading.Lock`` guards the small mutate/advance
+        critical sections so the cursor's read-modify-write in :meth:`run` cannot race a
+        concurrent :meth:`seek` (the lost-update bug). The lock is NEVER held across the
+        ``sink`` publish or the inter-message wait, so a live control is never blocked behind
+        a slow publish or a long pacing gap. A ``threading.Event`` (``_wake``) makes the
+        DEFAULT pacing wait interruptible: a setter wakes it so the new command takes effect
+        promptly instead of after the full Δt. The control API stays fully SYNCHRONOUS —
+        ``seek()`` then reading ``cursor`` reflects the jump immediately, exactly as before —
+        so every Phase-13 single-threaded test is unaffected. The introspection reads
+        (``state`` / ``cursor`` / ``position_fraction`` / ``rate``) are single-attribute and
+        lock-free (atomic in CPython; acceptable for a UI poll).
     """
 
     def __init__(
@@ -92,7 +108,7 @@ class Replayer:
         sink: Callable[[object], None],
         *,
         clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], None] | None = None,
         rate: float = 1.0,
         loop: bool = False,
         max_messages: int | None = None,
@@ -103,9 +119,17 @@ class Replayer:
         self._items = items
         self._sink = sink
         self._clock = clock
-        self._sleep = sleep
+        # Thread-safety primitives (Phase 18): a lock guarding the cursor/state/rate
+        # mutate+advance critical sections, and a wake Event that makes the DEFAULT pacing
+        # wait interruptible (a setter sets it to cut a long inter-message gap short).
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        # Keep ``sleep`` injectable (the whole Phase-13 suite passes a recording sleep). Only
+        # when the caller does NOT override it does production get the interruptible default —
+        # so an injected recording sleep is still honored verbatim (T-18-01-C).
+        self._sleep = sleep if sleep is not None else self._interruptible_sleep
         self._rate = rate
-        self.loop = loop
+        self._loop = loop
         self._max_messages = max_messages
         self._duration = duration
         self._cursor = 0
@@ -146,24 +170,65 @@ class Replayer:
         """The current schedule scale (always ``> 0``)."""
         return self._rate
 
-    # --- the six controls (D-07) ---
+    @property
+    def loop(self) -> bool:
+        """Whether end-of-stream rewinds to index 0 (``True``) or reaches DONE (``False``).
+
+        A plain bool, but exposed as a property so the setter can mutate it under the lock +
+        wake the pacing wait (Phase 18) — a live ``replayer.loop = x`` toggle from the UI
+        thread is then race-free against ``run()``'s end-of-stream read, while
+        ``replayer.loop = x`` reads exactly like the former public attribute.
+        """
+        return self._loop
+
+    @loop.setter
+    def loop(self, value: bool) -> None:
+        with self._lock:
+            self._loop = bool(value)
+        self._wake.set()
+
+    # --- pacing wait (interruptible default — Phase 18) ---
+    def _interruptible_sleep(self, seconds: float) -> None:
+        """The DEFAULT inter-message wait: block up to ``seconds`` OR until a setter wakes us.
+
+        ``time.sleep`` would block the worker for the FULL inter-message Δt even if the UI
+        thread issued a pause/seek/rate change a millisecond in — the control would not take
+        effect until the gap elapsed. Waiting on ``self._wake`` instead lets any lock-guarded
+        setter (which calls ``self._wake.set()``) cut the wait short, so the command lands
+        promptly; ``run()`` then re-reads state after the wait and honors it. The flag is
+        CLEARED by ``run()`` under the lock at the top of each iteration (NOT here) so a setter
+        that fires during this wait — after that clear — reliably interrupts it; clearing here
+        instead would race the clear against the next iteration's pending set. An injected
+        ``sleep`` bypasses this entirely (T-18-01-C) — only the unset default is interruptible.
+        """
+        self._wake.wait(timeout=seconds)
+
+    # --- the six controls (D-07); all lock-guarded + wake the pacing wait (Phase 18) ---
     def play(self) -> None:
         """Resume publishing from the held cursor (-> PLAYING)."""
-        self._state = State.PLAYING
+        with self._lock:
+            self._state = State.PLAYING
+        self._wake.set()
 
     def pause(self) -> None:
         """Stop publishing but HOLD the cursor (-> PAUSED); a later play()+run() resumes."""
-        self._state = State.PAUSED
+        with self._lock:
+            self._state = State.PAUSED
+        self._wake.set()
 
     def step(self) -> None:
         """Arm a single-step: the next run() publishes EXACTLY one item then re-pauses (D-09)."""
-        self._state = State.STEPPING
+        with self._lock:
+            self._state = State.STEPPING
+        self._wake.set()
 
     def set_rate(self, x: float) -> None:
         """Set the schedule scale; ``x <= 0`` raises ValueError (no busy-wait / div-by-zero)."""
         if x <= 0:
             raise ValueError("rate must be > 0")
-        self._rate = x
+        with self._lock:
+            self._rate = x
+        self._wake.set()
 
     def seek(self, t_offset_ns: int) -> None:
         """Jump the cursor to the first item at/after a bag-relative time (D-09, W3).
@@ -173,13 +238,19 @@ class Replayer:
         WITHOUT publishing. Seeking past the last timestamp lands ``cursor == len(items)``
         (run() then reaches DONE without publishing — no IndexError, Pitfall 6). This is the
         ONLY position-setter (W3).
+
+        Lock-guarded + wakes the pacing wait (Phase 18) so a seek issued WHILE ``run()`` is
+        executing on another thread lands atomically against the drive loop's cursor advance
+        (the advance uses a cursor-unchanged guard so this jump is never clobbered).
         """
-        t0 = self._items[0].t_ns if self._items else 0
-        target = t0 + t_offset_ns
-        self._cursor = next(
-            (i for i, it in enumerate(self._items) if it.t_ns >= target),
-            len(self._items),
-        )
+        with self._lock:
+            t0 = self._items[0].t_ns if self._items else 0
+            target = t0 + t_offset_ns
+            self._cursor = next(
+                (i for i, it in enumerate(self._items) if it.t_ns >= target),
+                len(self._items),
+            )
+        self._wake.set()
 
     # --- the drive loop (D-08 pacing + D-09 step/loop/DONE + WR-01/WR-02 bound, W4 ordering) ---
     def run(self) -> None:
@@ -190,6 +261,16 @@ class Replayer:
         bounded-stop guards (``max_messages`` / ``duration``, both ``is not None`` — WR-01/WR-02)
         fire BEFORE the end-of-stream loop-reset, so a bound landing exactly on the last item
         wins over ``loop`` (DONE wins over loop-reset — the W4 boundary).
+
+        Thread-safety (Phase 18): the lock is held ONLY for the fast state/cursor/rate reads,
+        the pacing-Δt computation, the cursor ADVANCE, and the bound/step/loop/DONE
+        transitions — NEVER across ``self._sink(...)`` (the publish) or ``self._sleep(...)``
+        (the wait), so a live UI-thread control is never blocked behind a slow publish or a
+        long gap. The advance uses a cursor-unchanged guard so a concurrent :meth:`seek` that
+        landed during the publish/wait is NOT clobbered back (the lost-update fix). State is
+        re-read after the wait so a pause/seek/stop issued mid-gap is honored before the next
+        publish. The single-threaded observable behavior is IDENTICAL to before — every
+        Phase-13 test passes unchanged.
         """
         # A zero/negative bound (max_messages<=0, WR-01; duration<=0, WR-02) must halt BEFORE
         # the first publish. Special-case it up front WITHOUT re-reading the clock (WR-03): the
@@ -197,41 +278,76 @@ class Replayer:
         # not consumed by this guard). The clock is read exactly once, after these guards.
         published = 0
         if self._max_messages is not None and self._max_messages <= 0:
-            self._state = State.DONE
+            with self._lock:
+                self._state = State.DONE
             return
         if self._duration is not None and self._duration <= 0:
-            self._state = State.DONE
+            with self._lock:
+                self._state = State.DONE
             return
         start_clock = self._clock()
-        while self._state in (State.PLAYING, State.STEPPING) and self._cursor < len(self._items):
-            # Pace ONLY while PLAYING (WR-01): a STEPPING single-advance publishes the next
-            # item IMMEDIATELY (no pre-sleep of the inter-message Δt) — stepping across a long
-            # gap must not block the caller for that gap. Pacing is a play-mode concern (D-08).
-            if self._cursor > 0 and self._state is State.PLAYING:
-                dt_ns = self._items[self._cursor].t_ns - self._items[self._cursor - 1].t_ns
-                self._sleep(max(0.0, dt_ns / 1e9 / self._rate))
-            stepping = self._state is State.STEPPING
-            self._sink(self._items[self._cursor])
-            self._cursor += 1
-            published += 1
-            # Bound checks fire BEFORE the loop-reset (W4): DONE wins over loop=True's wrap.
-            if self._max_messages is not None and published >= self._max_messages:
-                self._state = State.DONE
-                return
-            if self._duration is not None and (self._clock() - start_clock) >= self._duration:
-                self._state = State.DONE
-                return
-            if stepping:
-                self._state = State.PAUSED  # step = one-then-pause (D-09)
-                return
-            if self._cursor >= len(self._items):
-                if self.loop:
-                    # loop restart (D-09): rewind to index 0, NOT the last seek target (WR-02).
-                    self._cursor = 0
-                else:
-                    self._state = State.DONE  # clean end (D-09)
-        else:
-            # The while body never ran because the cursor was already at end-of-stream
-            # (e.g. seek-past-end) while PLAYING/STEPPING: reach a clean DONE, no IndexError.
-            if self._state in (State.PLAYING, State.STEPPING) and self._cursor >= len(self._items):
-                self._state = State.DONE
+        while True:
+            # --- locked: read state/cursor, decide pacing, capture the snapshot ---
+            with self._lock:
+                # Clear any stale wake (e.g. play()'s set, or a setter from the previous
+                # iteration) so the sleep we are about to compute waits afresh. Done UNDER the
+                # lock so a setter racing this clear either (a) already mutated state we read
+                # below, or (b) fires its set() after we release — interrupting the wait.
+                self._wake.clear()
+                state = self._state
+                cursor = self._cursor
+                if state not in (State.PLAYING, State.STEPPING):
+                    break  # PAUSED/DONE (incl. seek-past-end's DONE, or a mid-run pause): stop
+                if cursor >= len(self._items):
+                    # Cursor already at end-of-stream while PLAYING/STEPPING (seek-past-end or
+                    # an empty stream): clean DONE, no IndexError (Pitfall 6).
+                    self._state = State.DONE
+                    break
+                # Pace ONLY while PLAYING (WR-01): a STEPPING single-advance publishes the next
+                # item IMMEDIATELY (no pre-sleep) — stepping across a long gap must not block.
+                do_pace = cursor > 0 and state is State.PLAYING
+                sleep_s = 0.0
+                if do_pace:
+                    dt_ns = self._items[cursor].t_ns - self._items[cursor - 1].t_ns
+                    sleep_s = max(0.0, dt_ns / 1e9 / self._rate)
+
+            # --- unlocked: pace, then re-read state so a mid-gap control is honored ---
+            if do_pace:
+                self._sleep(sleep_s)
+                with self._lock:
+                    state = self._state
+                    cursor = self._cursor
+                    if state not in (State.PLAYING, State.STEPPING):
+                        break
+                    if cursor >= len(self._items):
+                        self._state = State.DONE
+                        break
+
+            stepping = state is State.STEPPING
+
+            # --- unlocked: publish the captured item (cursor is a stable local index) ---
+            self._sink(self._items[cursor])
+
+            # --- locked: advance (cursor-unchanged guard), then bound/step/loop/DONE (W4) ---
+            with self._lock:
+                if self._cursor == cursor:
+                    # No concurrent seek landed during the publish/wait — advance normally.
+                    self._cursor = cursor + 1
+                # else: a seek moved the cursor mid-publish; honor it (do NOT clobber).
+                published += 1
+                # Bound checks fire BEFORE the loop-reset (W4): DONE wins over loop=True's wrap.
+                if self._max_messages is not None and published >= self._max_messages:
+                    self._state = State.DONE
+                    return
+                if self._duration is not None and (self._clock() - start_clock) >= self._duration:
+                    self._state = State.DONE
+                    return
+                if stepping:
+                    self._state = State.PAUSED  # step = one-then-pause (D-09)
+                    return
+                if self._cursor >= len(self._items):
+                    if self._loop:
+                        # loop restart (D-09): rewind to index 0, NOT the last seek target (WR-02).
+                        self._cursor = 0
+                    else:
+                        self._state = State.DONE  # clean end (D-09)

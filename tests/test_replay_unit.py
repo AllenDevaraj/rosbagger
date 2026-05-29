@@ -418,6 +418,179 @@ def test_scheduler_bounded_duration_zero_halts_before_first_publish():
 
 
 # --------------------------------------------------------------------------- #
+# scheduler — thread-safety (Phase 18, SC1): run() on a worker thread while the
+# main thread issues seek/set_rate/pause/loop with NO data race. The injected
+# sleep is a CONTROLLABLE barrier (two threading.Events) so the interleave is
+# deterministic — no real time.sleep, no flaky races (T-18-01-E). The default
+# sleep's interruptibility (the _wake.wait/clear path) is exercised separately.
+# Select with `-k 'threadsafe or interruptible or injected_sleep'`.
+# --------------------------------------------------------------------------- #
+
+import threading  # noqa: E402  (stdlib; the scheduler's only new dep is threading too)
+
+
+class _BarrierSleep:
+    """An INJECTED sleep that blocks on the FIRST call until the main thread releases it.
+
+    The worker thread, on its first paced ``self._sleep(...)``, sets ``entered`` (so the
+    main thread knows the worker is parked INSIDE a pre-publish wait, mid-run) and then
+    blocks on ``release`` until the main thread issues its control + calls :meth:`go`.
+    Subsequent sleeps are recorded and return immediately (the deterministic interleave
+    is only needed once, to wedge the worker mid-run). Records every slept value so a
+    test can assert the injected sleep was honored verbatim (T-18-01-C).
+    """
+
+    def __init__(self):
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        self.slept = []
+        self._first = True
+
+    def __call__(self, seconds):
+        self.slept.append(seconds)
+        if self._first:
+            self._first = False
+            self.entered.set()
+            self.release.wait(timeout=5.0)
+
+    def go(self):
+        self.release.set()
+
+
+def test_scheduler_threadsafe_seek_midrun_no_lost_update():
+    """SC1/T-18-01-A: a seek() issued WHILE run() executes on another thread is honored.
+
+    The worker plays from index 0; after item[0] publishes it parks in the FIRST paced
+    pre-publish sleep (the barrier). The main thread then seeks several items ahead and
+    releases the barrier. The NEXT published item must be at/after the seek target and
+    the cursor must advance FROM the seek index — no lost update (the cursor-unchanged
+    advance guard must not clobber the concurrent seek).
+    """
+    items = _items([i * 100 for i in range(10)])  # t_ns 0,100,...,900
+    recorded = []
+    sleep = _BarrierSleep()
+    r = Replayer(items, recorded.append, sleep=sleep)
+    r.play()
+    worker = threading.Thread(target=r.run)
+    worker.start()
+
+    # The worker published item[0], then parked in the first inter-message wait.
+    assert sleep.entered.wait(timeout=5.0)
+    assert recorded[0] is items[0]
+
+    target_ns = 600  # first t_ns >= 0+600 is 600 at index 6
+    r.seek(target_ns)
+    sleep.go()
+    worker.join(timeout=5.0)
+    assert not worker.is_alive()
+
+    # The next published item (after item[0]) is at/after the seek target — items 1..5
+    # were SKIPPED by the mid-run seek (no lost update clobbering it back to index 1).
+    after_seek = recorded[1:]
+    assert after_seek, "the worker published nothing after the mid-run seek"
+    assert after_seek[0].t_ns >= items[0].t_ns + target_ns
+    assert after_seek[0] is items[6]
+    # And the cursor advanced FROM the seek index (consecutive forward items 6..9).
+    assert [it.topic for it in after_seek] == ["/t6", "/t7", "/t8", "/t9"]
+    assert r.state is State.DONE
+
+
+def test_scheduler_threadsafe_set_rate_midrun_takes_effect():
+    """SC1: a set_rate(x) issued mid-run is observable via replayer.rate after the wake."""
+    items = _items([i * 100 for i in range(10)])
+    recorded = []
+    sleep = _BarrierSleep()
+    r = Replayer(items, recorded.append, sleep=sleep, rate=1.0)
+    r.play()
+    worker = threading.Thread(target=r.run)
+    worker.start()
+
+    assert sleep.entered.wait(timeout=5.0)
+    r.set_rate(4.0)
+    assert r.rate == 4.0  # observable immediately (lock-guarded mutation, lock-free read)
+    sleep.go()
+    worker.join(timeout=5.0)
+    assert not worker.is_alive()
+    assert r.rate == 4.0
+
+
+def test_scheduler_threadsafe_pause_midrun_returns_paused():
+    """SC1: a pause() issued mid-run makes run() return with state == PAUSED (cursor held)."""
+    items = _items([i * 100 for i in range(10)])
+    recorded = []
+    sleep = _BarrierSleep()
+    r = Replayer(items, recorded.append, sleep=sleep)
+    r.play()
+    worker = threading.Thread(target=r.run)
+    worker.start()
+
+    assert sleep.entered.wait(timeout=5.0)
+    assert recorded == [items[0]]  # only item[0] published before the park
+    r.pause()
+    sleep.go()
+    worker.join(timeout=5.0)
+    assert not worker.is_alive()
+
+    # The pause arrived during the wait; run() re-read state and broke out -> PAUSED,
+    # publishing no further items (the cursor is held for a later resume).
+    assert r.state is State.PAUSED
+    assert recorded == [items[0]]
+    assert r.cursor == 1
+
+
+def test_scheduler_default_sleep_is_interruptible():
+    """T-18-01-B: with the DEFAULT sleep, a setter's wake cuts a long pacing wait short.
+
+    Two items spaced 10s apart: without interruptibility the worker would block ~10s in
+    the inter-message wait. A pause() from the main thread sets self._wake, so the default
+    _interruptible_sleep returns PROMPTLY and run() honors the pause — proven by a generous
+    wall-clock upper bound far below the 10s gap (and run() ending PAUSED, not DONE).
+    """
+    import time as _time
+
+    ten_s_ns = 10_000_000_000
+    items = _items([0, ten_s_ns])
+    recorded = []
+    r = Replayer(items, recorded.append)  # DEFAULT sleep == the interruptible bound method
+    r.play()
+    worker = threading.Thread(target=r.run)
+    worker.start()
+
+    # Give the worker a moment to publish item[0] and enter the 10s default wait, then
+    # interrupt it. A tiny poll loop avoids racing the worker into the wait.
+    deadline = _time.monotonic() + 2.0
+    while recorded == [] and _time.monotonic() < deadline:
+        _time.sleep(0.005)
+    assert recorded == [items[0]]  # parked in the inter-message wait now
+
+    t0 = _time.monotonic()
+    r.pause()  # sets self._wake -> the default wait returns immediately
+    worker.join(timeout=5.0)
+    elapsed = _time.monotonic() - t0
+    assert not worker.is_alive()
+    assert elapsed < 5.0, f"the default wait was not interrupted (blocked {elapsed:.2f}s)"
+    assert r.state is State.PAUSED
+    assert recorded == [items[0]]  # the 2nd item was NOT published (paused mid-wait)
+
+
+def test_scheduler_injected_sleep_still_honored():
+    """T-18-01-C: an INJECTED sleep is used verbatim — the interruptible default does NOT apply.
+
+    The recording ``sleep=lambda``/list seam the whole Phase-13 suite relies on must keep
+    working: when the caller overrides ``sleep``, run() calls THAT callable (no _wake.wait
+    substitution). We prove the injected sleep receives the exact paced Δt values.
+    """
+    spacing_ns = 100_000_000  # 100 ms
+    items = _items([0, spacing_ns, 2 * spacing_ns])
+    slept = []
+    r = Replayer(items, lambda i: None, sleep=slept.append, rate=1.0)
+    r.play()
+    r.run()  # synchronous, no thread — the injected recording sleep must be honored
+
+    assert slept == [pytest.approx(0.1), pytest.approx(0.1)]  # exactly the paced gaps
+
+
+# --------------------------------------------------------------------------- #
 # cli — the thin rosbagger-replay CLI (Plan 03), via typer's CliRunner (ENV=offline)
 # --------------------------------------------------------------------------- #
 #
