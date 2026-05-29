@@ -42,7 +42,7 @@ rosbagger v1 builds the offline core and the `bagq` CLI in technical layers: sca
 
 Turn replay from a fire-and-forget publisher into a real playback system: a live-tracking, drag-while-playing scrubber, snippet (in/out) looping, RViz-faithful seeking (`/clock` + static re-publish), and `ros2 bag play` CLI parity. All work stays behind the established invariants — `rosbagger_replay` ROS-free at module top, the offline import graph ROS-free AND Qt-free, and the desktop panels thin faces over the library.
 
-- [ ] **Phase 18: Replay live scrubbing & thread-safe transport** - make the pure `Replayer` safe to control mid-play (thread-safe command channel) so the scrubber drags live and the playhead tracks in real time
+- [x] **Phase 18: Replay live scrubbing & thread-safe transport** - make the pure `Replayer` safe to control mid-play (thread-safe command channel) so the scrubber drags live and the playhead tracks in real time (completed 2026-05-29)
 - [ ] **Phase 19: Replay snippet loop & advanced controls panel** - in/out region loop in the scheduler + dual-handle/Set-In-Out Scrubber, housed in a collapsible side sub-panel inside the Replay tab
 - [ ] **Phase 20: Replay RViz fidelity (clock + static republish)** - publish `/clock` for `use_sim_time` and re-emit latched/`transient_local` + `/tf_static` after a seek so RViz re-primes instead of layering stale state
 - [ ] **Phase 21: Replay CLI parity flags** - close the `ros2 bag play` gap feasible in our publish model: `--start-paused`, `--remap`, `--delay`, `--clock`, bounded region `[in,out]`
@@ -495,14 +495,14 @@ Plans:
   3. A backward drag jumps to the earlier timestamp and resumes forward publishing, with a status line that communicates the jump (no claim of reverse playback)
   4. Offline/Qt-free guard green; `import rosbagger_replay` stays ROS-free; full headless suite passes at ≥80%
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 **Wave 1**
 - [x] 18-01-PLAN.md — Scheduler thread-safety (pure, ROS/Qt-free): threading.Lock + Event wake + interruptible default sleep + lock-guarded synchronous setters + run() critical-section restructure with the cursor-unchanged advance guard; threaded race unit test + full Phase-13 regression -> SC1
 
 **Wave 2** *(blocked on 18-01)*
-- [ ] 18-02-PLAN.md — Desktop live-scrub wiring (thin face): QTimer live playhead + remove the three mid-play guard branches + keep rate/loop enabled mid-play + backward-seek "resuming forward" status; headless pytest-qt tests + offline/Qt-free guard + phase gate -> SC2/SC3/SC4
+- [x] 18-02-PLAN.md — Desktop live-scrub wiring (thin face): QTimer live playhead + remove the three mid-play guard branches + keep rate/loop enabled mid-play + backward-seek "resuming forward" status; headless pytest-qt tests + offline/Qt-free guard + phase gate -> SC2/SC3/SC4
 
 ### Phase 19: Replay snippet loop and advanced controls panel
 
