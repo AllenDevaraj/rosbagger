@@ -87,6 +87,13 @@ class ReplayPanel(QWidget):
         self._item_count: int = 0
         # Kept drive-thread ref (Pitfall 2 — the GC must not collect a live thread).
         self._drive_thread: QThread | None = None
+        # Kept drive-WORKER ref too (CR-02): run_on_thread returns (thread, worker) and BOTH must
+        # be held. The BlockingWorker is a parentless QObject; dropping it (the old ``, _ =``) let
+        # the GC collect it before the queued ``thread.started → worker.run`` fired, so ``run()``
+        # never executed — the thread spun as an empty shell (0 published, playhead frozen at 0,
+        # nothing on the wire for RViz). The inspect/query/tf panels already keep self._*_worker;
+        # this matches them. Cleared in _on_drive_finished (the worker deleteLater's on finish).
+        self._drive_worker: BlockingWorker | None = None
         # Live-playhead poll (Phase 18 / SC2): a UI-thread QTimer that, while the drive worker
         # runs Replayer.run() on its thread, periodically reads the now-thread-safe
         # position_fraction and advances the scrubber playhead so the timeline tracks playback
@@ -727,7 +734,7 @@ class ReplayPanel(QWidget):
         self._position_timer.start()
 
         worker = BlockingWorker(work, label="Replay failed")
-        self._drive_thread, _ = run_on_thread(
+        self._drive_thread, self._drive_worker = run_on_thread(
             self,
             worker,
             on_result=self._on_drive_done,
@@ -757,6 +764,7 @@ class ReplayPanel(QWidget):
         thread on EVERY drive outcome (result OR failure).
         """
         self._drive_thread = None
+        self._drive_worker = None  # CR-02: drop our worker ref now the drive is done
         self._position_timer.stop()
 
     def _on_drive_done(self, _result: object) -> None:

@@ -70,9 +70,16 @@ class RecordPanel(QWidget):
         """Build the status line, topic checklist, output/storage controls, Start/Dismiss."""
         super().__init__(parent)
 
-        # Kept thread/worker refs (Pitfall 2 — the GC must not collect a live thread).
+        # Kept thread/worker refs (Pitfall 2 — the GC must not collect a live thread). BOTH the
+        # thread AND the worker must be held: run_on_thread returns (thread, worker) and the
+        # BlockingWorker is a parentless QObject — dropping it (the old ``, _ =``) let the GC
+        # collect it before the queued ``thread.started → worker.run`` fired, so the scan/record
+        # never executed (CR-02 — the same bug fixed in the replay panel). The worker refs are
+        # cleared in the respective _on_*_finished slots (the worker deleteLater's on finish).
         self._discover_thread: QThread | None = None
+        self._discover_worker: BlockingWorker | None = None
         self._record_thread: QThread | None = None
+        self._record_worker: BlockingWorker | None = None
 
         # Status line as an accessibly-named region (D-02 a11y parity); a stable objectName lets
         # the shared status helper restore it after an error toggle and the theme style it.
@@ -221,7 +228,7 @@ class RecordPanel(QWidget):
             teaching_errors=_record_teaching_errors(import_module),
             label="Topic discovery failed",
         )
-        self._discover_thread, _ = run_on_thread(
+        self._discover_thread, self._discover_worker = run_on_thread(
             self,
             worker,
             on_result=self._populate_checklist,
@@ -248,6 +255,7 @@ class RecordPanel(QWidget):
         C++ object and raises. Connected via ``on_finished`` so it runs on the UI thread.
         """
         self._discover_thread = None
+        self._discover_worker = None  # CR-02: drop our worker ref now the scan is done
 
     def _populate_checklist(self, mapping: object) -> None:
         """Fill the checklist from the discovered ``{topic: type}`` map (UI-thread slot).
@@ -337,7 +345,7 @@ class RecordPanel(QWidget):
             teaching_errors=_record_teaching_errors(import_module),
             label="Recording failed",
         )
-        self._record_thread, _ = run_on_thread(
+        self._record_thread, self._record_worker = run_on_thread(
             self,
             worker,
             on_result=self._finish_record,
@@ -353,6 +361,7 @@ class RecordPanel(QWidget):
         """
         self._reset_buttons()
         self._record_thread = None
+        self._record_worker = None  # CR-02: drop our worker ref now the record is done
 
     def _dismiss_record(self) -> None:
         """Dismiss the in-flight record UI; the bounded ``duration`` is what ends recording.

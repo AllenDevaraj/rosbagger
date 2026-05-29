@@ -230,13 +230,20 @@ def test_replay_panel_publishes_external_subscriber_receives(qtbot, tmp_path: Pa
         assert window.ros_available is True, "live lane must have rclpy → replay panel enabled"
 
         panel = window.replay_panel
-        panel.show()
+        panel.show()  # fire showEvent (ROS gate + marker load); full-window visibility is NOT
+        # needed because Play is triggered programmatically below — and showing the whole window
+        # offscreen aggravates the known Qt-offscreen teardown crash.
         # A fast rate keeps the live run quick + deterministic; set it before Play.
         panel.rate_input.setText("50.0")
 
-        # Press Play: the panel builds the transport (its own rclpy ctx + the SHARED
-        # build_publish_sink) and drives Replayer.run() on a QThread worker.
-        qtbot.mouseClick(panel.play_button, Qt.LeftButton)
+        # Press Play via the button's programmatic ``click()`` rather than ``qtbot.mouseClick``: a
+        # synthetic coordinate click is silently dropped on a non-visible widget (offscreen, the
+        # panel is not the current stacked page), so it would no-op and never fire ``_play`` —
+        # exactly how the worker-GC regression slipped through. ``click()`` emits ``clicked``
+        # directly, so the panel builds the transport (its own rclpy ctx + the SHARED
+        # build_publish_sink) and drives Replayer.run() on a QThread worker. This makes the test a
+        # real regression: it times out pre-fix (drive worker GC'd → 0 published), passes post-fix.
+        panel.play_button.click()
 
         # Wait for the drive worker (the blocking publish loop) to finish and report DONE.
         def _is_done() -> bool:
