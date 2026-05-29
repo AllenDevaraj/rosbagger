@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.4
 milestone_name: Desktop revamp
-status: phase_complete
-stopped_at: Phase 18 COMPLETE (both plans + verification PASSED) — v0.5 next phase is 19
-last_updated: "2026-05-29T02:35:36.474Z"
-last_activity: 2026-05-29 -- Phase 18 complete (replay live scrubbing + thread-safe transport)
+status: executing
+stopped_at: Completed 16-03-PLAN.md (PHASE 16 COMPLETE)
+last_updated: "2026-05-29T08:03:49.130Z"
+last_activity: 2026-05-29 -- Phase 19 execution started
 progress:
   total_phases: 21
   completed_phases: 18
-  total_plans: 55
+  total_plans: 56
   completed_plans: 53
-  percent: 84
+  percent: 86
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone v0.5 — Replay Playback System. Phase 18 COMPLETE; Phase 19 (snippet loop + advanced-controls side sub-panel) is next.
+**Current focus:** Phase 19 — replay-snippet-loop-and-advanced-controls-panel
 
 ## Current Position
 
-Phase: 18 (replay-live-scrubbing-and-thread-safe-transport) — COMPLETE (verification PASSED)
-Plan: 2 of 2 (both complete)
-Status: Phase 18 done — Replayer is thread-safe (live mid-play seek/rate/loop) and the desktop scrubber drags live with a real-time playhead + honest backward-seek status. 514 passed, 86.87% coverage. Next: /gsd-plan-phase 19 then /gsd-execute-phase 19.
-Last activity: 2026-05-29 -- Phase 18 complete
+Phase: 19 (replay-snippet-loop-and-advanced-controls-panel) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 19
+Last activity: 2026-05-29 -- Phase 19 execution started
 
 Progress: [██████████] 100%
 
