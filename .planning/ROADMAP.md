@@ -516,11 +516,11 @@ Plans:
   3. Advanced replay controls live in a collapsible side sub-panel inside the Replay tab (region loop + rate), themed via Phase-17 tokens with accessible status preserved
   4. Region values survive pause/seek/play cycles; offline/Qt-free guard green; full headless suite passes at ≥80%
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 19-01-PLAN.md — Scheduler region loop (pure, ROS/Qt-free) — set_loop_region/clear_loop_region + run() region-wrap branch [wave 1]
-- [ ] 19-02-PLAN.md — Scrubber dual In/Out handles + shaded region paint + region_fill/region_handle theme tokens [wave 1]
+- [x] 19-02-PLAN.md — Scrubber dual In/Out handles + shaded region paint + region_fill/region_handle theme tokens [wave 1]
 - [ ] 19-03-PLAN.md — Panel collapsible advanced sub-panel + Set-In/Out + wiring (survives pause/seek/play) [wave 2, depends 19-01+19-02]
 
 ### Phase 20: Replay RViz fidelity (clock + static republish)
