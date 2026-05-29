@@ -34,9 +34,10 @@ counts published messages.
 from __future__ import annotations
 
 import contextlib
+import time
 
 
-def build_publish_sink(node, *, publish_clock: bool = False, static_topics=frozenset()):
+def build_publish_sink(node, *, publish_clock: bool = False, static_topics=frozenset(), remap=None):
     """Build the single rclpy publish sink + its source-of-truth count dict (D-09a).
 
     This is the ONE reusable publish-mechanics function shared by BOTH ``replay()``
@@ -73,6 +74,12 @@ def build_publish_sink(node, *, publish_clock: bool = False, static_topics=froze
         node: an initialized ``rclpy`` node used to create the per-topic publishers.
         publish_clock: when ``True``, publish ``/clock`` per item (default ``False``).
         static_topics: topic names to track for static re-publish (default empty = off).
+        remap: an optional ``{old_topic: new_topic}`` dict (Phase 21, ``ros2 bag play --remap``
+            parity). When set, a message on ``old_topic`` is published on ``new_topic`` instead
+            — a NAME LOOKUP inside THIS single sink (the publisher is built/keyed on the
+            remapped name), never a second sink. ``None`` (default) publishes on the original
+            ``item.topic`` exactly as today. The static-tracker / ``/clock`` paths key off the
+            ORIGINAL ``item.topic`` / ``item.t_ns`` and are unaffected.
 
     Returns:
         A ``(sink, published)`` pair where ``sink(item) -> None`` is the publish
@@ -102,12 +109,15 @@ def build_publish_sink(node, *, publish_clock: bool = False, static_topics=froze
         clock_pub = node.create_publisher(clock_cls, "/clock", 10)
 
     def sink(item) -> None:
-        if item.topic not in pubs:
+        # Phase 21: publish on the remapped name when a remap is set (a name lookup inside this
+        # single sink — the publisher dict is keyed on the remapped target). Default = item.topic.
+        pub_topic = remap.get(item.topic, item.topic) if remap else item.topic
+        if pub_topic not in pubs:
             cls = get_message(item.msgtype)  # type string -> message class (VERIFIED)
             # Sane default QoS (depth-10 RELIABLE VOLATILE) — Pitfall 4. Per-topic
             # QoS override is a deferred enhancement (Phase 13 out of scope).
-            pubs[item.topic] = (cls, node.create_publisher(cls, item.topic, 10))
-        cls, pub = pubs[item.topic]
+            pubs[pub_topic] = (cls, node.create_publisher(cls, pub_topic, 10))
+        cls, pub = pubs[pub_topic]
         msg = deserialize_message(item.cdr, cls)  # raw CDR -> typed message (VERIFIED)
         pub.publish(msg)  # any subscriber on the topic receives it (VERIFIED)
         # WR-07: published["n"] is the SOURCE OF TRUTH for the returned count. The
@@ -162,6 +172,12 @@ def replay(
     duration: float | None = None,
     max_messages: int | None = None,
     default_typestore: object = None,
+    delay: float = 0.0,
+    start_paused: bool = False,
+    publish_clock: bool = False,
+    remap: dict[str, str] | None = None,
+    region_start: float | None = None,
+    region_end: float | None = None,
 ) -> int:
     """Publish a bag's messages to live ROS 2 topics; return the count published (SC1).
 
@@ -184,6 +200,23 @@ def replay(
         default_typestore: optional rosbags typestore for legacy ROS 2 bags lacking embedded
             defs (e.g. the ROS 2 sqlite3 fixture needs ``get_typestore(Stores.ROS2_HUMBLE)``);
             a harmless no-op for self-describing MCAP / ROS 1.
+        delay: SECONDS to sleep AFTER the ROS context + sink are built but BEFORE playing
+            (``ros2 bag play --delay`` parity), giving subscribers time to discover. Default 0.
+        start_paused: when ``True`` the Replayer is NOT played (``ros2 bag play --start-paused``
+            parity). For this run-to-completion front door that means it publishes 0 and returns
+            in ``State.PAUSED`` — interactive resume lives in the GUI (the CLI has no keyboard
+            resume; runtime ROS services are deferred — see the module docstring).
+        publish_clock: when ``True``, also publish ``/clock`` per message (threaded to
+            :func:`build_publish_sink`; Phase 20). Default off.
+        remap: optional ``{old_topic: new_topic}`` dict (``--remap`` parity) threaded to
+            :func:`build_publish_sink` — publishes on the remapped name. Default ``None``.
+        region_start: optional SECONDS offset to seek to before playing (the region in-bound).
+        region_end: optional SECONDS offset for the region out-bound. When BOTH region bounds
+            are set they map to ``replayer.seek(in)`` + ``replayer.set_loop_region(in, out)``
+            (the Phase-19 snippet region) — pair with ``loop`` to repeat the snippet. A
+            single-pass ``[in, out]`` stop is a DEFERRED enhancement (the scheduler bounds on
+            monotonic duration / max_messages, not a bag-timestamp horizon — the same deferral
+            the ``--end``-folded-into-``--duration`` precedent documents).
 
     Returns:
         The number of messages actually published.
@@ -216,7 +249,8 @@ def replay(
     try:
         node = rclpy.create_node("rosbagger_replayer")
         # The SINGLE production publish sink (D-09a) — same mechanics the Phase-14 GUI drives.
-        sink, published = build_publish_sink(node)
+        # Phase 21: thread the /clock + remap opt-ins through (defaults off => today's call).
+        sink, published = build_publish_sink(node, publish_clock=publish_clock, remap=remap)
 
         # The Replayer has NO `start` ctor param (W3): map the --start SECONDS offset onto
         # seek(t_offset_ns) (bag-relative NANOSECONDS) before playing.
@@ -230,7 +264,21 @@ def replay(
         )
         if start:
             replayer.seek(int(start * 1e9))
-        replayer.play()
+        # Phase 21 region (--region-start/--region-end, seconds): seek to the in-bound + set the
+        # Phase-19 snippet loop region [in, out] (pair with loop to repeat; single-pass stop is
+        # the deferred t_ns-horizon stop noted above). region_start alone just seeks.
+        if region_start is not None:
+            replayer.seek(int(region_start * 1e9))
+        if region_start is not None and region_end is not None:
+            replayer.set_loop_region(int(region_start * 1e9), int(region_end * 1e9))
+        # Phase 21 --delay: sleep AFTER the context + sink are built but BEFORE playing, so
+        # subscribers discover the publishers during the sleep (ros2 bag play --delay parity).
+        if delay:
+            time.sleep(delay)
+        # Phase 21 --start-paused: leave the Replayer in its default PAUSED state — run() then
+        # publishes 0 and returns PAUSED (no interactive resume here; that is the GUI).
+        if not start_paused:
+            replayer.play()
         replayer.run()
         return published["n"]
     finally:

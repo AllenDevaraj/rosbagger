@@ -741,6 +741,25 @@ def test_scheduler_region_in_bound_past_end_done():
 
 
 # --------------------------------------------------------------------------- #
+# Phase 21 (REP-05) library plumbing: the --start-paused mapping is "do not play()"
+# -> run() publishes 0 and returns PAUSED; the build_publish_sink remap kwarg keeps
+# the no-kwargs 2-tuple/sink.tracker back-compat. (The remap republish-on-new-name +
+# /clock are -m live proofs; the CLI flag forwarding is in 21-02.)
+# --------------------------------------------------------------------------- #
+
+
+def test_scheduler_not_played_publishes_nothing():
+    """The --start-paused mapping: a Replayer never play()-ed publishes 0 on run(), stays PAUSED."""
+    items = _items([0, 100, 200])
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None)
+    # NOTE: no r.play() — this is exactly what replay(start_paused=True) does.
+    r.run()
+    assert recorded == []
+    assert r.state is State.PAUSED
+
+
+# --------------------------------------------------------------------------- #
 # cli — the thin rosbagger-replay CLI (Plan 03), via typer's CliRunner (ENV=offline)
 # --------------------------------------------------------------------------- #
 #

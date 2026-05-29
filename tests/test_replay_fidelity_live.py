@@ -178,3 +178,29 @@ def test_sc2_static_republished_after_seek_external_subscriber_receives(tmp_path
 
     received = _run_with_subscriber(sub_src, publish)
     assert received >= 1, f"/tf_static subscriber received {received} msgs, expected >= 1"
+
+
+def test_remap_external_subscriber_receives_on_new_name(tmp_path):
+    """REP-05 / SC2-live: build_publish_sink(remap={old:new}) publishes on the NEW name.
+
+    The sqlite3 fixture publishes /imu; with remap={"/imu": "/imu_remapped"} an external
+    subscriber on /imu_remapped receives the messages (the remap moved the publish to the new
+    topic — a name lookup inside the single sink, not a second sink).
+    """
+    bag = write_ros2_sqlite_bag(tmp_path)
+    sub_src = _subscriber_src("from sensor_msgs.msg import Imu", "Imu", "/imu_remapped")
+
+    def publish() -> None:
+        rclpy.init()
+        node = rclpy.create_node("rosbagger_fidelity_remap_publisher")
+        try:
+            sink, _published = build_publish_sink(node, remap={"/imu": "/imu_remapped"})
+            items = load_items(str(bag), default_typestore=get_typestore(Stores.ROS2_HUMBLE))
+            for item in items:
+                sink(item)
+        finally:
+            node.destroy_node()
+            rclpy.shutdown()
+
+    received = _run_with_subscriber(sub_src, publish)
+    assert received >= 1, f"/imu_remapped subscriber received {received} msgs, expected >= 1"
