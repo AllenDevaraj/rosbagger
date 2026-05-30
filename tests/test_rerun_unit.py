@@ -179,3 +179,125 @@ def test_prefer_gpu_setdefault_respects_user_env(monkeypatch):
     session._prefer_gpu(env=env)
     assert env["WGPU_POWER_PREF"] == "low"  # not clobbered
     assert env["__NV_PRIME_RENDER_OFFLOAD"] == "1"  # the rest still added
+
+
+# --------------------------------------------------- viewer lifecycle: close with GUI (260530-c3p)
+
+
+def test_child_pids_finds_spawned_child():
+    """``_child_pids`` returns this process's direct children (used to capture the viewer PID)."""
+    import subprocess
+
+    from rosbagger_rerun import session
+
+    proc = subprocess.Popen(["sleep", "30"])  # noqa: S603,S607 - test fixture child
+    try:
+        assert proc.pid in session._child_pids()
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+
+
+def test_close_viewer_terminates_tracked_process():
+    """``close_viewer`` SIGTERMs every tracked viewer PID and clears the registry (260530-c3p)."""
+    import os
+    import signal
+    import time
+
+    from rosbagger_rerun import session
+
+    pid = os.fork()
+    if pid == 0:  # child: become `sleep` so a SIGTERM cleanly ends it (no pytest state inherited)
+        try:
+            os.execvp("sleep", ["sleep", "60"])  # noqa: S607
+        except Exception:
+            os._exit(127)
+
+    session._TRACKED_VIEWER_PIDS.add(pid)
+    try:
+        session.close_viewer()
+        assert pid not in session._TRACKED_VIEWER_PIDS, "registry not cleared"
+        gone = False
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                gone = True
+                break
+            try:  # reap if it is a zombie now (close_viewer's WNOHANG may not have caught it yet)
+                if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                    gone = True
+                    break
+            except ChildProcessError:
+                gone = True
+                break
+            time.sleep(0.02)
+        assert gone, "close_viewer did not terminate the tracked viewer child"
+    finally:
+        try:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        except (OSError, ChildProcessError):
+            pass
+
+
+def test_open_viewer_spawns_non_detached_and_tracks(monkeypatch):
+    """open_viewer spawns the viewer NON-detached and tracks the new child PID (260530-c3p)."""
+    import rerun as rr
+
+    from rosbagger_rerun import session
+
+    spawned: dict[str, object] = {}
+
+    class _FakeRec:
+        def __init__(self, app_id):
+            self.app_id = app_id
+
+        def spawn(self, **kwargs):
+            spawned["spawn"] = kwargs
+
+        def save(self, path):
+            spawned["save"] = path
+
+    monkeypatch.setattr(rr, "RecordingStream", _FakeRec)
+    monkeypatch.setattr(session, "_prefer_gpu", lambda *a, **k: None)
+    pid_calls = iter([[], [4242]])  # children before -> {}, after spawn -> {4242}
+    monkeypatch.setattr(session, "_child_pids", lambda *a, **k: next(pid_calls))
+    tracked: list[set] = []
+    monkeypatch.setattr(session, "_track_viewers", lambda pids: tracked.append(set(pids)))
+
+    rec = session.open_viewer()
+
+    assert isinstance(rec, _FakeRec)
+    assert spawned["spawn"]["detach_process"] is False  # the fix: non-detached
+    assert tracked == [{4242}]  # the new child PID was tracked for cleanup
+
+
+def test_open_viewer_save_mode_does_not_spawn_or_track(monkeypatch, tmp_path):
+    """Save mode (tests) stays untouched — no spawn, no viewer tracking (260530-c3p)."""
+    import rerun as rr
+
+    from rosbagger_rerun import session
+
+    spawned: dict[str, object] = {}
+
+    class _FakeRec:
+        def __init__(self, app_id):
+            pass
+
+        def spawn(self, **kwargs):
+            spawned["spawn"] = kwargs
+
+        def save(self, path):
+            spawned["save"] = path
+
+    monkeypatch.setattr(rr, "RecordingStream", _FakeRec)
+    tracked: list = []
+    monkeypatch.setattr(session, "_track_viewers", lambda pids: tracked.append(pids))
+
+    rec = session.open_viewer(save_path=str(tmp_path / "x.rrd"))
+
+    assert isinstance(rec, _FakeRec)
+    assert "save" in spawned and "spawn" not in spawned
+    assert tracked == []

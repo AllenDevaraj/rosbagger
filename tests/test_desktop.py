@@ -1922,13 +1922,24 @@ def test_replay_rerun_toggle_unavailable_enters_install_state(qtbot, monkeypatch
     assert "Installing" in panel.status_label.text()
 
 
-def test_replay_rerun_close_drops_sink_and_flushes(qtbot) -> None:
-    """The toggle-off path drops the sink, flushes the recording, and resets the label."""
+def test_replay_rerun_close_drops_sink_flushes_and_closes_viewer(qtbot, monkeypatch) -> None:
+    """Toggle-off drops the sink, flushes, CLOSES the spawned viewer, and resets the label.
+
+    260530-c3p: _close_rerun must call rosbagger_rerun.close_viewer() so the viewer doesn't
+    outlive the GUI (the user's report). Reached via the module attribute, monkeypatched here.
+    """
+    import rosbagger_rerun
     from rosbagger_desktop.panels.replay_panel import ReplayPanel
 
     panel = ReplayPanel()
     qtbot.addWidget(panel)
     flushed = {"n": 0}
+    closed = {"n": 0}
+
+    def _fake_close_viewer():
+        closed["n"] += 1
+
+    monkeypatch.setattr(rosbagger_rerun, "close_viewer", _fake_close_viewer)
 
     class _Rec:
         def flush(self):
@@ -1942,6 +1953,7 @@ def test_replay_rerun_close_drops_sink_and_flushes(qtbot) -> None:
     assert panel._rerun_sink is None
     assert panel._rerun_rec is None
     assert flushed["n"] == 1
+    assert closed["n"] == 1  # 260530-c3p: the spawned viewer was closed
     assert panel.rerun_button.text() == "Open in Rerun"
 
 

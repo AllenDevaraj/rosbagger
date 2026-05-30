@@ -523,13 +523,24 @@ class ReplayPanel(QWidget):
             self._rerun_button.setChecked(False)
 
     def _close_rerun(self) -> None:
-        """Stop the mirror: drop the sink (the tee goes inert) + best-effort flush the recording."""
+        """Stop the mirror: drop the sink, flush, and CLOSE the spawned viewer (260530-c3p).
+
+        Reached on toggle-off AND from ``closeEvent``. Drops the sink (the tee goes inert), flushes
+        the recording, then calls ``rosbagger_rerun.close_viewer()`` so the spawned viewer doesn't
+        outlive the GUI (the user's report). ``close_viewer`` is reached via the module attribute so
+        tests monkeypatch it; it is idempotent (a no-op when no viewer was spawned). Ctrl-C / SIGHUP
+        already reach the viewer directly via the shared process group (it is spawned non-detached).
+        """
         self._rerun_sink = None
         rec = self._rerun_rec
         self._rerun_rec = None
         if rec is not None:
             with contextlib.suppress(Exception):
                 rec.flush()
+        with contextlib.suppress(Exception):
+            import rosbagger_rerun
+
+            rosbagger_rerun.close_viewer()
         self._rerun_button.setText("Open in Rerun")
 
     def _install_rerun(self) -> None:

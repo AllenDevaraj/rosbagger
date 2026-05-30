@@ -7,14 +7,14 @@ import graph (bagq / inspect / query, and the desktop's module top) stays ROS-fr
 AND Rerun-free. ``tests/test_offline_guard.py`` enforces this.
 
 Public surface (added across Phase 22):
-- ``rerun_available()`` / ``open_viewer()``  — session (22-01)
+- ``rerun_available()`` / ``open_viewer()`` / ``close_viewer()``  — session (22-01, 260530-c3p)
 - ``convert()`` / ``build_rerun_sink()``      — converters + sink (22-02)
 """
 
 from __future__ import annotations
 
 from .converters import convert
-from .session import open_viewer, rerun_available
+from .session import close_viewer, open_viewer, rerun_available
 from .sink import build_rerun_sink
 
-__all__ = ["build_rerun_sink", "convert", "open_viewer", "rerun_available"]
+__all__ = ["build_rerun_sink", "close_viewer", "convert", "open_viewer", "rerun_available"]
