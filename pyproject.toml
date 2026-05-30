@@ -17,6 +17,9 @@ members = ["packages/*"]
 rosbagger-core = { workspace = true }
 rosbagger-record = { workspace = true }
 rosbagger-replay = { workspace = true }
+# rosbagger-rerun (Phase 22) is pulled by rosbagger-desktop as a regular dep so the
+# Replay panel can import it; rerun-sdk stays an OPTIONAL extra (install-on-click).
+rosbagger-rerun = { workspace = true }
 
 [dependency-groups]
 # matplotlib (>=3.8) is also the `bagq[plot]` extra (packages/bagq/pyproject.toml) — the
@@ -40,6 +43,11 @@ dev = [
     # any package's deps except rosbagger-desktop's (the D-01 isolation invariant).
     "pytest-qt>=4.5,<5",
     "PySide6>=6.10,<6.12",
+    # Rerun visualization SDK (Phase 22; slopcheck [OK] — rerun-sdk = Rerun.io, the
+    # official viewer SDK, pure-python wheel, NO ROS). In the dev group SOLELY so CI runs
+    # the offline rosbagger-rerun converter tests; it is NOT a base dep of any package
+    # (rosbagger-rerun declares it under the [sdk] extra — install-on-click at the desktop).
+    "rerun-sdk>=0.31,<0.33",
 ]
 
 # --- Lint + format (ruff): one tool for lint, isort, and format ---
@@ -56,6 +64,7 @@ src = [
     "packages/rosbagger-replay/src",
     "packages/rosbagger-gui/src",
     "packages/rosbagger-desktop/src",
+    "packages/rosbagger-rerun/src",
     "tools",
     "tests",
 ]

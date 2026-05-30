@@ -1,0 +1,28 @@
+# rosbagger-rerun — the bag→Rerun visualization bridge. Converts deserialized ROS 2
+# messages into Rerun archetypes and logs them to a RecordingStream, so the desktop
+# Replay tab can live-mirror Play into the Rerun viewer (Phase 22).
+#
+# ISOLATION (mirrors rosbagger-replay's boundary): this package is the ONLY place
+# `rerun` is imported, and — like the live ROS packages — every `rerun` / `rclpy` /
+# `rosidl_runtime_py` import lives LAZILY inside a function body. So importing
+# `rosbagger_rerun` stays ROS-free AND Rerun-free; the offline import graph is
+# unaffected (tests/test_offline_guard.py enforces this).
+#
+# rerun-sdk is DELIBERATELY an OPTIONAL extra (`[sdk]`), never a base dependency:
+# the desktop gates the "Open in Rerun" button on `rerun_available()` and installs
+# rerun-sdk on-click, so a base install never pulls the (large) viewer SDK.
+[project]
+name = "rosbagger-rerun"
+version = "0.2.0"
+requires-python = ">=3.10"
+# numpy is needed by the image converter (frombuffer/reshape); it is import-safe
+# (not ROS, not rerun) and already present via matplotlib. rerun-sdk is the OPTIONAL
+# extra below — never a base dep (D-03-style: keep base installs lean + ROS/rerun-free).
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+sdk = ["rerun-sdk>=0.31,<0.33"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
