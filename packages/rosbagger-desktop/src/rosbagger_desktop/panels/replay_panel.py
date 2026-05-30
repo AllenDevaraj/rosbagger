@@ -587,8 +587,15 @@ class ReplayPanel(QWidget):
         self._rerun_button.setText("Open in Rerun (install)")
 
     def _on_install_finished(self) -> None:
-        """Drop the install worker refs now the pip run is done (mirrors _on_drive_finished)."""
+        """Drop the install worker refs now the pip run is done (mirrors _on_drive_finished).
+
+        260530-w4k: join the worker thread before dropping the PARENTLESS (Python-owned) worker
+        ref — same cross-thread use-after-free as the drive worker. The pip run has already
+        finished here, so ``stop_thread`` (quit+wait) returns immediately.
+        """
+        thread = self._install_thread
         self._install_thread = None
+        stop_thread(thread)  # 260530-w4k: worker thread dead before we drop its ref
         self._install_worker = None
 
     # ------------------------------------------------------------------- controls
@@ -941,7 +948,7 @@ class ReplayPanel(QWidget):
         set_status(self._status, message, is_error=True)
 
     def _on_drive_finished(self) -> None:
-        """Drop the drive-thread ref + stop the live-playhead poll when the worker finishes.
+        """Join the worker thread, drop the refs + stop the live-playhead poll on drive finish.
 
         CR-01: ``run_on_thread`` wires ``thread.finished → thread.deleteLater``, so once the
         worker finishes the underlying C++ ``QThread`` is destroyed; keeping the stale Python
@@ -951,10 +958,25 @@ class ReplayPanel(QWidget):
         controls are NOT re-enabled here because Phase 18 never disables them (they are live).
         Connected via ``on_finished`` (wired before the teardown chain), this runs on the UI
         thread on EVERY drive outcome (result OR failure).
+
+        260530-w4k (the bag-end crash): ``self._drive_worker`` is a ``BlockingWorker`` — a
+        PARENTLESS ``QObject`` (it must be parentless to be ``moveToThread``'d), so shiboken hands
+        its lifetime to PYTHON. Dropping that last ref deletes the C++ object FROM THE UI THREAD,
+        but at end-of-track the worker thread's event loop is still alive (``worker.finished``
+        fired, but ``thread.quit`` is a QUEUED teardown), so the UI-thread deletion races
+        ``worker.deleteLater()`` on the worker thread — a cross-thread use-after-free that crashed
+        the GUI at bag-end (~40% of plays; "QObject: shared QObject was deleted directly" → SIGSEGV
+        /SIGBUS). So JOIN the thread (``stop_thread`` = quit+wait; the worker has already finished,
+        so the join is immediate) to make it provably dead BEFORE we drop the worker ref. The
+        thread ref is cleared first because ``_drive_running`` probes it; the thread is parent-owned
+        (``QThread(self)``) so clearing its Python ref doesn't delete it (``thread.deleteLater``
+        does).
         """
-        self._drive_thread = None
-        self._drive_worker = None  # CR-02: drop our worker ref now the drive is done
         self._position_timer.stop()
+        thread = self._drive_thread
+        self._drive_thread = None
+        stop_thread(thread)  # 260530-w4k: worker thread provably dead before we drop its ref
+        self._drive_worker = None  # CR-02 + 260530-w4k: now safe — nothing references the worker
         # 260530-2iv: a play/step pressed while THIS worker was finishing (post-pause) was deferred;
         # replay it now the thread is cleared (so _drive_running() is False) and it resumes cleanly.
         pending = self._pending_action

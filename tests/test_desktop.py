@@ -583,14 +583,18 @@ def test_replay_panel_close_after_finished_run_is_safe(qtbot) -> None:
     throughout the drive — never disabled) and now STOPS the live-playhead timer. Assert the
     timer is stopped on finish; the controls are simply expected to remain enabled.
     """
+    from PySide6.QtCore import QThread
+
     from rosbagger_desktop.panels.replay_panel import ReplayPanel
 
     panel = ReplayPanel()
     qtbot.addWidget(panel)
 
     # Simulate a stale ref that a finished worker would have left + a running live-playhead
-    # timer (as _start_drive leaves it), then the finish callback.
-    panel._drive_thread = object()  # type: ignore[assignment]  # stand-in stale handle
+    # timer (as _start_drive leaves it), then the finish callback. 260530-w4k: _on_drive_finished
+    # now JOINs the thread (stop_thread quit+wait) before clearing refs, so use a real, unstarted
+    # (hence not-running) QThread the join no-ops on, rather than a bare object() with no isRunning.
+    panel._drive_thread = QThread()
     panel._position_timer.start()
     panel._on_drive_finished()
     assert panel._drive_thread is None, "drive-thread ref was not cleared on finish (CR-01)"
@@ -2041,3 +2045,59 @@ def test_replay_close_while_playing_pauses_and_stops(qtbot, monkeypatch) -> None
     panel.close()  # closeEvent must pause the replayer before stop_thread (else wait() hangs)
     assert fake.paused, "closeEvent did not pause the Replayer before stopping the thread"
     assert not panel._drive_running(), "drive thread still running after close"
+
+
+def test_replay_drive_to_done_joins_thread_before_clearing_worker(qtbot, monkeypatch) -> None:
+    """260530-w4k: at bag-end, JOIN the worker thread before dropping the worker ref.
+
+    The drive worker is a PARENTLESS QObject -> Python-owned, so clearing ``self._drive_worker``
+    deletes the C++ object from the UI thread. If done while the worker thread's loop is still
+    alive it races ``worker.deleteLater()`` (a cross-thread use-after-free that crashed the GUI at
+    end-of-track). The fix joins the thread (``stop_thread`` quit+wait) first. This asserts the
+    mechanism deterministically (no segfault risk): ``stop_thread`` is invoked with the real drive
+    thread during ``_on_drive_finished``, and the refs/terminal status settle correctly.
+    """
+    from rosbagger_desktop.panels import replay_panel as replay_panel_mod
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+    from rosbagger_replay.scheduler import State
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+
+    class _FakeReplayer:
+        def __init__(self) -> None:
+            self.rate = 1.0
+            self.state = State.PLAYING
+            self.position_fraction = 1.0
+
+        def play(self) -> None:
+            self.state = State.PLAYING
+
+        def run(self) -> None:
+            self.state = State.DONE  # reach end-of-track immediately, then return
+
+    fake = _FakeReplayer()
+    panel._replayer = fake
+    panel._item_count = 5
+    panel._published = {"n": 5}
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(panel, "_ensure_transport", lambda: True)
+
+    # Spy on the join: record the thread args stop_thread() is called with (still join for real).
+    joined: list[object] = []
+    real_stop = replay_panel_mod.stop_thread
+
+    def spy_stop(thread: object) -> None:
+        joined.append(thread)
+        real_stop(thread)
+
+    monkeypatch.setattr(replay_panel_mod, "stop_thread", spy_stop)
+
+    panel.play_button.click()  # _play -> _start_drive -> worker.run() sets DONE -> teardown
+    qtbot.waitUntil(lambda: not panel._drive_running(), timeout=3000)
+
+    # The join happened with a real QThread (not None) -> worker thread was dead before ref drop.
+    assert any(t is not None for t in joined), "stop_thread was not called to join the drive thread"
+    assert panel._drive_worker is None
+    assert panel._drive_thread is None
+    assert "Done" in panel.status_label.text(), panel.status_label.text()
