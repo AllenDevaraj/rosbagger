@@ -51,7 +51,7 @@ Turn replay from a fire-and-forget publisher into a real playback system: a live
 
 Add a one-click, zero-config live viewer to the desktop Replay tab: an **Open in Rerun** toggle that mirrors Play into the Rerun viewer by forking the existing publish sink — no manual RViz-style display/frame setup. ROS-gated and additive (RViz / `ros2 topic` keep working). A new ROS-isolated `rosbagger-rerun` package holds the converters; the offline import graph stays ROS-free AND Rerun-free.
 
-- [ ] **Phase 22: Replay live mirror to Rerun** - "Open in Rerun" toggle on the Replay tab that live-mirrors Play by forking the publish sink into a new `rosbagger-rerun` package (Image/CompressedImage, LaserScan, PointCloud2, TF rich converters + generic fallback), gated on `rerun-sdk`
+- [x] **Phase 22: Replay live mirror to Rerun** - "Open in Rerun" toggle on the Replay tab that live-mirrors Play by forking the publish sink into a new `rosbagger-rerun` package (Image/CompressedImage, LaserScan, PointCloud2, TF rich converters + generic fallback), gated on `rerun-sdk` (completed 2026-05-30)
 
 ## Phase Details
 
@@ -584,9 +584,9 @@ Plans:
 **Goal:** Add an **Open in Rerun** toggle to the desktop Replay control bar that live-mirrors Play into the Rerun viewer with zero manual setup. Implemented by forking the existing shared publish sink (`build_publish_sink`) with a dynamic tee — each played message is published to ROS (unchanged) and, while the toggle is on, also logged to Rerun — so RViz / `ros2 topic` stay additive and `build_publish_sink` is byte-for-byte untouched (protecting the 260529-k6m fix). Rich converters (Image/CompressedImage, LaserScan, PointCloud2, TF) plus a generic numeric/text fallback live in a new ROS-isolated `rosbagger-rerun` package (offline import graph stays ROS-free AND Rerun-free). Gated on ROS availability + `rerun-sdk` (optional dep, install-on-click). v1 scope = sensor essentials; OccupancyGrid/IMU/pose/markers + external-`ros2 bag play` mirroring are explicitly deferred.
 **Requirements**: New Milestone v0.6 — design spec `.planning/specs/2026-05-29-rerun-live-mirror-design.md`
 **Depends on:** Phase 21
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 22-01 — rosbagger-rerun package scaffold + workspace wiring + rerun_available() + offline-import guard (wave 1) -> RR-1
 - [x] 22-02 — converters (Image/CompressedImage/LaserScan/PointCloud2/TF + generic fallback) + build_rerun_sink + session; offline converter tests + live .rrd (wave 2) -> RR-2
-- [ ] 22-03 — desktop "Open in Rerun" toggle + dynamic tee + ROS/rerun gating + install-on-click + live desktop mirror test (wave 3) -> RR-3
+- [x] 22-03 — desktop "Open in Rerun" toggle + dynamic tee + ROS/rerun gating + install-on-click + live desktop mirror test (wave 3) -> RR-3
