@@ -13,6 +13,8 @@ Public surface (added across Phase 22):
 
 from __future__ import annotations
 
+from .converters import convert
 from .session import open_viewer, rerun_available
+from .sink import build_rerun_sink
 
-__all__ = ["open_viewer", "rerun_available"]
+__all__ = ["build_rerun_sink", "convert", "open_viewer", "rerun_available"]
