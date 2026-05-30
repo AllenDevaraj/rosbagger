@@ -1992,3 +1992,52 @@ def test_replay_pause_then_immediate_play_resumes(qtbot, monkeypatch) -> None:
     # Cleanup: pause so the resumed worker returns (keeps teardown fast).
     panel.pause_button.click()
     qtbot.waitUntil(lambda: not panel._drive_running(), timeout=3000)
+
+
+def test_replay_close_while_playing_pauses_and_stops(qtbot, monkeypatch) -> None:
+    """260530-5cg: closing mid-play must PAUSE the Replayer (so run() returns) and not hang.
+
+    A fake replayer whose run() blocks until pause() mimics a long bag mid-play. Without the
+    fix, closeEvent's stop_thread waits on the still-PLAYING run() (a hang). With it, closeEvent
+    pauses first, so run() returns and the thread stops cleanly.
+    """
+    import threading
+
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+    from rosbagger_replay.scheduler import State
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+
+    class _FakeReplayer:
+        def __init__(self) -> None:
+            self.rate = 1.0
+            self.state = State.PLAYING
+            self.position_fraction = 0.0
+            self.paused = False
+            self._resume = threading.Event()
+
+        def play(self) -> None:
+            self.state = State.PLAYING
+            self._resume.clear()
+
+        def pause(self) -> None:
+            self.state = State.PAUSED
+            self.paused = True
+            self._resume.set()  # let the blocked run() return
+
+        def run(self) -> None:
+            self._resume.wait(timeout=3.0)  # blocks (PLAYING) until pause() — safety timeout
+
+    fake = _FakeReplayer()
+    panel._replayer = fake
+    panel._item_count = 3
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(panel, "_ensure_transport", lambda: True)
+
+    panel.play_button.click()  # start the drive; the worker blocks in fake.run() while PLAYING
+    assert panel._drive_running()
+
+    panel.close()  # closeEvent must pause the replayer before stop_thread (else wait() hangs)
+    assert fake.paused, "closeEvent did not pause the Replayer before stopping the thread"
+    assert not panel._drive_running(), "drive thread still running after close"

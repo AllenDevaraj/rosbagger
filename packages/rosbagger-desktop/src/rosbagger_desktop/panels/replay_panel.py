@@ -299,6 +299,16 @@ class ReplayPanel(QWidget):
     def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
         """Stop the playhead timer + drive thread + tear down the rclpy context (WR-05)."""
         self._position_timer.stop()  # Phase 18: never fire the poll after teardown
+        # 260530-5cg: PAUSE the Replayer before stopping the thread. stop_thread does
+        # QThread.quit()+wait(), but the worker is blocked in the BLOCKING Replayer.run() loop
+        # (quit() only signals the thread's event loop, which run() never reads) — so wait() would
+        # hang until the bag finishes playing. pause() sets state=PAUSED + wakes the pacing wait, so
+        # run() returns promptly and wait() unblocks. Clear _pending_action first so the 260530-2iv
+        # deferred-resume path can't rebuild a transport while we tear down.
+        self._pending_action = None
+        if self._replayer is not None:
+            with contextlib.suppress(Exception):
+                self._replayer.pause()  # type: ignore[union-attr]
         stop_thread(self._drive_thread)
         stop_thread(self._install_thread)  # Phase 22: stop a running pip-install worker
         self._close_rerun()  # Phase 22: drop the mirror + flush (transport-independent)
