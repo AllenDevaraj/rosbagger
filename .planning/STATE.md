@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.6
 milestone_name: Live visualization (Rerun)
-status: planning
-stopped_at: Phase 22 added (Milestone v0.6); ready to plan
-last_updated: "2026-05-30T03:35:16.000Z"
-last_activity: 2026-05-30 -- Phase 22 added (Milestone v0.6 — Live visualization/Rerun); design spec committed (08d52c3), planning next
+status: planned
+stopped_at: Phase 22 planned (3 plans, waves 1-3); ready to execute
+last_updated: "2026-05-30T03:51:20.000Z"
+last_activity: 2026-05-30 -- Phase 22 planned: RESEARCH + CONTEXT + 3 plans (RR-1/2/3) for live mirror to Rerun; awaiting user review before /gsd-execute-phase 22
 progress:
   total_phases: 22
   completed_phases: 21
-  total_plans: 59
+  total_plans: 62
   completed_plans: 59
   percent: 95
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 ## Current Position
 
-Phase: 22 (replay-live-mirror-to-rerun) — PLANNING
-Plan: not yet planned (0 plans)
-Status: Phase 22 added under Milestone v0.6; ready for /gsd-plan-phase 22
-Last activity: 2026-05-30 -- Phase 22 added (Milestone v0.6 — Live visualization/Rerun); design spec committed (08d52c3)
+Phase: 22 (replay-live-mirror-to-rerun) — PLANNED
+Plan: 3 plans (22-01/02/03, waves 1-3); awaiting user review
+Status: Phase 22 planned; ready for /gsd-execute-phase 22 after review
+Last activity: 2026-05-30 -- Phase 22 planned: RESEARCH + CONTEXT + 3 plans (RR-1/2/3)
 
 Progress: [██████████] 100%
 
