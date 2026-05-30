@@ -1939,3 +1939,56 @@ def test_replay_rerun_close_drops_sink_and_flushes(qtbot) -> None:
     assert panel._rerun_rec is None
     assert flushed["n"] == 1
     assert panel.rerun_button.text() == "Open in Rerun"
+
+
+def test_replay_pause_then_immediate_play_resumes(qtbot, monkeypatch) -> None:
+    """260530-2iv: pause then IMMEDIATELY play must RESUME, not reject with 'Already playing'.
+
+    Regression for the race where a post-pause worker is still finishing (thread isRunning()) but
+    the Replayer is already PAUSED — the old guard wrongly rejected the resume. A fake replayer
+    whose run() blocks until pause() reproduces the exact timing without ROS.
+    """
+    import threading
+
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+    from rosbagger_replay.scheduler import State
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+
+    class _FakeReplayer:
+        def __init__(self) -> None:
+            self.rate = 1.0
+            self.state = State.PAUSED
+            self.position_fraction = 0.0
+            self._resume = threading.Event()
+
+        def play(self) -> None:
+            self.state = State.PLAYING
+            self._resume.clear()
+
+        def pause(self) -> None:
+            self.state = State.PAUSED
+            self._resume.set()  # let the blocked run() return
+
+        def run(self) -> None:
+            self._resume.wait(timeout=5.0)
+
+    fake = _FakeReplayer()
+    panel._replayer = fake
+    panel._item_count = 3
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(panel, "_ensure_transport", lambda: True)
+
+    panel.play_button.click()
+    qtbot.wait(50)
+    panel.pause_button.click()  # → fake.pause(); run() returns, `finished` not yet processed
+    panel.play_button.click()  # IMMEDIATE play (the race) — must defer, not reject
+    assert "already playing" not in panel.status_label.text().lower(), panel.status_label.text()
+
+    # The deferred resume fires once the finishing worker stops → the drive restarts.
+    qtbot.waitUntil(panel._drive_running, timeout=3000)
+
+    # Cleanup: pause so the resumed worker returns (keeps teardown fast).
+    panel.pause_button.click()
+    qtbot.waitUntil(lambda: not panel._drive_running(), timeout=3000)

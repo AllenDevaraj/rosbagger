@@ -96,6 +96,10 @@ class ReplayPanel(QWidget):
         # nothing on the wire for RViz). The inspect/query/tf panels already keep self._*_worker;
         # this matches them. Cleared in _on_drive_finished (the worker deleteLater's on finish).
         self._drive_worker: BlockingWorker | None = None
+        # 260530-2iv: a transport action (play/step) pressed WHILE a post-pause worker is still
+        # finishing is DEFERRED here (not rejected as "Already playing") and replayed by
+        # _on_drive_finished once the worker stops — closes the pause→play resume race.
+        self._pending_action: str | None = None
         # Phase 22 — the live Rerun mirror. self._rerun_sink (set on toggle-on by _open_rerun) is
         # read LIVE by the drive tee in _ensure_transport, so toggling needs no transport rebuild;
         # self._rerun_rec is the RecordingStream/viewer handle. The mirror is transport-INDEPENDENT:
@@ -591,15 +595,39 @@ class ReplayPanel(QWidget):
         """
         return self._drive_thread is not None and self._drive_thread.isRunning()
 
+    def _genuinely_playing(self) -> bool:
+        """True iff a drive worker runs AND the Replayer is actually PLAYING (260530-2iv).
+
+        The "Already playing" guard must reject only a genuine DOUBLE-play. After a pause the
+        Replayer's ``run()`` returns and the worker tears down, but ``_on_drive_finished`` clears
+        ``self._drive_thread`` ASYNCHRONOUSLY (queued to the UI thread) — so for a brief window the
+        thread still ``isRunning()`` while the Replayer state is already PAUSED. A pause-then-play
+        clicks inside that window; treating it as "playing" wrongly rejects the RESUME. So the
+        source of truth is the Replayer STATE, not the zombie thread. ``State`` import stays lazy
+        (the module top stays ROS-free).
+        """
+        if not self._drive_running() or self._replayer is None:
+            return False
+        from rosbagger_replay.scheduler import State
+
+        return self._replayer.state is State.PLAYING  # type: ignore[union-attr]
+
     def _play(self) -> None:
         """Resume publishing from the held cursor (→ PLAYING) and (re)start the drive worker."""
         if not self._ros_available():
             set_status(self._status, REPLAY_HINT, is_error=True)
             return
         if self._drive_running():
-            set_status(
-                self._status, "Already playing — pause before issuing a new control.", is_error=True
-            )
+            if self._genuinely_playing():
+                set_status(
+                    self._status,
+                    "Already playing — pause before issuing a new control.",
+                    is_error=True,
+                )
+                return
+            # 260530-2iv: a post-pause worker is still finishing — DEFER the resume (don't reject
+            # it as a double-play). _on_drive_finished replays it once the worker stops.
+            self._pending_action = "play"
             return
         if not self._ensure_transport():
             return
@@ -614,6 +642,7 @@ class ReplayPanel(QWidget):
         """Pause publishing but HOLD the cursor (→ PAUSED). The worker returns on its own."""
         if self._replayer is None:
             return
+        self._pending_action = None  # 260530-2iv: a pause cancels any deferred play/step
         self._replayer.pause()  # type: ignore[union-attr]
         set_status(self._status, "Paused.")
 
@@ -623,9 +652,13 @@ class ReplayPanel(QWidget):
             set_status(self._status, REPLAY_HINT, is_error=True)
             return
         if self._drive_running():
-            set_status(
-                self._status, "Pause before stepping (a play worker is running).", is_error=True
-            )
+            if self._genuinely_playing():
+                set_status(
+                    self._status, "Pause before stepping (a play worker is running).", is_error=True
+                )
+                return
+            # 260530-2iv: defer the step until the finishing post-pause worker stops.
+            self._pending_action = "step"
             return
         if not self._ensure_transport():
             return
@@ -912,6 +945,14 @@ class ReplayPanel(QWidget):
         self._drive_thread = None
         self._drive_worker = None  # CR-02: drop our worker ref now the drive is done
         self._position_timer.stop()
+        # 260530-2iv: a play/step pressed while THIS worker was finishing (post-pause) was deferred;
+        # replay it now the thread is cleared (so _drive_running() is False) and it resumes cleanly.
+        pending = self._pending_action
+        self._pending_action = None
+        if pending == "play":
+            self._play()
+        elif pending == "step":
+            self._step()
 
     def _on_drive_done(self, _result: object) -> None:
         """Push the final playhead + a terminal status after the drive worker returns (UI thread).
