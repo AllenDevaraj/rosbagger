@@ -142,3 +142,40 @@ def test_convert_unknown_falls_back_to_textlog():
     last_path, last_arch = res[-1]
     assert isinstance(last_arch, rr.TextLog)
     assert last_path == "weird"  # empty frame_id → topic
+
+
+# --------------------------------------------------------------- GPU offload (260530-ja4)
+
+
+def test_prefer_gpu_injects_offload_env_when_nvidia_present(monkeypatch):
+    """When an NVIDIA Vulkan ICD is present, _prefer_gpu sets the PRIME-offload env."""
+    from rosbagger_rerun import session
+
+    monkeypatch.setattr(session, "_nvidia_vulkan_present", lambda: True)
+    env: dict[str, str] = {}
+    session._prefer_gpu(env=env)
+    assert env["__NV_PRIME_RENDER_OFFLOAD"] == "1"
+    assert env["__VK_LAYER_NV_optimus"] == "NVIDIA_only"
+    assert env["__GLX_VENDOR_LIBRARY_NAME"] == "nvidia"
+    assert env["WGPU_POWER_PREF"] == "high"
+
+
+def test_prefer_gpu_is_noop_without_nvidia(monkeypatch):
+    """No NVIDIA ICD → _prefer_gpu touches nothing (no-op on non-NVIDIA / non-Linux)."""
+    from rosbagger_rerun import session
+
+    monkeypatch.setattr(session, "_nvidia_vulkan_present", lambda: False)
+    env: dict[str, str] = {}
+    session._prefer_gpu(env=env)
+    assert env == {}
+
+
+def test_prefer_gpu_setdefault_respects_user_env(monkeypatch):
+    """A user's own exported value wins (setdefault, not overwrite)."""
+    from rosbagger_rerun import session
+
+    monkeypatch.setattr(session, "_nvidia_vulkan_present", lambda: True)
+    env = {"WGPU_POWER_PREF": "low"}  # user already chose low-power
+    session._prefer_gpu(env=env)
+    assert env["WGPU_POWER_PREF"] == "low"  # not clobbered
+    assert env["__NV_PRIME_RENDER_OFFLOAD"] == "1"  # the rest still added
