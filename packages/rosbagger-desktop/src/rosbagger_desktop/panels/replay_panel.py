@@ -41,6 +41,8 @@ rosbagger_desktop.panels.replay_panel`` pulls no ``rclpy`` / ``rosbag2_py``.
 from __future__ import annotations
 
 import contextlib
+import subprocess
+import sys
 
 from PySide6.QtCore import Qt, QThread, QTimer
 from PySide6.QtWidgets import (
@@ -94,6 +96,16 @@ class ReplayPanel(QWidget):
         # nothing on the wire for RViz). The inspect/query/tf panels already keep self._*_worker;
         # this matches them. Cleared in _on_drive_finished (the worker deleteLater's on finish).
         self._drive_worker: BlockingWorker | None = None
+        # Phase 22 — the live Rerun mirror. self._rerun_sink (set on toggle-on by _open_rerun) is
+        # read LIVE by the drive tee in _ensure_transport, so toggling needs no transport rebuild;
+        # self._rerun_rec is the RecordingStream/viewer handle. The mirror is transport-INDEPENDENT:
+        # it survives a rate-change rebuild; torn down ONLY in _close_rerun / closeEvent (never
+        # _teardown_transport). self._install_* hold the kept-ref pip-install worker (CR-02: never
+        # drop the worker into `_`, or the GC collects it before run() fires — the 260529-k6m bug).
+        self._rerun_sink: object | None = None
+        self._rerun_rec: object | None = None
+        self._install_thread: QThread | None = None
+        self._install_worker: BlockingWorker | None = None
         # Live-playhead poll (Phase 18 / SC2): a UI-thread QTimer that, while the drive worker
         # runs Replayer.run() on its thread, periodically reads the now-thread-safe
         # position_fraction and advances the scrubber playhead so the timeline tracks playback
@@ -118,6 +130,10 @@ class ReplayPanel(QWidget):
         self._rate_input = QLineEdit(_DEFAULT_RATE)
         self._rate_input.setPlaceholderText("rate (>0)")
         self._loop_checkbox = QCheckBox("loop")
+        # Phase 22: the live Rerun mirror toggle. Checkable so it reads as on/off; sits at the END
+        # of the strip behind a stretch so it presents as a "view" action, not a transport control.
+        self._rerun_button = QPushButton("Open in Rerun")
+        self._rerun_button.setCheckable(True)
         control_bar = QHBoxLayout()
         control_bar.addWidget(self._play_button)
         control_bar.addWidget(self._pause_button)
@@ -125,6 +141,8 @@ class ReplayPanel(QWidget):
         control_bar.addWidget(QLabel("rate:"))
         control_bar.addWidget(self._rate_input)
         control_bar.addWidget(self._loop_checkbox)
+        control_bar.addStretch(1)
+        control_bar.addWidget(self._rerun_button)
 
         # Snippet loop region (Phase 19, REP-03): the durable unit is the FRACTION (the bag span
         # can change on a transport rebuild); converted to absolute t_ns at apply time the same
@@ -176,6 +194,7 @@ class ReplayPanel(QWidget):
         self._step_button.clicked.connect(self._step)
         self._rate_input.returnPressed.connect(self._apply_rate)
         self._loop_checkbox.toggled.connect(self._apply_loop)
+        self._rerun_button.toggled.connect(self._toggle_rerun)
         self._scrubber.seeked.connect(self._on_seeked)
         self._advanced_toggle.toggled.connect(self._on_advanced_toggled)
         self._region_checkbox.toggled.connect(self._on_region_toggled)
@@ -255,6 +274,11 @@ class ReplayPanel(QWidget):
         """The loop checkbox (forwards to ``replayer.loop``)."""
         return self._loop_checkbox
 
+    @property
+    def rerun_button(self) -> QPushButton:
+        """The 'Open in Rerun' toggle (Phase 22 — live-mirrors Play into the Rerun viewer)."""
+        return self._rerun_button
+
     # ------------------------------------------------------------------ lifecycle
 
     def showEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
@@ -272,6 +296,8 @@ class ReplayPanel(QWidget):
         """Stop the playhead timer + drive thread + tear down the rclpy context (WR-05)."""
         self._position_timer.stop()  # Phase 18: never fire the poll after teardown
         stop_thread(self._drive_thread)
+        stop_thread(self._install_thread)  # Phase 22: stop a running pip-install worker
+        self._close_rerun()  # Phase 22: drop the mirror + flush (transport-independent)
         self._teardown_transport()
         super().closeEvent(event)
 
@@ -388,8 +414,21 @@ class ReplayPanel(QWidget):
             sink, self._published = build_publish_sink(
                 self._node, publish_clock=publish_clock, static_topics=static_topics
             )
-            self._sink = sink
-            self._replayer = Replayer(items, sink, rate=rate, loop=self._loop_checkbox.isChecked())
+            self._sink = sink  # the BARE publish sink (republish_static reads sink.tracker)
+
+            # Phase 22 — the dynamic Rerun tee. The Replayer drives THIS composed sink: it always
+            # publishes to ROS (unchanged), then — only while the mirror is on — also logs to Rerun.
+            # It reads self._rerun_sink LIVE, so toggling Open-in-Rerun needs no transport rebuild,
+            # and build_publish_sink / self._sink stay byte-for-byte the production publish path.
+            def _drive_sink(item: object) -> None:
+                sink(item)
+                rerun_sink = self._rerun_sink
+                if rerun_sink is not None:
+                    rerun_sink(item)
+
+            self._replayer = Replayer(
+                items, _drive_sink, rate=rate, loop=self._loop_checkbox.isChecked()
+            )
             self._item_count = len(items)
             self._bag_span_ns = items[-1].t_ns - items[0].t_ns
             # Phase 19: re-apply a region set before this (re)build so it survives pause/seek/play.
@@ -430,6 +469,113 @@ class ReplayPanel(QWidget):
 
             with contextlib.suppress(Exception):
                 rclpy.shutdown()
+
+    # --------------------------------------------------------------- Rerun mirror (Phase 22)
+
+    def _toggle_rerun(self, checked: bool) -> None:
+        """Open-in-Rerun toggle: open the live mirror (on) or stop it (off).
+
+        Gated on ROS (the mirror is live) + ``rerun_available()``; when rerun-sdk is missing the
+        install-on-click path runs pip in a worker. ``open_viewer`` / ``build_rerun_sink`` are
+        reached via the ``rosbagger_rerun`` module attribute so tests can monkeypatch them. The
+        lazy ``import rosbagger_rerun`` keeps this module's top ROS-free AND rerun-free.
+        """
+        if not checked:
+            self._close_rerun()
+            return
+        if not self._ros_available():
+            set_status(self._status, "Source ROS 2 to mirror replay to Rerun.", is_error=True)
+            self._rerun_button.setChecked(False)
+            return
+        import rosbagger_rerun
+
+        if rosbagger_rerun.rerun_available():
+            self._open_rerun()
+        else:
+            self._install_rerun()
+
+    def _open_rerun(self) -> None:
+        """Spawn the Rerun viewer + build the mirror sink (read live by the drive tee)."""
+        import rosbagger_rerun
+
+        try:
+            rec = rosbagger_rerun.open_viewer()
+            self._rerun_sink, _ = rosbagger_rerun.build_rerun_sink(rec)
+            self._rerun_rec = rec
+            self._rerun_button.setText("Open in Rerun")
+            set_status(self._status, "Mirroring replay to Rerun (press Play).")
+        except Exception as exc:  # noqa: BLE001 - teach, don't crash the panel
+            set_status(self._status, f"Rerun open failed: {exc}", is_error=True)
+            self._rerun_button.setChecked(False)
+
+    def _close_rerun(self) -> None:
+        """Stop the mirror: drop the sink (the tee goes inert) + best-effort flush the recording."""
+        self._rerun_sink = None
+        rec = self._rerun_rec
+        self._rerun_rec = None
+        if rec is not None:
+            with contextlib.suppress(Exception):
+                rec.flush()
+        self._rerun_button.setText("Open in Rerun")
+
+    def _install_rerun(self) -> None:
+        """Install rerun-sdk on-click in a kept-ref worker (CR-02), then open the mirror.
+
+        Runs pip OFF the UI thread so the window never freezes; BOTH the thread AND worker refs
+        are kept (dropping the worker into ``_`` is the 260529-k6m GC bug). On finish:
+        ``_on_install_result`` opens the mirror, ``_on_install_failed`` teaches the manual command,
+        ``_on_install_finished`` clears the refs (mirrors ``_on_drive_finished``).
+        """
+        self._rerun_button.setText("Open in Rerun (install)")
+        set_status(self._status, "Installing rerun-sdk…")
+        worker = BlockingWorker(
+            lambda: subprocess.run(
+                [sys.executable, "-m", "pip", "install", "rerun-sdk>=0.31,<0.33"],
+                check=True,
+                capture_output=True,
+            ),
+            label="Rerun install failed",
+        )
+        self._install_thread, self._install_worker = run_on_thread(
+            self,
+            worker,
+            self._on_install_result,
+            self._on_install_failed,
+            self._on_install_finished,
+        )
+
+    def _on_install_result(self, _value: object) -> None:
+        """pip install succeeded — re-probe (invalidating import caches) and open the mirror."""
+        import importlib
+
+        import rosbagger_rerun
+
+        importlib.invalidate_caches()
+        if rosbagger_rerun.rerun_available():
+            self._open_rerun()
+        else:
+            set_status(
+                self._status,
+                "rerun-sdk installed but not importable yet — toggle again.",
+                is_error=True,
+            )
+            self._rerun_button.setChecked(False)
+            self._rerun_button.setText("Open in Rerun (install)")
+
+    def _on_install_failed(self, message: str) -> None:
+        """pip install failed — teach the manual command instead of crashing."""
+        set_status(
+            self._status,
+            f'{message} — install manually: pip install "rerun-sdk>=0.31,<0.33"',
+            is_error=True,
+        )
+        self._rerun_button.setChecked(False)
+        self._rerun_button.setText("Open in Rerun (install)")
+
+    def _on_install_finished(self) -> None:
+        """Drop the install worker refs now the pip run is done (mirrors _on_drive_finished)."""
+        self._install_thread = None
+        self._install_worker = None
 
     # ------------------------------------------------------------------- controls
 

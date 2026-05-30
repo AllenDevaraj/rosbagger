@@ -2171,6 +2171,7 @@ dependencies = [
     { name = "rosbagger-core" },
     { name = "rosbagger-record" },
     { name = "rosbagger-replay" },
+    { name = "rosbagger-rerun" },
 ]
 
 [package.metadata]
@@ -2179,6 +2180,7 @@ requires-dist = [
     { name = "rosbagger-core", editable = "packages/rosbagger-core" },
     { name = "rosbagger-record", editable = "packages/rosbagger-record" },
     { name = "rosbagger-replay", editable = "packages/rosbagger-replay" },
+    { name = "rosbagger-rerun", editable = "packages/rosbagger-rerun" },
 ]
 
 [[package]]

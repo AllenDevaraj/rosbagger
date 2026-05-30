@@ -22,6 +22,10 @@ dependencies = [
     "rosbagger-core>=0.2,<0.3",
     "rosbagger-record>=0.2,<0.3",
     "rosbagger-replay>=0.2,<0.3",
+    # Phase 22: the bag→Rerun bridge. Import-safe (pulls NO ROS/rerun at import — both lazy),
+    # so the replay panel can lazily `import rosbagger_rerun` for the Open-in-Rerun toggle. The
+    # rerun-sdk SDK stays an OPTIONAL extra of rosbagger-rerun (install-on-click), never pulled here.
+    "rosbagger-rerun>=0.2,<0.3",
     "PySide6>=6.10,<6.12",
 ]
 

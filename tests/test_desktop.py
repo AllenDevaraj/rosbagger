@@ -1881,3 +1881,61 @@ def test_replay_seek_static_republish_noop_when_no_sink(qtbot, monkeypatch) -> N
 
     # Must not raise (the `self._sink is not None` guard skips republish_static).
     panel._on_seeked(0.2)
+
+
+def test_replay_rerun_button_present(qtbot) -> None:
+    """Phase 22: Replay strip has a checkable 'Open in Rerun' button; mirror inert by default."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    assert panel.rerun_button.text() == "Open in Rerun"
+    assert panel.rerun_button.isCheckable()
+    assert panel._rerun_sink is None  # the drive tee is inert until the mirror is toggled on
+
+
+def test_replay_rerun_toggle_unavailable_enters_install_state(qtbot, monkeypatch) -> None:
+    """Toggling on with ROS up but rerun-sdk absent enters the install state — no pip, no viewer.
+
+    Patches `_ros_available`→True (so we pass the ROS gate), `rerun_available`→False (so we take
+    the install-on-click branch), and `run_on_thread`→no-op (so the pip worker never actually
+    spawns). Asserts the button relabels + the 'Installing…' status fires WITHOUT opening a mirror.
+    """
+    import rosbagger_rerun
+    from rosbagger_desktop.panels import replay_panel as replay_panel_mod
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(rosbagger_rerun, "rerun_available", lambda: False)
+    monkeypatch.setattr(replay_panel_mod, "run_on_thread", lambda *a, **k: (None, None))
+
+    panel.rerun_button.click()  # programmatic (mouseClick drops on a non-visible widget)
+
+    assert panel.rerun_button.text() == "Open in Rerun (install)"
+    assert panel._rerun_sink is None  # no mirror opened, no viewer spawned
+    assert "Installing" in panel.status_label.text()
+
+
+def test_replay_rerun_close_drops_sink_and_flushes(qtbot) -> None:
+    """The toggle-off path drops the sink, flushes the recording, and resets the label."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    flushed = {"n": 0}
+
+    class _Rec:
+        def flush(self):
+            flushed["n"] += 1
+
+    panel._rerun_sink = lambda item: None
+    panel._rerun_rec = _Rec()
+
+    panel._close_rerun()
+
+    assert panel._rerun_sink is None
+    assert panel._rerun_rec is None
+    assert flushed["n"] == 1
+    assert panel.rerun_button.text() == "Open in Rerun"
