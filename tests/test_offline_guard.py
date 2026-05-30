@@ -475,3 +475,35 @@ def test_import_desktop_cli_does_not_pull_pyside6_or_ros():
     )
     leaked = [m for m in result.stdout.strip().split(",") if m]
     assert leaked == [], f"import rosbagger_desktop.cli pulled Qt/ROS: {leaked}"
+
+
+def test_import_rerun_bridge_does_not_pull_ros_or_rerun():
+    """`import rosbagger_rerun` pulls NO rclpy/rosbag2_py/rerun (Phase 22 offline invariant).
+
+    The Phase 22 bag→Rerun bridge isolates EVERY ``rerun`` / ``rclpy`` /
+    ``rosidl_runtime_py`` import inside function bodies (``session`` / ``converters`` /
+    ``sink``), so the bare top-level ``import rosbagger_rerun`` binds neither the ROS
+    RUNTIME stack NOR the (large) ``rerun`` SDK — the offline import graph stays ROS-free
+    AND Rerun-free even though the package REQUIRES both at run time. This is the load-bearing
+    isolation guarantee for the new package (mirrors ``test_import_replay_does_not_pull_ros``,
+    extended to also block ``rerun``).
+
+    Mechanism: a FRESH interpreter with ``env={"PYTHONPATH": ""}`` (the empty PYTHONPATH
+    neutralizes this dev host's ROS-on-PYTHONPATH leak; the editable workspace member still
+    resolves via its site-packages ``.pth``), so this asserts the import GRAPH is clean, not
+    merely that ROS/rerun are off the path.
+    """
+    code = (
+        "import sys; import rosbagger_rerun; "
+        "leaked=[m for m in sys.modules if m.split('.')[0] in {'rclpy', 'rosbag2_py', 'rerun'}]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PYTHONPATH": ""},
+    )
+    leaked = [m for m in result.stdout.strip().split(",") if m]
+    assert leaked == [], f"import rosbagger_rerun pulled in ROS/rerun modules: {leaked}"
