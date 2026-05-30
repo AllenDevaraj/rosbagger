@@ -47,6 +47,12 @@ Turn replay from a fire-and-forget publisher into a real playback system: a live
 - [x] **Phase 20: Replay RViz fidelity (clock + static republish)** - publish `/clock` for `use_sim_time` and re-emit latched/`transient_local` + `/tf_static` after a seek so RViz re-primes instead of layering stale state (completed 2026-05-29)
 - [x] **Phase 21: Replay CLI parity flags** - close the `ros2 bag play` gap feasible in our publish model: `--start-paused`, `--remap`, `--delay`, `--clock`, bounded region `[in,out]` (completed 2026-05-29)
 
+### Milestone v0.6 — Live visualization (Rerun)
+
+Add a one-click, zero-config live viewer to the desktop Replay tab: an **Open in Rerun** toggle that mirrors Play into the Rerun viewer by forking the existing publish sink — no manual RViz-style display/frame setup. ROS-gated and additive (RViz / `ros2 topic` keep working). A new ROS-isolated `rosbagger-rerun` package holds the converters; the offline import graph stays ROS-free AND Rerun-free.
+
+- [ ] **Phase 22: Replay live mirror to Rerun** - "Open in Rerun" toggle on the Replay tab that live-mirrors Play by forking the publish sink into a new `rosbagger-rerun` package (Image/CompressedImage, LaserScan, PointCloud2, TF rich converters + generic fallback), gated on `rerun-sdk`
+
 ## Phase Details
 
 ### Phase 1: Scaffold & Test Harness
@@ -572,3 +578,13 @@ Plans:
 **Wave 2** *(blocked on 21-01)*
 
 - [x] 21-02-PLAN.md — CLI surface: add --clock/--delay/--remap(old:=new)/--start-paused(-p)/--region-start/--region-end to cli.py, parse remap, forward to replay_bag, document the deferred runtime ROS services + single-pass region stop as out-of-scope; CliRunner unit tests; phase gate -> SC1/SC2/SC3/SC4
+
+### Phase 22: Replay live mirror to Rerun
+
+**Goal:** Add an **Open in Rerun** toggle to the desktop Replay control bar that live-mirrors Play into the Rerun viewer with zero manual setup. Implemented by forking the existing shared publish sink (`build_publish_sink`) with a dynamic tee — each played message is published to ROS (unchanged) and, while the toggle is on, also logged to Rerun — so RViz / `ros2 topic` stay additive and `build_publish_sink` is byte-for-byte untouched (protecting the 260529-k6m fix). Rich converters (Image/CompressedImage, LaserScan, PointCloud2, TF) plus a generic numeric/text fallback live in a new ROS-isolated `rosbagger-rerun` package (offline import graph stays ROS-free AND Rerun-free). Gated on ROS availability + `rerun-sdk` (optional dep, install-on-click). v1 scope = sensor essentials; OccupancyGrid/IMU/pose/markers + external-`ros2 bag play` mirroring are explicitly deferred.
+**Requirements**: New Milestone v0.6 — design spec `.planning/specs/2026-05-29-rerun-live-mirror-design.md`
+**Depends on:** Phase 21
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 22 to break down)

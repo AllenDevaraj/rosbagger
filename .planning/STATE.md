@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.5
-milestone_name: Replay Playback System
-status: executing
-stopped_at: Completed 16-03-PLAN.md (PHASE 16 COMPLETE)
-last_updated: "2026-05-29T20:31:56.192Z"
-last_activity: 2026-05-29 -- Quick task 260529-k6m: fixed desktop live replay/record drive-worker GC (Play published nothing)
+milestone: v0.6
+milestone_name: Live visualization (Rerun)
+status: planning
+stopped_at: Phase 22 added (Milestone v0.6); ready to plan
+last_updated: "2026-05-30T03:35:16.000Z"
+last_activity: 2026-05-30 -- Phase 22 added (Milestone v0.6 — Live visualization/Rerun); design spec committed (08d52c3), planning next
 progress:
-  total_phases: 21
+  total_phases: 22
   completed_phases: 21
   total_plans: 59
   completed_plans: 59
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Phase 21 — replay-cli-parity-flags
+**Current focus:** Phase 22 — replay-live-mirror-to-rerun (Milestone v0.6)
 
 ## Current Position
 
-Phase: 21 (replay-cli-parity-flags) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 21
-Last activity: 2026-05-29 -- Quick task 260529-k6m: fixed desktop live replay/record drive-worker GC (Play published nothing)
+Phase: 22 (replay-live-mirror-to-rerun) — PLANNING
+Plan: not yet planned (0 plans)
+Status: Phase 22 added under Milestone v0.6; ready for /gsd-plan-phase 22
+Last activity: 2026-05-30 -- Phase 22 added (Milestone v0.6 — Live visualization/Rerun); design spec committed (08d52c3)
 
 Progress: [██████████] 100%
 
@@ -124,6 +124,7 @@ Progress: [██████████] 100%
 
 ### Roadmap Evolution
 
+- Milestone v0.6 "Live visualization (Rerun)" started + Phase 22 added (2026-05-29): Replay live mirror to Rerun. Adds an "Open in Rerun" toggle to the desktop Replay control bar that live-mirrors Play into the Rerun viewer with zero manual setup — replacing the painful RViz add-display/Fixed-Frame dance (surfaced while debugging the user's no-`/tf` bag at `~/Desktop/rosbag`). Approved brainstorming design locked three decisions via AskUserQuestion: (1) source = live mirror of Play, not an independent bag-read; (2) tap point = fork the shared publish sink (`build_publish_sink`) with a dynamic tee — additive to ROS, `build_publish_sink` byte-for-byte untouched, mirrors only this app's Play (external `ros2 bag play` deferred); (3) visual scope = sensor essentials (Image/CompressedImage, LaserScan, PointCloud2, TF) + generic numeric/text fallback. A new ROS-isolated `rosbagger-rerun` package (7th workspace member) holds the converters; offline import graph stays ROS-free AND Rerun-free. Gated on ROS + optional `rerun-sdk` (install-on-click). Spec: `.planning/specs/2026-05-29-rerun-live-mirror-design.md` (commit 08d52c3). Next: /gsd-plan-phase 22.
 - Milestone v0.4 "Desktop revamp" started + Phase 17 added (2026-05-25): Desktop Revamp. Phase 16 left the Qt window functional but unstyled (raw default widgets); two quick tasks (260525-is6, 260525-kj0) then hardened ONLY the query panel (off-thread query, model/view rendering, QSplitter layout, accessible/error-styled status). Phase 17 generalizes that into a real revamp. User scoping decisions (locked via AskUserQuestion): (1) scope = visual + engineering parity across ALL five panels; (2) visual depth = full design system (QSS theme + design tokens), not a light pass; (3) theme = ship BOTH dark and light with a runtime toggle, palettes chosen per-usage by Claude. Hard carryover constraints: Phase-16 isolation (PySide6-only-in-package, offline graph ROS-free AND Qt-free) and the thin-face rule must hold. Open planning notes recorded in the ROADMAP Phase 17 block (prototype-first recommended; token→QSS mechanism TBD; OKLCH palette values to be pinned). Two design skills installed globally to support this: pyside6-ui-engineer + impeccable.
 - Milestone v0.3 "Desktop cockpit" started + Phase 16 added (2026-05-25): Native Desktop GUI (PySide6). A new isolated `rosbagger-desktop` package giving a real Qt desktop window with full parity to the Textual TUI's five panels, reusing the existing module APIs verbatim. User wanted a spawned GUI window (not a TUI); the existing TUI (`rosbagger-gui`) stays untouched. Hard isolation constraint: PySide6 confined to the new package, offline import graph kept ROS-free AND Qt-free. Brainstormed + spec'd at `docs/superpowers/specs/2026-05-25-rosbagger-desktop-gui-design.md`.
 - Phase 15 added (2026-05-24): Packaging & Release v0.2 — make the v0.2 packages git/path-installable into other repos (no index publish; user decision). The v0.2 milestone reopened from "complete" to add this release phase, mirroring Phase 8's v0.1 release work for the four packages Phase 8 didn't cover.
