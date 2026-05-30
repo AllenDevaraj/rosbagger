@@ -4,8 +4,8 @@ milestone: v0.6
 milestone_name: Live visualization (Rerun)
 status: complete
 stopped_at: Phase 22 COMPLETE (Milestone v0.6 — Live visualization/Rerun); VERIFICATION passed
-last_updated: "2026-05-30T04:27:10.000Z"
-last_activity: 2026-05-30 -- Phase 22 COMPLETE: Open-in-Rerun live mirror shipped; offline 565 passed @87%, 3 ROS-lane live tests pass; VERIFICATION passed
+last_updated: "2026-05-30T07:53:24.000Z"
+last_activity: 2026-05-30 -- Quick task 260530-2iv: fixed Replay pause→play "Already playing" race (state-aware guard + deferred resume); offline 566 passed @87%
 progress:
   total_phases: 22
   completed_phases: 22
@@ -256,6 +256,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 260525-kj0 | Query panel: vertical QSplitter for resizable regions + accessible/error-styled status live region | 2026-05-25 | da5a94f..9d272cc | [260525-kj0-query-panel-layout-a11y](./quick/260525-kj0-query-panel-layout-a11y/) |
 | 260528-3w6 | Replay panel: thread MainWindow's ROS2_HUMBLE typestore into load_items so typestore-less ROS 2 sqlite3 bags (real rosbag2 recordings) replay instead of raising "no type definitions" | 2026-05-28 | 23017f4..b504ac6 | [260528-3w6-fix-desktop-replay-panel-thread-the-wind](./quick/260528-3w6-fix-desktop-replay-panel-thread-the-wind/) |
 | 260529-k6m | Desktop live replay/record drives were a no-op: keep the BlockingWorker ref (it was dropped into `_` and GC'd before `thread.started→worker.run` fired) so Play actually publishes and record discovers/captures; also made the live replay test exercise Play (click() vs a dropped coordinate click) | 2026-05-29 | d307d71 | [260529-k6m-replay-record-worker-gc-fix](./quick/260529-k6m-replay-record-worker-gc-fix/) |
+| 260530-2iv | Replay pause→play said "Already playing": the guard rejected whenever the drive thread isRunning(), but after a pause run() returns + the worker tears down async (state already PAUSED), so a normal pause-then-play was wrongly rejected. State-aware guard (`_genuinely_playing`) rejects only a true PLAYING double-play; a play/step pressed while a post-pause worker finishes is deferred via `_pending_action` and replayed in `_on_drive_finished` | 2026-05-30 | b5020e7 | [260530-2iv-fix-replay-pause-play-already-playing-ra](./quick/260530-2iv-fix-replay-pause-play-already-playing-ra/) |
 
 ## Deferred Items
 
