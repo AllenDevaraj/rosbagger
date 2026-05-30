@@ -263,3 +263,51 @@ def test_replay_panel_publishes_external_subscriber_receives(qtbot, tmp_path: Pa
         except subprocess.TimeoutExpired:  # pragma: no cover - defensive
             proc.kill()
             proc.wait(timeout=5)
+
+
+def test_replay_panel_rerun_mirror_writes_rrd(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """LIVE (Phase 22 / RR-3): toggling Open-in-Rerun then Play mirrors the publish into a .rrd.
+
+    Monkeypatches ``rosbagger_rerun.open_viewer`` to a SAVE-mode ``RecordingStream`` (writes a
+    ``.rrd``, no viewer process), toggles the mirror on (so ``_open_rerun`` builds the rerun sink),
+    then presses Play. The drive tees every published item into the rerun sink; after the drive
+    reaches Done we flush and assert the ``.rrd`` is non-empty — proving the publish path AND the
+    rerun tee both fire from one Play (additive; the ROS publish path is unchanged).
+    """
+    import rerun as rr
+
+    import rosbagger_rerun
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    rrd = tmp_path / "mirror.rrd"
+
+    def _save_viewer(app_id: str = "rosbagger", *, save_path: str | None = None):
+        rec = rr.RecordingStream(app_id)
+        rec.save(str(rrd))  # SAVE mode — no viewer process spawns under test
+        return rec
+
+    monkeypatch.setattr(rosbagger_rerun, "open_viewer", _save_viewer)
+
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+    assert window.ros_available is True, "live lane must have rclpy → replay panel enabled"
+
+    panel = window.replay_panel
+    panel.show()  # showEvent (ROS gate + markers); full-window show aggravates the offscreen crash
+    panel.rate_input.setText("50.0")  # fast + deterministic
+
+    panel.rerun_button.click()  # toggle ON → _open_rerun → patched open_viewer (save mode)
+    assert panel._rerun_sink is not None, "mirror sink was not built on toggle-on"
+
+    panel.play_button.click()  # publish to ROS AND tee into the rerun sink
+
+    def _is_done() -> bool:
+        status = panel.status_label.text().lower()
+        return "done" in status or "published" in status
+
+    qtbot.waitUntil(_is_done, timeout=15000)
+
+    panel._close_rerun()  # flush the recording to the .rrd
+
+    assert rrd.exists(), "no .rrd written by the mirror"
+    assert rrd.stat().st_size > 0, "empty .rrd — the tee did not log anything"
