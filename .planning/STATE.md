@@ -4,8 +4,8 @@ milestone: v0.6
 milestone_name: Live visualization (Rerun)
 status: complete
 stopped_at: Phase 22 COMPLETE (Milestone v0.6 — Live visualization/Rerun); VERIFICATION passed
-last_updated: "2026-05-30T09:55:00.000Z"
-last_activity: 2026-05-30 -- Quick task 260530-5cg: fixed Replay close-while-playing hang (closeEvent pauses Replayer before stop_thread); offline 567 passed @88%
+last_updated: "2026-05-30T18:40:00.000Z"
+last_activity: 2026-05-30 -- Quick task 260530-ja4: Rerun viewer auto-routes onto the NVIDIA dGPU (Vulkan PRIME offload set before spawn); offline 570 passed
 progress:
   total_phases: 22
   completed_phases: 22
@@ -258,6 +258,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 260529-k6m | Desktop live replay/record drives were a no-op: keep the BlockingWorker ref (it was dropped into `_` and GC'd before `thread.started→worker.run` fired) so Play actually publishes and record discovers/captures; also made the live replay test exercise Play (click() vs a dropped coordinate click) | 2026-05-29 | d307d71 | [260529-k6m-replay-record-worker-gc-fix](./quick/260529-k6m-replay-record-worker-gc-fix/) |
 | 260530-2iv | Replay pause→play said "Already playing": the guard rejected whenever the drive thread isRunning(), but after a pause run() returns + the worker tears down async (state already PAUSED), so a normal pause-then-play was wrongly rejected. State-aware guard (`_genuinely_playing`) rejects only a true PLAYING double-play; a play/step pressed while a post-pause worker finishes is deferred via `_pending_action` and replayed in `_on_drive_finished` | 2026-05-30 | b5020e7 | [260530-2iv-fix-replay-pause-play-already-playing-ra](./quick/260530-2iv-fix-replay-pause-play-already-playing-ra/) |
 | 260530-5cg | Replay close-while-playing HANG: closeEvent called stop_thread (QThread.quit()+wait()) without pausing the Replayer first, so wait() blocked on the still-PLAYING blocking run() until the bag finished — closing mid-play of a long bag froze the app. closeEvent now clears _pending_action + pauses the Replayer before stop_thread so run() returns promptly | 2026-05-30 | d6c0d6c | [260530-5cg-fix-replay-close-while-playing-hang](./quick/260530-5cg-fix-replay-close-while-playing-hang/) |
+| 260530-ja4 | Rerun viewer rendered via software (llvmpipe) on the user's Optimus RTX-4070 laptop; their GLX prefix doesn't help (Rerun is Vulkan/wgpu). open_viewer() now setdefaults the Vulkan PRIME-offload env (__NV_PRIME_RENDER_OFFLOAD/__VK_LAYER_NV_optimus/WGPU_POWER_PREF) before rec.spawn() when an NVIDIA Vulkan ICD is present, so the spawned viewer inherits it and uses the dGPU — no launch prefix needed | 2026-05-30 | ee34a4a | [260530-ja4-route-spawned-rerun-viewer-onto-nvidia-d](./quick/260530-ja4-route-spawned-rerun-viewer-onto-nvidia-d/) |
 
 ## Deferred Items
 
