@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.6
-milestone_name: Live visualization (Rerun)
-status: complete
-stopped_at: Phase 22 COMPLETE (Milestone v0.6 — Live visualization/Rerun); VERIFICATION passed
-last_updated: "2026-05-30T18:40:00.000Z"
-last_activity: 2026-05-30 -- Quick task 260530-ja4: Rerun viewer auto-routes onto the NVIDIA dGPU (Vulkan PRIME offload set before spawn); offline 570 passed
+milestone: v0.7
+milestone_name: Live visualization (RViz) + cockpit overlay
+status: in_progress
+stopped_at: Phase 23 IN PROGRESS — plans 23-01 (Rerun fix) + 23-02 (skip + overlay API) DONE; next 23-03 (Open in RViz)
+last_updated: "2026-06-06T00:00:00.000Z"
+last_activity: 2026-06-06 -- Phase 23 plans 23-01 + 23-02 executed inline + committed (offline 583 passed, cov 88%)
 progress:
-  total_phases: 22
+  total_phases: 23
   completed_phases: 22
-  total_plans: 64
-  completed_plans: 64
-  percent: 95
+  total_plans: 68
+  completed_plans: 66
+  percent: 96
 ---
 
 # Project State
@@ -21,16 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone v0.6 complete (Phase 22 shipped); Phase 17 (v0.4 Desktop Revamp) remains the open prior-milestone item
+**Current focus:** Milestone v0.7 — Phase 23 (RViz launch, compact overlay & Rerun live fixes) IN PROGRESS
 
 ## Current Position
 
-Phase: 22 (replay-live-mirror-to-rerun) — COMPLETE (Milestone v0.6 done)
-Plan: 3 of 3 complete
-Status: Phase 22 verified PASSED; Open-in-Rerun live mirror shipped
-Last activity: 2026-06-05 -- Completed quick task 260605-i73: bundled pyyaml in the live lanes so a bare `uv run rosbagger-desktop` runs live record/replay without `--with pyyaml`
+Phase: 23 (rviz-launch-compact-overlay-and-rerun-live-fixes) — IN PROGRESS
+Plan: 2 of 4 complete (23-01 Rerun fix ✓, 23-02 skip + overlay API ✓; next 23-03 Open in RViz, then 23-04 overlay)
+Status: executing inline (GSD agents not installed). Offline suite 583 passed / 6 skipped, cov 88.18%.
+Last activity: 2026-06-06 -- 23-02 committed (de32752); ±5s skip buttons + ReplayPanel remote-control API for the overlay
 
-Progress: [██████████] 100%
+Resume: continue with /gsd-execute-phase 23 (inline) → implement 23-03-PLAN.md then 23-04-PLAN.md. All 4 PLAN.md + RESEARCH.md hold the full detail; replay_panel.py already has _bag_start_ns, the skip API, and positionChanged.
+
+Progress: [█████████░] 96% (Phase 23: 2/4 plans)
 
 ## Performance Metrics
 
