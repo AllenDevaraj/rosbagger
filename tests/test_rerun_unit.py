@@ -266,12 +266,17 @@ def test_open_viewer_spawns_non_detached_and_tracks(monkeypatch):
     monkeypatch.setattr(session, "_child_pids", lambda *a, **k: next(pid_calls))
     tracked: list[set] = []
     monkeypatch.setattr(session, "_track_viewers", lambda pids: tracked.append(set(pids)))
+    # 23-01: stub the readiness gate so the test never opens a real socket / waits.
+    ready_calls: list = []
+    monkeypatch.setattr(session, "_wait_viewer_ready", lambda *a, **k: ready_calls.append((a, k)))
 
     rec = session.open_viewer()
 
     assert isinstance(rec, _FakeRec)
     assert spawned["spawn"]["detach_process"] is False  # the fix: non-detached
+    assert spawned["spawn"]["port"] == session._VIEWER_GRPC_PORT  # spawn + probe share the port
     assert tracked == [{4242}]  # the new child PID was tracked for cleanup
+    assert ready_calls, "open_viewer must gate on viewer readiness before returning (23-01)"
 
 
 def test_open_viewer_save_mode_does_not_spawn_or_track(monkeypatch, tmp_path):
@@ -295,9 +300,45 @@ def test_open_viewer_save_mode_does_not_spawn_or_track(monkeypatch, tmp_path):
     monkeypatch.setattr(rr, "RecordingStream", _FakeRec)
     tracked: list = []
     monkeypatch.setattr(session, "_track_viewers", lambda pids: tracked.append(pids))
+    # 23-01: save mode must NEVER hit the readiness gate (tests must not block on a socket).
+    monkeypatch.setattr(
+        session,
+        "_wait_viewer_ready",
+        lambda *a, **k: pytest.fail("readiness gate must be skipped in save mode"),
+    )
 
     rec = session.open_viewer(save_path=str(tmp_path / "x.rrd"))
 
     assert isinstance(rec, _FakeRec)
     assert "save" in spawned and "spawn" not in spawned
     assert tracked == []
+
+
+def test_wait_viewer_ready_is_bounded_and_never_raises():
+    """Bounded against a closed port, never raises, still best-effort flushes (23-01)."""
+    import time
+
+    from rosbagger_rerun import session
+
+    flushed: list[bool] = []
+    rec = SimpleNamespace(flush=lambda *a, **k: flushed.append(True))
+    # Port 1 is closed → connect refuses fast; the loop sleeps to the deadline then returns.
+    start = time.monotonic()
+    ready = session._wait_viewer_ready(rec, port=1, host="127.0.0.1", timeout=0.3)
+    elapsed = time.monotonic() - start
+
+    assert ready is False  # never became reachable
+    assert elapsed < 1.5  # strictly bounded by the timeout (no hang)
+    assert flushed == [True]  # best-effort flush still attempted
+
+
+def test_wait_viewer_ready_flush_failure_is_suppressed():
+    """A recording without a working ``flush`` must not make readiness raise (23-01)."""
+    from rosbagger_rerun import session
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("flush unavailable")
+
+    rec = SimpleNamespace(flush=_boom)
+    # Returns cleanly despite flush blowing up (suppressed); bounded by the tiny timeout.
+    assert session._wait_viewer_ready(rec, port=1, timeout=0.1) is False

@@ -23,7 +23,14 @@ def rerun_available() -> bool:
     return True
 
 
-def open_viewer(app_id: str = "rosbagger", *, save_path: str | None = None):
+# 23-01: the gRPC port the spawned viewer serves on (rerun-sdk 0.32 ``spawn`` default). Passed
+# EXPLICITLY to spawn AND to the readiness probe so the two always agree.
+_VIEWER_GRPC_PORT = 9876
+
+
+def open_viewer(
+    app_id: str = "rosbagger", *, save_path: str | None = None, ready_timeout: float = 5.0
+):
     """Build a Rerun ``RecordingStream`` — spawn the viewer, or write a ``.rrd``.
 
     ``save_path=None`` (default) spawns the bundled Rerun viewer and streams to it
@@ -31,15 +38,20 @@ def open_viewer(app_id: str = "rosbagger", *, save_path: str | None = None):
     (the test path — see ``tests/test_rerun_live.py``). Returns the recording so a
     caller can build a sink against it (:func:`rosbagger_rerun.build_rerun_sink`).
 
-    ``import rerun`` is lazy here (offline invariant). Verify against the installed
-    rerun-sdk (>=0.31): ``rerun.RecordingStream`` + ``.spawn()`` / ``.save()`` are the
-    0.31 names — confirm if a newer SDK is installed.
+    ``import rerun`` is lazy here (offline invariant). Verified against rerun-sdk 0.32.2:
+    ``RecordingStream`` + ``.spawn(port=, detach_process=)`` / ``.save()`` / ``.flush()``.
 
     260530-c3p: the spawned viewer is launched with ``detach_process=False`` so it shares this
     process's group/session (a terminal Ctrl-C / SIGHUP reaches it directly) and stays our direct
     child (so :func:`close_viewer` can kill it on window-close / atexit). The default
     ``detach_process=True`` ``setsid``'s it into its own session, leaving it running after the GUI
     closes — the behavior the user reported.
+
+    23-01: in spawn mode we BLOCK (bounded by ``ready_timeout`` seconds) until the spawned viewer's
+    gRPC server accepts a connection BEFORE returning — ``rec.spawn`` is non-blocking, so without
+    this the first logged frames (large Images) stream into a not-yet-connected sink and are
+    dropped (the "image doesn't play if Rerun is opened before Play" bug). Save mode returns above
+    and never waits (tests must not block). The caller runs this OFF the UI thread.
     """
     import rerun as rr
 
@@ -50,9 +62,45 @@ def open_viewer(app_id: str = "rosbagger", *, save_path: str | None = None):
     _prefer_gpu()  # 260530-ja4: route the spawned viewer onto an NVIDIA dGPU (no-op otherwise)
     # 260530-c3p: spawn NON-detached + record the new child PID(s) so the viewer dies with the GUI.
     before = set(_child_pids())
-    rec.spawn(detach_process=False)
+    rec.spawn(detach_process=False, port=_VIEWER_GRPC_PORT)
     _track_viewers(set(_child_pids()) - before)
+    # 23-01: don't return until the viewer is actually reachable — closes the spawn-readiness race.
+    _wait_viewer_ready(rec, port=_VIEWER_GRPC_PORT, timeout=ready_timeout)
     return rec
+
+
+def _wait_viewer_ready(
+    rec, *, port: int = _VIEWER_GRPC_PORT, host: str = "127.0.0.1", timeout: float = 5.0
+) -> bool:
+    """Block until the spawned viewer's gRPC server accepts a TCP connection (23-01).
+
+    ``rec.spawn`` launches the viewer process and returns immediately; the gRPC server takes
+    ~100-500ms to bind ``port``. Logging before then streams into an unconnected sink and the early
+    (large) frames are dropped. We poll a short TCP connect to ``host:port`` until it accepts or
+    ``timeout`` elapses, then ``rec.flush()`` to push anything already buffered. NEVER raises and is
+    strictly bounded by ``timeout`` (a viewer that never comes up degrades to the pre-fix behavior,
+    it does not hang the caller). Returns ``True`` if the port became reachable, else ``False``.
+
+    ``socket``/``time``/``contextlib`` are imported locally so ``import rosbagger_rerun.session``
+    stays rerun-free AND import-light (offline invariant).
+    """
+    import contextlib
+    import socket
+    import time
+
+    ready = False
+    deadline = time.monotonic() + max(0.0, timeout)
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.2):
+                ready = True
+                break
+        except OSError:
+            time.sleep(0.1)
+    # Best-effort: push any data buffered before the connection settled.
+    with contextlib.suppress(Exception):
+        rec.flush()
+    return ready
 
 
 # 260530-c3p: tie the spawned Rerun viewer's lifetime to THIS (the desktop) process. The viewer is

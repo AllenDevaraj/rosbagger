@@ -86,6 +86,7 @@ class ReplayPanel(QWidget):
         # tracked latched topics back through it (republish_static reads sink.tracker).
         self._sink: object | None = None
         self._bag_span_ns: int = 0
+        self._bag_start_ns: int = 0  # 23-01: bag-start t_ns (the Rerun bag_time anchor)
         self._item_count: int = 0
         # Kept drive-thread ref (Pitfall 2 — the GC must not collect a live thread).
         self._drive_thread: QThread | None = None
@@ -110,6 +111,13 @@ class ReplayPanel(QWidget):
         self._rerun_rec: object | None = None
         self._install_thread: QThread | None = None
         self._install_worker: BlockingWorker | None = None
+        # 23-01: open_viewer now BLOCKS until the viewer is reachable (the spawn-readiness fix), so
+        # the spawn runs OFF the UI thread on a kept-ref worker (mirrors install; CR-02: never
+        # drop the worker into `_`). _rerun_logged is the sink's {"n","errors"} dict, KEPT (not
+        # discarded) so logged['errors'] surfaces on the status line instead of vanishing.
+        self._rerun_open_thread: QThread | None = None
+        self._rerun_open_worker: BlockingWorker | None = None
+        self._rerun_logged: dict | None = None
         # Live-playhead poll (Phase 18 / SC2): a UI-thread QTimer that, while the drive worker
         # runs Replayer.run() on its thread, periodically reads the now-thread-safe
         # position_fraction and advances the scrubber playhead so the timeline tracks playback
@@ -311,6 +319,7 @@ class ReplayPanel(QWidget):
                 self._replayer.pause()  # type: ignore[union-attr]
         stop_thread(self._drive_thread)
         stop_thread(self._install_thread)  # Phase 22: stop a running pip-install worker
+        stop_thread(self._rerun_open_thread)  # 23-01: stop a running off-thread viewer spawn
         self._close_rerun()  # Phase 22: drop the mirror + flush (transport-independent)
         self._teardown_transport()
         super().closeEvent(event)
@@ -445,6 +454,9 @@ class ReplayPanel(QWidget):
             )
             self._item_count = len(items)
             self._bag_span_ns = items[-1].t_ns - items[0].t_ns
+            self._bag_start_ns = items[
+                0
+            ].t_ns  # 23-01: the Rerun bag_time anchor (order-independent)
             # Phase 19: re-apply a region set before this (re)build so it survives pause/seek/play.
             # The fraction is the durable unit; reflect it onto the scrubber band, and onto the
             # rebuilt scheduler when region-loop is active (set_loop_region + seek into the region).
@@ -509,18 +521,53 @@ class ReplayPanel(QWidget):
             self._install_rerun()
 
     def _open_rerun(self) -> None:
-        """Spawn the Rerun viewer + build the mirror sink (read live by the drive tee)."""
+        """Spawn the Rerun viewer OFF the UI thread, then build the sink anchored to bag start.
+
+        23-01: ``open_viewer`` now blocks until the viewer is reachable (the spawn-readiness fix),
+        which can take ~1s — so it runs on a kept-ref ``BlockingWorker`` (mirroring
+        ``_install_rerun``) rather than freezing the GUI. ``_ensure_transport`` runs FIRST so
+        ``items`` + ``self._bag_start_ns`` exist; the sink is then anchored with
+        ``t0_ns=self._bag_start_ns`` so the ``bag_time`` timeline is identical whether Rerun is
+        opened BEFORE or AFTER Play. The ``logged`` ``{"n","errors"}`` dict is KEPT
+        (``self._rerun_logged``) so drop counts surface on the status line (no silent discard).
+        ``open_viewer`` is reached via the module attribute (monkeypatchable).
+        """
+        if not self._ensure_transport():
+            self._rerun_button.setChecked(False)
+            return
         import rosbagger_rerun
 
-        try:
-            rec = rosbagger_rerun.open_viewer()
-            self._rerun_sink, _ = rosbagger_rerun.build_rerun_sink(rec)
-            self._rerun_rec = rec
-            self._rerun_button.setText("Open in Rerun")
-            set_status(self._status, "Mirroring replay to Rerun (press Play).")
-        except Exception as exc:  # noqa: BLE001 - teach, don't crash the panel
-            set_status(self._status, f"Rerun open failed: {exc}", is_error=True)
-            self._rerun_button.setChecked(False)
+        set_status(self._status, "Opening Rerun…")
+        worker = BlockingWorker(lambda: rosbagger_rerun.open_viewer(), label="Rerun open failed")
+        self._rerun_open_thread, self._rerun_open_worker = run_on_thread(
+            self,
+            worker,
+            on_result=self._on_rerun_opened,
+            on_failed=self._on_rerun_open_failed,
+            on_finished=self._on_rerun_open_finished,
+        )
+
+    def _on_rerun_opened(self, rec: object) -> None:
+        """Off-thread spawn returned (viewer reachable) — build the bag-start-anchored sink."""
+        import rosbagger_rerun
+
+        self._rerun_sink, self._rerun_logged = rosbagger_rerun.build_rerun_sink(
+            rec, t0_ns=self._bag_start_ns
+        )
+        self._rerun_rec = rec
+        set_status(self._status, "Mirroring replay to Rerun (press Play).")
+
+    def _on_rerun_open_failed(self, message: str) -> None:
+        """The off-thread viewer spawn failed — teach + uncheck (mirror the drive-failed path)."""
+        set_status(self._status, message, is_error=True)
+        self._rerun_button.setChecked(False)
+
+    def _on_rerun_open_finished(self) -> None:
+        """Join the open-worker thread before dropping the parentless worker ref (260530-w4k)."""
+        thread = self._rerun_open_thread
+        self._rerun_open_thread = None
+        stop_thread(thread)
+        self._rerun_open_worker = None
 
     def _close_rerun(self) -> None:
         """Stop the mirror: drop the sink, flush, and CLOSE the spawned viewer (260530-c3p).
@@ -532,6 +579,7 @@ class ReplayPanel(QWidget):
         already reach the viewer directly via the shared process group (it is spawned non-detached).
         """
         self._rerun_sink = None
+        self._rerun_logged = None  # 23-01: drop stale Rerun drop-counts with the mirror
         rec = self._rerun_rec
         self._rerun_rec = None
         if rec is not None:
@@ -1012,4 +1060,9 @@ class ReplayPanel(QWidget):
 
         if replayer.state is State.DONE:  # type: ignore[union-attr]
             published = self._published["n"] if self._published else 0
-            set_status(self._status, f"Done — published {published} message(s).")
+            message = f"Done — published {published} message(s)."
+            # 23-01: surface Rerun drop counts instead of silently discarding logged['errors'].
+            errors = self._rerun_logged.get("errors", 0) if self._rerun_logged else 0
+            if errors:
+                message += f" Rerun: {errors} message(s) could not be logged."
+            set_status(self._status, message)

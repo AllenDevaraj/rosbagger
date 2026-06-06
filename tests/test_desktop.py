@@ -1957,6 +1957,63 @@ def test_replay_rerun_close_drops_sink_flushes_and_closes_viewer(qtbot, monkeypa
     assert panel.rerun_button.text() == "Open in Rerun"
 
 
+def test_replay_rerun_open_anchors_t0_off_thread(qtbot, monkeypatch) -> None:
+    """23-01: opening Rerun spawns the viewer OFF the UI thread and anchors the sink to bag start.
+
+    Patches ``_ros_available``→True, ``_ensure_transport``→True (offline: no real rclpy build), and
+    the ``rosbagger_rerun`` module attrs so ``open_viewer`` runs in the kept-ref worker and
+    ``build_rerun_sink`` records its ``t0_ns``. Asserts the sink is built with
+    ``t0_ns=self._bag_start_ns`` (order-independent ``bag_time``) and the ``logged`` dict is KEPT
+    (not discarded), so ``logged['errors']`` can later surface.
+    """
+    import rosbagger_rerun
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(panel, "_ensure_transport", lambda: True)
+    panel._bag_start_ns = 1234  # the anchor _open_rerun must thread through to build_rerun_sink
+
+    monkeypatch.setattr(rosbagger_rerun, "rerun_available", lambda: True)
+    monkeypatch.setattr(rosbagger_rerun, "open_viewer", lambda *a, **k: "FAKE_REC")
+    captured: dict = {}
+
+    def _fake_build(rec, *, t0_ns=None):
+        captured["rec"] = rec
+        captured["t0_ns"] = t0_ns
+        return (lambda item: None, {"n": 0, "errors": 0})
+
+    monkeypatch.setattr(rosbagger_rerun, "build_rerun_sink", _fake_build)
+
+    panel.rerun_button.click()  # programmatic (mouseClick drops on a non-visible widget)
+    qtbot.waitUntil(lambda: panel._rerun_sink is not None, timeout=5000)
+
+    assert captured["rec"] == "FAKE_REC"
+    assert captured["t0_ns"] == 1234  # anchored to bag start, NOT the first logged item
+    assert panel._rerun_logged == {"n": 0, "errors": 0}  # kept (not discarded)
+
+
+def test_replay_done_status_surfaces_rerun_drop_count(qtbot, monkeypatch) -> None:
+    """23-01: the Done status appends the Rerun drop count when logged['errors'] > 0."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+    from rosbagger_replay.scheduler import State
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel._replayer = type("_R", (), {"state": State.DONE})()
+    panel._published = {"n": 7}
+    panel._rerun_logged = {"n": 5, "errors": 2}
+    monkeypatch.setattr(panel, "_update_position", lambda: None)
+
+    panel._on_drive_done(None)
+
+    text = panel.status_label.text()
+    assert "published 7" in text
+    assert "2 message(s) could not be logged" in text
+
+
 def test_replay_pause_then_immediate_play_resumes(qtbot, monkeypatch) -> None:
     """260530-2iv: pause then IMMEDIATELY play must RESUME, not reject with 'Already playing'.
 
