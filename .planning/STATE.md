@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Live visualization (RViz) + cockpit overlay
-status: in_progress
-stopped_at: Phase 23 IN PROGRESS — plans 23-01 (Rerun fix) + 23-02 (skip + overlay API) DONE; next 23-03 (Open in RViz)
-last_updated: "2026-06-06T00:00:00.000Z"
-last_activity: 2026-06-06 -- Phase 23 plans 23-01 + 23-02 executed inline + committed (offline 583 passed, cov 88%)
+status: complete
+stopped_at: Phase 23 COMPLETE (Milestone v0.7) — all 4 plans done; offline 609 passed/6 skipped, cov 87.99%; live visual UAT pending (user)
+last_updated: "2026-06-06T12:00:00.000Z"
+last_activity: 2026-06-06 -- Phase 23 fully executed inline + committed (23-01..23-04); VERIFICATION passed (offline); live + display checks await user sign-off
 progress:
   total_phases: 23
-  completed_phases: 22
+  completed_phases: 23
   total_plans: 68
-  completed_plans: 66
-  percent: 96
+  completed_plans: 68
+  percent: 100
 ---
 
 # Project State
@@ -21,18 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Query and understand the data inside any ROS bag from one command — no one-off scripts, no ROS install.
-**Current focus:** Milestone v0.7 — Phase 23 (RViz launch, compact overlay & Rerun live fixes) IN PROGRESS
+**Current focus:** Milestone v0.7 complete (Phase 23 shipped, offline-verified). Live + display UAT awaits user sign-off. Phase 17 (v0.4 Desktop Revamp) remains the open prior-milestone item.
 
 ## Current Position
 
-Phase: 23 (rviz-launch-compact-overlay-and-rerun-live-fixes) — IN PROGRESS
-Plan: 2 of 4 complete (23-01 Rerun fix ✓, 23-02 skip + overlay API ✓; next 23-03 Open in RViz, then 23-04 overlay)
-Status: executing inline (GSD agents not installed). Offline suite 583 passed / 6 skipped, cov 88.18%.
-Last activity: 2026-06-06 -- 23-02 committed (de32752); ±5s skip buttons + ReplayPanel remote-control API for the overlay
+Phase: 23 (rviz-launch-compact-overlay-and-rerun-live-fixes) — COMPLETE (Milestone v0.7 done)
+Plan: 4 of 4 complete (23-01 Rerun fix ✓, 23-02 skip + overlay API ✓, 23-03 Open in RViz ✓, 23-04 compact overlay ✓)
+Status: executed inline (GSD agents not installed). VERIFICATION passed (offline). Offline suite 609 passed / 6 skipped, cov 87.99%.
+Last activity: 2026-06-06 -- 23-04 committed (50e495d); Phase 23 closeout (ROADMAP + VERIFICATION + STATE)
 
-Resume: continue with /gsd-execute-phase 23 (inline) → implement 23-03-PLAN.md then 23-04-PLAN.md. All 4 PLAN.md + RESEARCH.md hold the full detail; replay_panel.py already has _bag_start_ns, the skip API, and positionChanged.
+Pending (user UAT, needs display + sourced ROS): Open-in-RViz visual; Rerun-before-Play shows Image; overlay collapse + live RViz translate. Commits: 5798876, de32752, 96bfa46, 50e495d.
 
-Progress: [█████████░] 96% (Phase 23: 2/4 plans)
+Progress: [██████████] 100% (Phase 23: 4/4 plans; live UAT pending)
 
 ## Performance Metrics
 

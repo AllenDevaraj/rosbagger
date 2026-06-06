@@ -57,7 +57,7 @@ Add a one-click, zero-config live viewer to the desktop Replay tab: an **Open in
 
 Bring the desktop cockpit to parity with real robotics viz workflows. A one-click **Open in RViz** auto-builds a `.rviz` display config from the bag's sensor topics and launches `rviz2` against the live topics Replay already publishes (no manual add-display / Fixed-Frame dance). A frameless **compact overlay** mini-player collapses the GUI to a thin scrubber so you can drive playback while watching RViz/Rerun fill the screen. Plus ±5s time-skip controls on the Replay bar, and a fix for the Rerun live-mirror spawn-readiness race (image topics dropped when Rerun is opened before Play). Additive + ROS-gated; the offline import graph stays ROS-free AND Qt-free; desktop panels stay thin faces over the library.
 
-- [ ] **Phase 23: RViz launch, compact overlay & Rerun live fixes** - "Open in RViz" toggle (auto `.rviz` config + tracked `rviz2` subprocess + auto `/clock`/static re-prime), a frameless compact overlay mini-player remote-controlling the Replayer, ±5s skip controls, and a Rerun live-mirror spawn-readiness fix
+- [x] **Phase 23: RViz launch, compact overlay & Rerun live fixes** - "Open in RViz" toggle (auto `.rviz` config + tracked `rviz2` subprocess + auto `/clock`/static re-prime), a frameless compact overlay mini-player remote-controlling the Replayer, ±5s skip controls, and a Rerun live-mirror spawn-readiness fix (completed 2026-06-06)
 
 ## Phase Details
 
@@ -617,17 +617,17 @@ Plans:
   5. The Rerun live mirror shows image topics regardless of order (Open-in-Rerun before OR after Play): the spawn-readiness race is fixed off the UI thread, the `bag_time` timeline is anchored to bag start, and `logged['errors']` is surfaced — proven by a save-mode (`.rrd`) t0/anchor unit test + the existing live mirror lane
   6. Invariants hold: offline import graph stays ROS-free AND Qt-free; `import rosbagger_replay` / `import rosbagger_desktop.*` panel modules pull no `rclpy`; desktop panels stay thin faces; full headless suite passes at ≥80%; all existing tests green
 
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 23-01-PLAN.md — Rerun live-mirror fix: viewer spawn-readiness gate (off the UI thread) + `build_rerun_sink(t0_ns=bag start)` anchor + surfaced `logged['errors']` (order-independent image topics) -> RR-FIX
+- [x] 23-01-PLAN.md — Rerun live-mirror fix: viewer spawn-readiness gate (off the UI thread) + `build_rerun_sink(t0_ns=bag start)` anchor + surfaced `logged['errors']` (order-independent image topics) -> RR-FIX
 
 **Wave 2** *(blocked on 23-01)*
-- [ ] 23-02-PLAN.md — `‹ 5s` / `5s ›` time-skip buttons on the Replay bar + ReplayPanel remote-control API (`positionChanged`/`toggle_play`/`skip_back`/`skip_forward`/`seek_fraction`/`current_fraction`) for the overlay -> VIZ-SKIP
+- [x] 23-02-PLAN.md — `‹ 5s` / `5s ›` time-skip buttons on the Replay bar + ReplayPanel remote-control API (`positionChanged`/`toggle_play`/`skip_back`/`skip_forward`/`seek_fraction`/`current_fraction`) for the overlay -> VIZ-SKIP
 
 **Wave 3** *(blocked on 23-02)*
-- [ ] 23-03-PLAN.md — "Open in RViz" toggle: pure offline `rviz_config.py` builder + `rviz_session.py` launcher (mirrors rerun lifecycle) + auto-fidelity rebuild + off-UI-thread topic read + delayed `/tf_static` re-prime -> VIZ-RVIZ
+- [x] 23-03-PLAN.md — "Open in RViz" toggle: pure offline `rviz_config.py` builder + `rviz_session.py` launcher (mirrors rerun lifecycle) + auto-fidelity rebuild + off-UI-thread topic read + delayed `/tf_static` re-prime -> VIZ-RVIZ
 
 **Wave 4** *(blocked on 23-02 + 23-03)*
-- [ ] 23-04-PLAN.md — Compact overlay mini-player (`OverlayWindow`) + menu-bar top-right corner trigger (overlay on Replay tab / `showMinimized()` elsewhere) + enter/exit geometry save-restore -> VIZ-OVERLAY
+- [x] 23-04-PLAN.md — Compact overlay mini-player (`OverlayWindow`) + menu-bar top-right corner trigger (overlay on Replay tab / `showMinimized()` elsewhere) + enter/exit geometry save-restore -> VIZ-OVERLAY
