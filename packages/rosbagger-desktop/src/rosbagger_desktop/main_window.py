@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QStackedWidget,
+    QToolButton,
     QWidget,
 )
 
@@ -161,6 +162,18 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._build_menu()
+
+        # Phase 23: a top-right corner control. On the Replay tab it collapses to the compact
+        # overlay mini-player; on any other tab it does a normal OS minimize (textbook behavior).
+        # The overlay (created lazily on first entry) + saved geometry let exit_overlay restore us.
+        self._overlay: object | None = None
+        self._saved_geometry: object | None = None
+        self._overlay_button = QToolButton()
+        self._overlay_button.setText("⤓")
+        self._overlay_button.setObjectName("overlay_button")
+        self._overlay_button.setToolTip("Compact overlay (Replay tab) / minimize")
+        self.menuBar().setCornerWidget(self._overlay_button, Qt.TopRightCorner)
+        self._overlay_button.clicked.connect(self._on_minimize_clicked)
 
         # Select the initial (offline) panel so it renders on launch.
         initial_index = next(
@@ -299,8 +312,73 @@ class MainWindow(QMainWindow):
         if callable(refresh_view):
             refresh_view()
 
+    # ------------------------------------------------------- compact overlay (Phase 23)
+
+    @property
+    def overlay(self) -> object | None:
+        """The compact overlay mini-player (``None`` until first entered) — a test accessor."""
+        return self._overlay
+
+    @property
+    def overlay_button(self) -> QToolButton:
+        """The top-right corner control (overlay on Replay / minimize elsewhere) — test accessor."""
+        return self._overlay_button
+
+    def _on_minimize_clicked(self) -> None:
+        """Corner control: collapse to the overlay on the Replay tab, normal minimize elsewhere."""
+        if self._stack.currentWidget() is self.replay_panel:
+            self.enter_overlay()
+        else:
+            self.showMinimized()
+
+    def enter_overlay(self) -> None:
+        """Collapse to the compact overlay: save geometry, hide the window, show the floating bar.
+
+        The overlay (created lazily here, then reused) remote-controls the EXISTING Replayer via the
+        ReplayPanel 23-02 API (no second transport). Dragging its scrubber seeks live so RViz/Rerun
+        update. ``exit_overlay`` (⛶) restores the window; the overlay's ✕ quits the app.
+        """
+        from .widgets.overlay import OverlayWindow
+
+        self._saved_geometry = self.saveGeometry()
+        if self._overlay is None:
+            self._overlay = OverlayWindow(self.replay_panel, self)
+        self._overlay.sync()
+        self._position_overlay()
+        self.hide()
+        self._overlay.show()
+        self._overlay.raise_()
+        self._overlay.activateWindow()
+
+    def _position_overlay(self) -> None:
+        """Place the overlay near the bottom-center of the available screen (best-effort)."""
+        if self._overlay is None:
+            return
+        screen = self.screen()
+        if screen is None:
+            self._overlay.move(100, 100)  # headless / no screen — a sane fixed spot
+            return
+        geo = screen.availableGeometry()
+        self._overlay.adjustSize()
+        x = geo.x() + (geo.width() - self._overlay.width()) // 2
+        y = geo.y() + geo.height() - self._overlay.height() - 60
+        self._overlay.move(x, y)
+
+    def exit_overlay(self) -> None:
+        """Restore the full window from the overlay (⛶), at its prior geometry."""
+        if self._overlay is not None:
+            self._overlay.hide()
+        self.showNormal()
+        if self._saved_geometry is not None:
+            self.restoreGeometry(self._saved_geometry)
+        self.raise_()
+        self.activateWindow()
+
     def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
-        """Close the shared reader on shutdown (no leaked file handle, D-07)."""
+        """Close the overlay + the shared reader on shutdown (no leaked window / file handle)."""
+        if self._overlay is not None:
+            self._overlay.close()
+            self._overlay = None
         if self.reader is not None:
             self.reader.close()
             self.reader = None

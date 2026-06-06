@@ -2404,3 +2404,99 @@ def test_rviz_open_builds_config_and_launches(qtbot, monkeypatch) -> None:
         assert panel.static_seek_checkbox.isChecked()
     finally:
         panel._close_rviz()  # remove the temp config
+
+
+# --------------------------------------------------------------- compact overlay (23-04)
+
+
+def test_overlay_controls_drive_panel(qtbot, monkeypatch) -> None:
+    """23-04: overlay controls call the panel's 23-02 API; positionChanged syncs the scrubber."""
+    from rosbagger_desktop.main_window import MainWindow
+    from rosbagger_desktop.widgets.overlay import OverlayWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    panel = window.replay_panel
+    calls: list = []
+    # Patch BEFORE constructing the overlay so its connect() captures these recorders.
+    monkeypatch.setattr(panel, "skip_back", lambda: calls.append("back"))
+    monkeypatch.setattr(panel, "toggle_play", lambda: calls.append("play"))
+    monkeypatch.setattr(panel, "skip_forward", lambda: calls.append("fwd"))
+    monkeypatch.setattr(panel, "seek_fraction", lambda f: calls.append(("seek", f)))
+
+    overlay = OverlayWindow(panel, window)
+    qtbot.addWidget(overlay)
+
+    overlay.skip_back_button.click()
+    overlay.play_button.click()
+    overlay.skip_forward_button.click()
+    assert calls == ["back", "play", "fwd"]
+
+    overlay.scrubber.seeked.emit(0.25)
+    assert ("seek", pytest.approx(0.25)) in calls
+
+    panel.positionChanged.emit(0.5)  # live playhead → overlay scrubber
+    assert overlay.scrubber.position == pytest.approx(0.5, abs=0.01)
+
+
+def test_corner_button_enters_overlay_on_replay(qtbot, monkeypatch) -> None:
+    """23-04: the corner control collapses to the overlay when the Replay tab is active."""
+    from rosbagger_desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._stack.setCurrentWidget(window.replay_panel)
+    hidden: list = []
+    monkeypatch.setattr(window, "hide", lambda: hidden.append("hide"))
+
+    window.overlay_button.click()
+    assert window.overlay is not None  # the overlay was created
+    assert hidden == ["hide"]  # the full window collapsed
+    assert window._saved_geometry is not None  # geometry saved for restore
+
+
+def test_corner_button_minimizes_off_replay(qtbot, monkeypatch) -> None:
+    """23-04: on a non-Replay tab the corner control does a normal OS minimize (no overlay)."""
+    from rosbagger_desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._stack.setCurrentWidget(window.inspect_panel)
+    mins: list = []
+    monkeypatch.setattr(window, "showMinimized", lambda: mins.append("min"))
+
+    window.overlay_button.click()
+    assert mins == ["min"]
+    assert window.overlay is None  # no overlay entered off the Replay tab
+
+
+def test_exit_overlay_restores_window(qtbot, monkeypatch) -> None:
+    """23-04: ⛶ restore brings the full window back (showNormal)."""
+    from rosbagger_desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._stack.setCurrentWidget(window.replay_panel)
+    window.enter_overlay()
+    assert window.overlay is not None
+    restored: list = []
+    monkeypatch.setattr(window, "showNormal", lambda: restored.append("normal"))
+
+    window.exit_overlay()
+    assert restored == ["normal"]
+
+
+def test_overlay_close_button_quits(qtbot, monkeypatch) -> None:
+    """23-04: the overlay ✕ quits the app (calls MainWindow.close)."""
+    from rosbagger_desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    closed: list = []
+    # Patch BEFORE entering so the overlay's ✕ binds to this recorder (not the real close).
+    monkeypatch.setattr(window, "close", lambda: closed.append("close"))
+    window._stack.setCurrentWidget(window.replay_panel)
+    window.enter_overlay()
+
+    window.overlay.close_button.click()
+    assert closed == ["close"]
