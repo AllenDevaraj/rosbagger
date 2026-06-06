@@ -122,6 +122,10 @@ class ReplayPanel(QWidget):
         self._rerun_open_thread: QThread | None = None
         self._rerun_open_worker: BlockingWorker | None = None
         self._rerun_logged: dict | None = None
+        # Phase 23: the spawned rviz2 process + its temp .rviz config path (closed/removed on
+        # toggle-off / closeEvent). The topic read is O(1) bag metadata, done on the UI thread.
+        self._rviz_proc: object | None = None
+        self._rviz_cfg_path: str | None = None
         # Live-playhead poll (Phase 18 / SC2): a UI-thread QTimer that, while the drive worker
         # runs Replayer.run() on its thread, periodically reads the now-thread-safe
         # position_fraction and advances the scrubber playhead so the timeline tracks playback
@@ -154,6 +158,10 @@ class ReplayPanel(QWidget):
         # of the strip behind a stretch so it presents as a "view" action, not a transport control.
         self._rerun_button = QPushButton("Open in Rerun")
         self._rerun_button.setCheckable(True)
+        # Phase 23: the Open-in-RViz toggle. Sits next to Rerun behind the same stretch (a "view"
+        # action). On: auto-fidelity + generate a .rviz config from the bag topics + launch rviz2.
+        self._rviz_button = QPushButton("Open in RViz")
+        self._rviz_button.setCheckable(True)
         control_bar = QHBoxLayout()
         control_bar.addWidget(self._play_button)
         control_bar.addWidget(self._pause_button)
@@ -165,6 +173,7 @@ class ReplayPanel(QWidget):
         control_bar.addWidget(self._loop_checkbox)
         control_bar.addStretch(1)
         control_bar.addWidget(self._rerun_button)
+        control_bar.addWidget(self._rviz_button)
 
         # Snippet loop region (Phase 19, REP-03): the durable unit is the FRACTION (the bag span
         # can change on a transport rebuild); converted to absolute t_ns at apply time the same
@@ -219,6 +228,7 @@ class ReplayPanel(QWidget):
         self._rate_input.returnPressed.connect(self._apply_rate)
         self._loop_checkbox.toggled.connect(self._apply_loop)
         self._rerun_button.toggled.connect(self._toggle_rerun)
+        self._rviz_button.toggled.connect(self._toggle_rviz)
         self._scrubber.seeked.connect(self._on_seeked)
         self._advanced_toggle.toggled.connect(self._on_advanced_toggled)
         self._region_checkbox.toggled.connect(self._on_region_toggled)
@@ -313,6 +323,11 @@ class ReplayPanel(QWidget):
         """The 'Open in Rerun' toggle (Phase 22 — live-mirrors Play into the Rerun viewer)."""
         return self._rerun_button
 
+    @property
+    def rviz_button(self) -> QPushButton:
+        """The 'Open in RViz' toggle (Phase 23 — launches rviz2 on the bag's live viz topics)."""
+        return self._rviz_button
+
     # ------------------------------------------------------------------ lifecycle
 
     def showEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
@@ -343,6 +358,7 @@ class ReplayPanel(QWidget):
         stop_thread(self._install_thread)  # Phase 22: stop a running pip-install worker
         stop_thread(self._rerun_open_thread)  # 23-01: stop a running off-thread viewer spawn
         self._close_rerun()  # Phase 22: drop the mirror + flush (transport-independent)
+        self._close_rviz()  # Phase 23: SIGTERM the spawned rviz2 + remove its temp config
         self._teardown_transport()
         super().closeEvent(event)
 
@@ -678,6 +694,118 @@ class ReplayPanel(QWidget):
         self._install_thread = None
         stop_thread(thread)  # 260530-w4k: worker thread dead before we drop its ref
         self._install_worker = None
+
+    # --------------------------------------------------------------- RViz launch (Phase 23)
+
+    def _toggle_rviz(self, checked: bool) -> None:
+        """Open-in-RViz toggle: auto-enable fidelity + launch rviz2 (on) or close it (off).
+
+        Gated on ROS + ``rviz_available()`` (``shutil.which("rviz2")``). RViz subscribes to the
+        topics the Replayer already publishes (no second publish path). The topic read is O(1) bag
+        metadata (``collect_bag_info``), run on the UI thread. ``rviz_session``/``rviz_config``
+        import lazily so the module top stays ROS-free; ``open_rviz``/``rviz_available`` are reached
+        via the module attribute (monkeypatchable). No pip path (rviz2 is not pip-installable).
+        """
+        if not checked:
+            self._close_rviz()
+            return
+        if not self._ros_available():
+            set_status(self._status, "Source ROS 2 to open RViz.", is_error=True)
+            self._rviz_button.setChecked(False)
+            return
+        from .. import rviz_session
+
+        if not rviz_session.rviz_available():
+            set_status(
+                self._status, "RViz 2 not found — source your ROS 2 environment.", is_error=True
+            )
+            self._rviz_button.setChecked(False)
+            return
+        self._enable_rviz_fidelity()
+        topics = self._read_rviz_topics()
+        if not topics:
+            set_status(self._status, "Open a bag with topics to view in RViz.", is_error=True)
+            self._rviz_button.setChecked(False)
+            return
+        self._launch_rviz(topics)
+
+    def _read_rviz_topics(self) -> list[tuple[str, str]]:
+        """Read ``(topic, msgtype)`` pairs from the shared open reader (O(1) bag metadata)."""
+        reader = getattr(self.window(), "reader", None)
+        if reader is None:
+            return []
+        from rosbagger_core.inspect import collect_bag_info
+
+        info = collect_bag_info(reader)
+        return [(str(ti.topic), str(ti.msgtype or "")) for ti in info.topics]
+
+    def _enable_rviz_fidelity(self) -> None:
+        """Auto-enable /clock + static tracking so a late-joining RViz "just works" (Phase 23).
+
+        The flags are baked into ``build_publish_sink`` at ``_ensure_transport`` time. If no
+        transport exists yet (the common "open RViz before Play" flow) checking the boxes suffices:
+        the first build picks them up. If a paused transport exists WITHOUT a static tracker,
+        rebuild it (preserving the playhead). A LIVE rebuild mid-play would race the finishing drive
+        worker, so there we teach the one-step re-prime instead of touching the running transport.
+        """
+        self._clock_checkbox.setChecked(True)
+        self._static_seek_checkbox.setChecked(True)
+        if self._replayer is None or getattr(self._sink, "tracker", None) is not None:
+            return  # next build uses the flags, or the tracker is already present
+        if self._drive_running():
+            set_status(self._status, "RViz fidelity on — pause & play to re-prime /tf_static now.")
+            return
+        frac = self._replayer.position_fraction  # type: ignore[union-attr]
+        self._teardown_transport()
+        if self._ensure_transport():
+            self._replayer.seek(int(frac * self._bag_span_ns))  # type: ignore[union-attr]
+            self._update_position()
+
+    def _launch_rviz(self, topics: list[tuple[str, str]]) -> None:
+        """Write a generated ``.rviz`` config + launch rviz2; schedule a /tf_static re-prime."""
+        import tempfile
+
+        from .. import rviz_session
+        from ..rviz_config import build_rviz_config, pick_fixed_frame
+
+        try:
+            cfg = build_rviz_config(topics, pick_fixed_frame(topics))
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".rviz", prefix="rosbagger_", delete=False
+            ) as fh:
+                fh.write(cfg)
+                self._rviz_cfg_path = fh.name
+            self._rviz_proc = rviz_session.open_rviz(self._rviz_cfg_path)
+            set_status(self._status, "Opened RViz — subscribing to the bag topics (press Play).")
+            # Re-prime /tf_static once the viewer has had time to subscribe (it then re-primes on
+            # every seek/skip too, since static tracking is now on).
+            QTimer.singleShot(2500, self._reprime_rviz_static)
+        except Exception as exc:  # noqa: BLE001 - teach, don't crash the panel
+            set_status(self._status, f"RViz open failed: {exc}", is_error=True)
+            self._rviz_button.setChecked(False)
+
+    def _reprime_rviz_static(self) -> None:
+        """One-shot re-publish of tracked static topics so a late-joining RViz re-primes (Ph 23)."""
+        if self._static_seek_checkbox.isChecked() and self._sink is not None:
+            from rosbagger_replay import republish_static
+
+            republish_static(self._sink)
+
+    def _close_rviz(self) -> None:
+        """SIGTERM the spawned rviz2 + remove its temp config (toggle-off / closeEvent)."""
+        with contextlib.suppress(Exception):
+            from .. import rviz_session
+
+            rviz_session.close_rviz()
+        self._rviz_proc = None
+        path = self._rviz_cfg_path
+        self._rviz_cfg_path = None
+        if path is not None:
+            import os
+
+            with contextlib.suppress(OSError):
+                os.unlink(path)
+        self._rviz_button.setText("Open in RViz")
 
     # ------------------------------------------------------------------- controls
 

@@ -2251,3 +2251,156 @@ def test_replay_drive_to_done_joins_thread_before_clearing_worker(qtbot, monkeyp
     assert panel._drive_worker is None
     assert panel._drive_thread is None
     assert "Done" in panel.status_label.text(), panel.status_label.text()
+
+
+# --------------------------------------------------------------- Open in RViz (23-03)
+
+
+def test_rviz_available_reflects_which(monkeypatch) -> None:
+    """23-03: rviz_available() mirrors shutil.which('rviz2')."""
+    import shutil
+
+    from rosbagger_desktop import rviz_session
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert rviz_session.rviz_available() is False
+    monkeypatch.setattr(shutil, "which", lambda name: "/opt/ros/humble/bin/rviz2")
+    assert rviz_session.rviz_available() is True
+
+
+def test_open_rviz_invokes_popen_and_tracks(monkeypatch) -> None:
+    """23-03: open_rviz launches `rviz2 -d cfg` non-detached and tracks the PID for cleanup."""
+    import subprocess
+
+    from rosbagger_desktop import rviz_session
+
+    recorded: dict = {}
+
+    class _FakeProc:
+        pid = 4321
+
+        def __init__(self, argv, **kw):
+            recorded["argv"] = argv
+            recorded["kw"] = kw
+
+    monkeypatch.setattr(subprocess, "Popen", _FakeProc)
+    monkeypatch.setattr(rviz_session, "_prefer_gpu", lambda *a, **k: None)
+    rviz_session._TRACKED_RVIZ_PIDS.discard(4321)
+
+    proc = rviz_session.open_rviz("/tmp/x.rviz")
+    try:
+        assert recorded["argv"] == ["rviz2", "-d", "/tmp/x.rviz"]
+        assert recorded["kw"].get("start_new_session") is False  # non-detached (dies with the GUI)
+        assert proc.pid == 4321
+        assert 4321 in rviz_session._TRACKED_RVIZ_PIDS
+    finally:
+        rviz_session._TRACKED_RVIZ_PIDS.discard(4321)
+
+
+def test_close_rviz_terminates_tracked(monkeypatch) -> None:
+    """23-03: close_rviz SIGTERMs every tracked rviz2 PID and clears the registry (idempotent)."""
+    import os
+    import signal
+
+    from rosbagger_desktop import rviz_session
+
+    killed: list = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(os, "waitpid", lambda pid, flags: (0, 0))
+    rviz_session._TRACKED_RVIZ_PIDS.add(9999)
+
+    rviz_session.close_rviz()
+    assert (9999, signal.SIGTERM) in killed
+    assert 9999 not in rviz_session._TRACKED_RVIZ_PIDS
+    rviz_session.close_rviz()  # idempotent — no tracked pids, no error
+
+
+def test_rviz_button_present(qtbot) -> None:
+    """23-03: the Replay strip has a checkable 'Open in RViz' button."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    assert panel.rviz_button.text() == "Open in RViz"
+    assert panel.rviz_button.isCheckable()
+
+
+def test_rviz_toggle_unavailable_teaches(qtbot, monkeypatch) -> None:
+    """23-03: toggling on when rviz2 is absent teaches + unchecks — no launch."""
+    from rosbagger_desktop import rviz_session
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(rviz_session, "rviz_available", lambda: False)
+    launched: list = []
+    monkeypatch.setattr(rviz_session, "open_rviz", lambda *a, **k: launched.append(a))
+
+    panel.rviz_button.click()
+    assert "RViz 2 not found" in panel.status_label.text()
+    assert panel.rviz_button.isChecked() is False
+    assert launched == []
+
+
+def test_rviz_enable_fidelity_checks_boxes(qtbot) -> None:
+    """23-03: opening RViz auto-checks the /clock + static-republish fidelity toggles."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    assert not panel.clock_checkbox.isChecked()
+    assert not panel.static_seek_checkbox.isChecked()
+    panel._enable_rviz_fidelity()
+    assert panel.clock_checkbox.isChecked()
+    assert panel.static_seek_checkbox.isChecked()
+
+
+def test_rviz_open_builds_config_and_launches(qtbot, monkeypatch) -> None:
+    """23-03: toggling on generates a .rviz config from the bag topics and launches rviz2."""
+    import types
+
+    from rosbagger_desktop import rviz_session
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(rviz_session, "rviz_available", lambda: True)
+
+    # A fake shared reader + collect_bag_info returning Image/LaserScan/TF topics.
+    fake_reader = object()
+    monkeypatch.setattr(panel, "window", lambda: types.SimpleNamespace(reader=fake_reader))
+    import rosbagger_core.inspect as inspect_mod
+
+    fake_info = types.SimpleNamespace(
+        topics=[
+            types.SimpleNamespace(topic="/camera/image_raw", msgtype="sensor_msgs/msg/Image"),
+            types.SimpleNamespace(topic="/scan", msgtype="sensor_msgs/msg/LaserScan"),
+            types.SimpleNamespace(topic="/tf", msgtype="tf2_msgs/msg/TFMessage"),
+        ]
+    )
+    monkeypatch.setattr(inspect_mod, "collect_bag_info", lambda reader: fake_info)
+
+    captured: dict = {}
+
+    def _fake_open(path):
+        captured["path"] = path
+        return types.SimpleNamespace(pid=4242)
+
+    monkeypatch.setattr(rviz_session, "open_rviz", _fake_open)
+
+    panel.rviz_button.click()
+    try:
+        assert panel._rviz_proc is not None
+        with open(captured["path"]) as fh:
+            cfg_text = fh.read()
+        assert "rviz_default_plugins/Image" in cfg_text
+        assert "/camera/image_raw" in cfg_text
+        assert "rviz_default_plugins/LaserScan" in cfg_text
+        assert "rviz_default_plugins/TF" in cfg_text
+        # auto-fidelity ran (boxes checked)
+        assert panel.clock_checkbox.isChecked()
+        assert panel.static_seek_checkbox.isChecked()
+    finally:
+        panel._close_rviz()  # remove the temp config

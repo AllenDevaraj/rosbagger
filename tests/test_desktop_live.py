@@ -42,6 +42,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # BEFORE any PySide6 import (Pitfall 3)
 
+import shutil  # noqa: E402
 import subprocess  # noqa: E402
 import sys  # noqa: E402
 import textwrap  # noqa: E402
@@ -296,8 +297,10 @@ def test_replay_panel_rerun_mirror_writes_rrd(qtbot, tmp_path: Path, monkeypatch
     panel.show()  # showEvent (ROS gate + markers); full-window show aggravates the offscreen crash
     panel.rate_input.setText("50.0")  # fast + deterministic
 
-    panel.rerun_button.click()  # toggle ON → _open_rerun → patched open_viewer (save mode)
-    assert panel._rerun_sink is not None, "mirror sink was not built on toggle-on"
+    panel.rerun_button.click()  # toggle ON → _open_rerun spawns off-thread (23-01)
+    # 23-01: the viewer spawn + readiness gate runs on a worker, so the sink is built
+    # asynchronously in _on_rerun_opened — wait for it instead of asserting synchronously.
+    qtbot.waitUntil(lambda: panel._rerun_sink is not None, timeout=15000)
 
     panel.play_button.click()  # publish to ROS AND tee into the rerun sink
 
@@ -311,3 +314,29 @@ def test_replay_panel_rerun_mirror_writes_rrd(qtbot, tmp_path: Path, monkeypatch
 
     assert rrd.exists(), "no .rrd written by the mirror"
     assert rrd.stat().st_size > 0, "empty .rrd — the tee did not log anything"
+
+
+@pytest.mark.skipif(shutil.which("rviz2") is None, reason="rviz2 not on PATH")
+def test_replay_panel_rviz_launch_smoke(qtbot, tmp_path: Path) -> None:
+    """LIVE (Phase 23 / VIZ-RVIZ): Open-in-RViz generates a config and starts a real rviz2 process.
+
+    Headless rviz2 needs a display, so this asserts only that the process STARTS (poll is None) and
+    is then cleanly closed — the full visual check (displays populated from the bag) is a manual
+    sign-off. Skipped when rviz2 is not installed.
+    """
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+    assert window.ros_available is True, "live lane must have rclpy → replay panel enabled"
+
+    panel = window.replay_panel
+    panel.show()
+    try:
+        panel.rviz_button.click()  # generate the .rviz config + launch rviz2
+        qtbot.waitUntil(lambda: panel._rviz_proc is not None, timeout=15000)
+        assert panel._rviz_proc.poll() is None, "rviz2 did not start (exited immediately)"
+        # auto-fidelity ran: /clock + static re-prime are on for the late-joining RViz
+        assert panel.clock_checkbox.isChecked()
+        assert panel.static_seek_checkbox.isChecked()
+    finally:
+        panel._close_rviz()  # SIGTERM rviz2 + remove the temp config
