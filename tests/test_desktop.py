@@ -2014,6 +2014,87 @@ def test_replay_done_status_surfaces_rerun_drop_count(qtbot, monkeypatch) -> Non
     assert "2 message(s) could not be logged" in text
 
 
+def test_replay_skip_buttons_present(qtbot) -> None:
+    """23-02: the Replay bar has ‹5s / 5s› skip buttons, enabled and labelled."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    assert panel.skip_back_button.text() == "‹ 5s"
+    assert panel.skip_forward_button.text() == "5s ›"
+    assert panel.skip_back_button.isEnabled()
+    assert panel.skip_forward_button.isEnabled()
+
+
+def test_replay_skip_seeks_relative_time(qtbot, monkeypatch) -> None:
+    """23-02: ±5s skip seeks relative bag time, clamped, via the thread-safe Replayer.seek."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    span = 100 * 1_000_000_000  # a 100-second bag → 5s is 5% of the span
+    seeks: list[int] = []
+
+    class _Replayer:
+        def __init__(self):
+            self.position_fraction = 0.5
+
+        def seek(self, t_offset_ns):
+            seeks.append(t_offset_ns)
+            self.position_fraction = t_offset_ns / span
+
+    rep = _Replayer()
+    panel._replayer = rep
+    panel._bag_span_ns = span
+    panel._item_count = 10
+    monkeypatch.setattr(panel, "_ensure_transport", lambda: True)
+
+    panel.skip_forward()  # 0.5 → 0.55 (+5s of 100s)
+    assert seeks[-1] == int(0.55 * span)
+    panel.skip_back()  # 0.55 → 0.50 (-5s)
+    assert seeks[-1] == int(0.50 * span)
+    rep.position_fraction = 0.99  # forward from near the end clamps at the span
+    panel.skip_forward()
+    assert seeks[-1] == span
+
+
+def test_replay_toggle_play_flips(qtbot, monkeypatch) -> None:
+    """23-02: toggle_play plays from idle, then pauses when genuinely playing."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    calls: list[str] = []
+    monkeypatch.setattr(panel, "_genuinely_playing", lambda: False)
+    monkeypatch.setattr(panel, "_play", lambda: calls.append("play"))
+    monkeypatch.setattr(panel, "_pause", lambda: calls.append("pause"))
+
+    panel.toggle_play()
+    assert calls == ["play"]
+    monkeypatch.setattr(panel, "_genuinely_playing", lambda: True)
+    panel.toggle_play()
+    assert calls == ["play", "pause"]
+
+
+def test_replay_position_changed_emitted(qtbot) -> None:
+    """23-02: _update_position emits positionChanged so the overlay can mirror the playhead."""
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    received: list[float] = []
+    panel.positionChanged.connect(received.append)
+
+    class _R:
+        position_fraction = 0.42
+
+    panel._replayer = _R()
+    panel._item_count = 5
+    panel._update_position()
+    assert received == [pytest.approx(0.42)]
+    assert panel.current_fraction() == pytest.approx(0.42)
+
+
 def test_replay_pause_then_immediate_play_resumes(qtbot, monkeypatch) -> None:
     """260530-2iv: pause then IMMEDIATELY play must RESUME, not reject with 'Already playing'.
 

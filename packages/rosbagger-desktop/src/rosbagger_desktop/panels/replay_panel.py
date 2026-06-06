@@ -44,7 +44,7 @@ import contextlib
 import subprocess
 import sys
 
-from PySide6.QtCore import Qt, QThread, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QGroupBox,
@@ -70,6 +70,10 @@ _DEFAULT_RATE = "1.0"
 
 class ReplayPanel(QWidget):
     """Replay view — publish a bag to live ROS topics with transport controls (live, D-14)."""
+
+    # 23-02: emitted from _update_position whenever the playhead advances, so an external remote
+    # control (the compact overlay, plan 23-04) can mirror the live position (no second transport).
+    positionChanged = Signal(float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Build the status line, scrubber, and the six-control transport strip."""
@@ -139,6 +143,10 @@ class ReplayPanel(QWidget):
         self._play_button = QPushButton("Play")
         self._pause_button = QPushButton("Pause")
         self._step_button = QPushButton("Step")
+        # 23-02: ±5s time-skip (distinct from the single-message Step). Public skip_back/skip_fwd
+        # wrap these so the compact overlay (23-04) reuses the same relative-time seek.
+        self._skip_back_button = QPushButton("‹ 5s")
+        self._skip_fwd_button = QPushButton("5s ›")
         self._rate_input = QLineEdit(_DEFAULT_RATE)
         self._rate_input.setPlaceholderText("rate (>0)")
         self._loop_checkbox = QCheckBox("loop")
@@ -150,6 +158,8 @@ class ReplayPanel(QWidget):
         control_bar.addWidget(self._play_button)
         control_bar.addWidget(self._pause_button)
         control_bar.addWidget(self._step_button)
+        control_bar.addWidget(self._skip_back_button)
+        control_bar.addWidget(self._skip_fwd_button)
         control_bar.addWidget(QLabel("rate:"))
         control_bar.addWidget(self._rate_input)
         control_bar.addWidget(self._loop_checkbox)
@@ -204,6 +214,8 @@ class ReplayPanel(QWidget):
         self._play_button.clicked.connect(self._play)
         self._pause_button.clicked.connect(self._pause)
         self._step_button.clicked.connect(self._step)
+        self._skip_back_button.clicked.connect(self.skip_back)
+        self._skip_fwd_button.clicked.connect(self.skip_forward)
         self._rate_input.returnPressed.connect(self._apply_rate)
         self._loop_checkbox.toggled.connect(self._apply_loop)
         self._rerun_button.toggled.connect(self._toggle_rerun)
@@ -275,6 +287,16 @@ class ReplayPanel(QWidget):
     def step_button(self) -> QPushButton:
         """The Step button (publish exactly one item then re-pause)."""
         return self._step_button
+
+    @property
+    def skip_back_button(self) -> QPushButton:
+        """The ‹ 5s skip-back button (23-02; relative time seek, distinct from Step)."""
+        return self._skip_back_button
+
+    @property
+    def skip_forward_button(self) -> QPushButton:
+        """The 5s › skip-forward button (23-02; relative time seek)."""
+        return self._skip_fwd_button
 
     @property
     def rate_input(self) -> QLineEdit:
@@ -826,6 +848,56 @@ class ReplayPanel(QWidget):
             return
         fraction = self._replayer.position_fraction  # type: ignore[union-attr]
         self._scrubber.set_position(fraction)
+        # 23-02: mirror the live playhead to any remote control (the compact overlay, 23-04).
+        self.positionChanged.emit(fraction)
+
+    # ------------------------------------------------------- ±5s skip + overlay API (23-02)
+
+    def _skip(self, delta_s: float) -> None:
+        """Seek ±``delta_s`` seconds of bag time over the thread-safe Replayer.seek (23-02).
+
+        Distinct from Step (one message): a relative TIME jump, clamped to the bag span, that works
+        while playing or paused. Re-primes static topics after the jump when the fidelity toggle is
+        on (same as _on_seeked) so RViz/Rerun re-prime. ``skip_back``/``skip_forward`` wrap this for
+        the compact overlay (23-04) and the Replay-bar buttons.
+        """
+        if not self._ensure_transport():
+            return
+        cur = self._replayer.position_fraction * self._bag_span_ns  # type: ignore[union-attr]
+        new_ns = min(max(cur + delta_s * 1e9, 0.0), float(self._bag_span_ns))
+        self._replayer.seek(int(new_ns))  # type: ignore[union-attr]
+        self._update_position()
+        if self._static_seek_checkbox.isChecked() and self._sink is not None:
+            from rosbagger_replay import republish_static
+
+            republish_static(self._sink)
+        pct = self._replayer.position_fraction * 100  # type: ignore[union-attr]
+        set_status(self._status, f"Skipped to {pct:.0f}%.")
+
+    def skip_back(self) -> None:
+        """Public: jump back 5s (the overlay's ‹5s + the Replay-bar button)."""
+        self._skip(-5.0)
+
+    def skip_forward(self) -> None:
+        """Public: jump forward 5s (the overlay's 5s› + the Replay-bar button)."""
+        self._skip(5.0)
+
+    def toggle_play(self) -> None:
+        """Public: play if not genuinely playing, else pause (the overlay's ⏯)."""
+        if self._genuinely_playing():
+            self._pause()
+        else:
+            self._play()
+
+    def seek_fraction(self, fraction: float) -> None:
+        """Public: seek to a 0..1 fraction (the overlay scrubber delegates here)."""
+        self._on_seeked(fraction)
+
+    def current_fraction(self) -> float:
+        """Public: the live playhead fraction (0.0 with no transport) for overlay sync."""
+        if self._replayer is None:
+            return 0.0
+        return self._replayer.position_fraction  # type: ignore[union-attr]
 
     # --------------------------------------------------------- region loop (Phase 19)
 
