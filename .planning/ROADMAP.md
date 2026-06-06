@@ -53,6 +53,12 @@ Add a one-click, zero-config live viewer to the desktop Replay tab: an **Open in
 
 - [x] **Phase 22: Replay live mirror to Rerun** - "Open in Rerun" toggle on the Replay tab that live-mirrors Play by forking the publish sink into a new `rosbagger-rerun` package (Image/CompressedImage, LaserScan, PointCloud2, TF rich converters + generic fallback), gated on `rerun-sdk` (completed 2026-05-30)
 
+### Milestone v0.7 — Live visualization (RViz) + cockpit overlay
+
+Bring the desktop cockpit to parity with real robotics viz workflows. A one-click **Open in RViz** auto-builds a `.rviz` display config from the bag's sensor topics and launches `rviz2` against the live topics Replay already publishes (no manual add-display / Fixed-Frame dance). A frameless **compact overlay** mini-player collapses the GUI to a thin scrubber so you can drive playback while watching RViz/Rerun fill the screen. Plus ±5s time-skip controls on the Replay bar, and a fix for the Rerun live-mirror spawn-readiness race (image topics dropped when Rerun is opened before Play). Additive + ROS-gated; the offline import graph stays ROS-free AND Qt-free; desktop panels stay thin faces over the library.
+
+- [ ] **Phase 23: RViz launch, compact overlay & Rerun live fixes** - "Open in RViz" toggle (auto `.rviz` config + tracked `rviz2` subprocess + auto `/clock`/static re-prime), a frameless compact overlay mini-player remote-controlling the Replayer, ±5s skip controls, and a Rerun live-mirror spawn-readiness fix
+
 ## Phase Details
 
 ### Phase 1: Scaffold & Test Harness
@@ -590,3 +596,38 @@ Plans:
 - [x] 22-01 — rosbagger-rerun package scaffold + workspace wiring + rerun_available() + offline-import guard (wave 1) -> RR-1
 - [x] 22-02 — converters (Image/CompressedImage/LaserScan/PointCloud2/TF + generic fallback) + build_rerun_sink + session; offline converter tests + live .rrd (wave 2) -> RR-2
 - [x] 22-03 — desktop "Open in Rerun" toggle + dynamic tee + ROS/rerun gating + install-on-click + live desktop mirror test (wave 3) -> RR-3
+
+### Phase 23: RViz launch, compact overlay and Rerun live fixes
+
+**Goal:** Bring the desktop Replay cockpit to parity with real robotics viz and fix the Rerun live mirror. Four additive workstreams, all behind the established invariants (offline import graph ROS-free AND Qt-free, `rosbagger_replay` ROS-free at module top, desktop panels thin faces, existing tests green):
+
+1. **Open in RViz** — a checkable toggle on the Replay control bar that auto-generates a `.rviz` config from the bag's viz topics and launches `rviz2 -d cfg` as a tracked subprocess. A pure, offline-testable config builder maps each `(topic, msgtype)` from `collect_bag_info` to an RViz display (Image/CompressedImage→Image, PointCloud2→PointCloud2, LaserScan→LaserScan, TFMessage→TF, OccupancyGrid→Map, Marker(Array)→Marker(Array), Odometry→Odometry, Path→Path) + Grid + TF + a heuristic Fixed Frame. The viewer lifecycle mirrors `rosbagger-rerun/session.py` (non-detached spawn, `/proc` child-PID tracking, NVIDIA-dGPU env, SIGTERM on close + atexit). Because RViz subscribes to the topics Replay already publishes, no second publish path is built. Missing `rviz2` (no `shutil.which`) teaches rather than crashing (no pip path — RViz isn't pip-installable).
+2. **Auto-fidelity for RViz** — opening RViz auto-enables `/clock` + static tracking and, once the viewer is up, fires a one-shot `republish_static` so a late-joining RViz immediately gets `/tf_static` + sim time (rebuilds the transport seamlessly if one already exists without them).
+3. **Compact overlay mini-player** — a frameless, always-on-top `OverlayWindow` (`‹ 5s`, play/pause, `5s ›`, the `Scrubber`, restore ⛶, close ✕=quit) that remote-controls the *existing* Replayer (no second transport). Entered via a menu-bar top-right corner control that collapses to the overlay on the Replay tab and does a normal `showMinimized()` on other tabs; restore returns the full window at prior geometry; dragging the overlay scrubber seeks live (reflected in RViz/Rerun). Adds ±5s **skip controls** (`‹ 5s` / `5s ›`) to the normal Replay control bar too (seek via the thread-safe `Replayer.seek`, working while playing or paused).
+4. **Rerun live-mirror fix** — fix the viewer spawn-readiness race (`rec.spawn()` returns before the viewer is up, so the first Image frames are logged into a not-yet-connected stream and dropped; the error is swallowed in the sink and discarded by `_open_rerun`). Gate on viewer readiness off the UI thread (reusing the install-worker pattern), anchor `build_rerun_sink(t0_ns=items[0].t_ns)` to bag start so the `bag_time` timeline is identical regardless of toggle order, and surface `logged['errors']` on the status line.
+
+**Requirements**: New Milestone v0.7 — Live visualization (RViz) + cockpit overlay. Approved brainstorming design (2026-06-06) locked via AskUserQuestion: overlay = `‹5s`/play/pause/`5s›` + scrubber + restore + close(=quit); overlay trigger = top-right menu-bar control, overlay-collapse on Replay tab / normal minimize elsewhere; RViz = auto-enable `/clock` + static re-prime ("just works"). DoD = the Success Criteria below.
+**Depends on:** Phase 22 (the `rosbagger-rerun` viewer-lifecycle pattern + the `build_publish_sink`/`build_rerun_sink` tee + the Phase-20 `/clock`/static-republish fidelity).
+**Success Criteria** (what must be TRUE):
+
+  1. The Replay tab has an "Open in RViz" toggle that launches `rviz2` with an auto-generated `.rviz` config containing a display per detected viz topic (+ Grid + TF + a heuristic Fixed Frame); the spawned viewer is tracked and killed on GUI close — proven by an offline config-builder unit test (msgtype→display mapping + structure) and a `-m live` `rviz2` launch test
+  2. Opening RViz auto-enables `/clock` + static tracking and re-primes `/tf_static` so a late-joining RViz immediately sees transforms and sim time (no manual Advanced toggling), seamlessly even when a transport already exists
+  3. A frameless always-on-top compact overlay (`‹5s` / play-pause / `5s›` / `Scrubber` / restore / close=quit) remote-controls the existing Replayer; dragging its scrubber seeks live; it is entered via a menu-bar top-right control that collapses to overlay on the Replay tab and does a normal minimize on other tabs; restore returns to the full window — proven by headless pytest-qt tests
+  4. `‹ 5s` / `5s ›` time-skip buttons on the normal Replay control bar seek ±5 s via the thread-safe `Replayer.seek`, working while playing or paused — proven by a headless test
+  5. The Rerun live mirror shows image topics regardless of order (Open-in-Rerun before OR after Play): the spawn-readiness race is fixed off the UI thread, the `bag_time` timeline is anchored to bag start, and `logged['errors']` is surfaced — proven by a save-mode (`.rrd`) t0/anchor unit test + the existing live mirror lane
+  6. Invariants hold: offline import graph stays ROS-free AND Qt-free; `import rosbagger_replay` / `import rosbagger_desktop.*` panel modules pull no `rclpy`; desktop panels stay thin faces; full headless suite passes at ≥80%; all existing tests green
+
+**Plans:** 4 plans
+
+Plans:
+**Wave 1**
+- [ ] 23-01-PLAN.md — Rerun live-mirror fix: viewer spawn-readiness gate (off the UI thread) + `build_rerun_sink(t0_ns=bag start)` anchor + surfaced `logged['errors']` (order-independent image topics) -> RR-FIX
+
+**Wave 2** *(blocked on 23-01)*
+- [ ] 23-02-PLAN.md — `‹ 5s` / `5s ›` time-skip buttons on the Replay bar + ReplayPanel remote-control API (`positionChanged`/`toggle_play`/`skip_back`/`skip_forward`/`seek_fraction`/`current_fraction`) for the overlay -> VIZ-SKIP
+
+**Wave 3** *(blocked on 23-02)*
+- [ ] 23-03-PLAN.md — "Open in RViz" toggle: pure offline `rviz_config.py` builder + `rviz_session.py` launcher (mirrors rerun lifecycle) + auto-fidelity rebuild + off-UI-thread topic read + delayed `/tf_static` re-prime -> VIZ-RVIZ
+
+**Wave 4** *(blocked on 23-02 + 23-03)*
+- [ ] 23-04-PLAN.md — Compact overlay mini-player (`OverlayWindow`) + menu-bar top-right corner trigger (overlay on Replay tab / `showMinimized()` elsewhere) + enter/exit geometry save-restore -> VIZ-OVERLAY
