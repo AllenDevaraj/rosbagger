@@ -59,7 +59,7 @@ independently-installable packages (all **v0.2.0**):
 | `rosbagger-core` | Pure-Python offline reader / query engine | no |
 | `bagq` | The DuckDB-for-bags SQL CLI | no |
 | `rosbagger-gui` | Textual terminal cockpit | no (live panels via `[live]`) |
-| `rosbagger-desktop` | Native PySide6 desktop cockpit | no offline; live/viz when sourced |
+| `rosbagger-desktop` | Native PySide6 desktop cockpit | no (live/viz need sourced ROS) |
 | `rosbagger-record` | Live ROS 2 topic discovery + recording | sourced ROS 2 |
 | `rosbagger-replay` | Live ROS 2 replay with transport controls | sourced ROS 2 |
 | `rosbagger-rerun` | Bag → Rerun visualization bridge | no (lazy) |
@@ -77,6 +77,7 @@ tools never pull ROS. The test suite (and CI) runs anywhere using bags written b
 ```bash
 ./install.sh            # offline CLI: bagq + rosbagger-core
 ./install.sh --plot     # + matplotlib for `bagq query --plot`
+./install.sh --gui      # + the offline Textual cockpit
 ./install.sh --desktop  # + the PySide6 desktop cockpit
 ./install.sh --live     # + live record/replay (needs a sourced ROS 2)
 ./install.sh --all      # everything

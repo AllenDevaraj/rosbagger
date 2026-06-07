@@ -2244,7 +2244,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "pyside6", specifier = ">=6.10,<6.12" },
-    { name = "pyyaml", specifier = ">=6" },
+    { name = "pyyaml", specifier = ">=6,<7" },
     { name = "rosbagger-core", editable = "packages/rosbagger-core" },
     { name = "rosbagger-record", editable = "packages/rosbagger-record" },
     { name = "rosbagger-replay", editable = "packages/rosbagger-replay" },

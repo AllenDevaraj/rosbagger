@@ -48,7 +48,7 @@ dependencies = [
     "rosbagger-rerun>=0.2,<0.3",
     # Phase 23: pure (ROS/Qt-free) — used by rviz_config.py to emit the generated .rviz YAML for the
     # Open-in-RViz launch. Safe in the offline import graph (pyyaml pulls no ROS/Qt).
-    "pyyaml>=6",
+    "pyyaml>=6,<7",
     "PySide6>=6.10,<6.12",
 ]
 

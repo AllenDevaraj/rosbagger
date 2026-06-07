@@ -44,7 +44,7 @@ USAGE
 while [ $# -gt 0 ]; do
   case "$1" in
     --venv) VENV="${2:?--venv needs a directory}"; shift 2 ;;
-    --venv=*) VENV="${1#*=}"; shift ;;
+    --venv=*) VENV="${1#*=}"; [ -n "$VENV" ] || { echo "error: --venv= needs a directory" >&2; exit 2; }; shift ;;
     --plot) plot=1; shift ;;
     --gui) gui=1; shift ;;
     --desktop) desktop=1; shift ;;
