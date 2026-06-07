@@ -5,8 +5,32 @@
 [project]
 name = "bagq"
 version = "0.2.0"
+description = "A universal DuckDB-for-bags SQL CLI — query ROS 1 / ROS 2 / MCAP bags and export CSV / Parquet / plots, with no ROS install required."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Allen Devaraj", email = "allendevaraj33333@gmail.com" }]
+keywords = ["ros", "ros2", "rosbag", "mcap", "robotics", "duckdb", "sql", "cli", "parquet", "query"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = ["rosbagger-core>=0.2,<0.3", "typer>=0.15,<1", "rich>=13"]
+
+[project.urls]
+Homepage = "https://github.com/AllenDevaraj/rosbagger"
+Repository = "https://github.com/AllenDevaraj/rosbagger"
+Issues = "https://github.com/AllenDevaraj/rosbagger/issues"
 
 [project.scripts]
 bagq = "bagq.cli:app"

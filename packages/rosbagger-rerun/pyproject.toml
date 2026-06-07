@@ -14,11 +14,35 @@
 [project]
 name = "rosbagger-rerun"
 version = "0.2.0"
+description = "Bag-to-Rerun visualization bridge for the rosbagger suite — mirror ROS 2 replay into the Rerun viewer."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Allen Devaraj", email = "allendevaraj33333@gmail.com" }]
+keywords = ["ros", "ros2", "rosbag", "robotics", "rerun", "visualization"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Software Development :: Libraries",
+]
 # numpy is needed by the image converter (frombuffer/reshape); it is import-safe
 # (not ROS, not rerun) and already present via matplotlib. rerun-sdk is the OPTIONAL
 # extra below — never a base dep (D-03-style: keep base installs lean + ROS/rerun-free).
 dependencies = ["numpy>=1.24"]
+
+[project.urls]
+Homepage = "https://github.com/AllenDevaraj/rosbagger"
+Repository = "https://github.com/AllenDevaraj/rosbagger"
+Issues = "https://github.com/AllenDevaraj/rosbagger/issues"
 
 [project.optional-dependencies]
 sdk = ["rerun-sdk>=0.31,<0.33"]

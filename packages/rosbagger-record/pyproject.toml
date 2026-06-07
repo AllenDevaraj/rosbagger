@@ -11,7 +11,26 @@
 [project]
 name = "rosbagger-record"
 version = "0.2.0"
+description = "Live ROS 2 topic discovery and bag recording for the rosbagger suite (requires a sourced ROS 2 environment)."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Allen Devaraj", email = "allendevaraj33333@gmail.com" }]
+keywords = ["ros", "ros2", "rosbag", "rosbag2", "robotics", "recording", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+]
 # rosbagger-core (the v1 reader contract, resolved via the root
 # [tool.uv.sources] workspace source) and typer (the thin-CLI face, mirroring
 # bagq) are uv-resolved. NOTHING ROS goes here (D-03) — rclpy / rosbag2_py are
@@ -27,6 +46,11 @@ dependencies = [
     "typer>=0.15,<1",
     "pyyaml>=6,<7",
 ]
+
+[project.urls]
+Homepage = "https://github.com/AllenDevaraj/rosbagger"
+Repository = "https://github.com/AllenDevaraj/rosbagger"
+Issues = "https://github.com/AllenDevaraj/rosbagger/issues"
 
 [project.scripts]
 # cli.py lands in Plan 03; declaring the entry point now is fine — hatchling

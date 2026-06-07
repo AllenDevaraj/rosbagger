@@ -11,7 +11,26 @@
 [project]
 name = "rosbagger-gui"
 version = "0.2.0"
+description = "Textual terminal cockpit for the rosbagger suite — inspect and query ROS bags, with optional live record/replay panels."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Allen Devaraj", email = "allendevaraj33333@gmail.com" }]
+keywords = ["ros", "ros2", "rosbag", "mcap", "robotics", "tui", "textual", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+]
 # ONLY rosbagger-core (the v1 reader contract the shared reader uses, resolved
 # via the root [tool.uv.sources] workspace source) and textual (the TUI face).
 # NOTHING ROS — the live panels lazy-import rosbagger_record / rosbagger_replay
@@ -21,6 +40,11 @@ requires-python = ">=3.10"
 # ROS-free; only `uv sync --extra live` installs the siblings. They pull the ROS
 # runtime at runtime, not at install.
 dependencies = ["rosbagger-core>=0.2,<0.3", "textual>=8,<9"]
+
+[project.urls]
+Homepage = "https://github.com/AllenDevaraj/rosbagger"
+Repository = "https://github.com/AllenDevaraj/rosbagger"
+Issues = "https://github.com/AllenDevaraj/rosbagger/issues"
 
 [project.optional-dependencies]
 # Opt-in live tier (D-02): installing `rosbagger-gui[live]` (uv: `--extra live`)

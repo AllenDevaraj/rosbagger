@@ -6,8 +6,31 @@
 [project]
 name = "rosbagger-core"
 version = "0.2.0"
+description = "Pure-Python offline library for reading and querying ROS 1 / ROS 2 / MCAP bags — no ROS install required."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Allen Devaraj", email = "allendevaraj33333@gmail.com" }]
+keywords = ["ros", "ros2", "rosbag", "mcap", "robotics", "duckdb", "sql", "parquet"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = ["rosbags>=0.11,<0.12", "duckdb>=1.4,<2", "sqlglot>=27,<31", "pyarrow>=18"]
+
+[project.urls]
+Homepage = "https://github.com/AllenDevaraj/rosbagger"
+Repository = "https://github.com/AllenDevaraj/rosbagger"
+Issues = "https://github.com/AllenDevaraj/rosbagger/issues"
 
 [build-system]
 requires = ["hatchling"]

@@ -13,7 +13,27 @@
 [project]
 name = "rosbagger-desktop"
 version = "0.2.0"
+description = "Native PySide6 desktop cockpit for the rosbagger suite — browse, query, replay, and visualize ROS bags."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Allen Devaraj", email = "allendevaraj33333@gmail.com" }]
+keywords = ["ros", "ros2", "rosbag", "mcap", "robotics", "gui", "qt", "pyside6", "visualization"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Software Development :: Libraries",
+]
 # Sibling pins by SPEC ONLY (no git/path URL baked in — D-02), resolved via the
 # root [tool.uv.sources] workspace sources. PySide6 is the ONLY Qt dep and lives
 # ONLY here (D-01); RESEARCH Standard Stack pins it to the two current stable
@@ -31,6 +51,11 @@ dependencies = [
     "pyyaml>=6",
     "PySide6>=6.10,<6.12",
 ]
+
+[project.urls]
+Homepage = "https://github.com/AllenDevaraj/rosbagger"
+Repository = "https://github.com/AllenDevaraj/rosbagger"
+Issues = "https://github.com/AllenDevaraj/rosbagger/issues"
 
 [project.scripts]
 # cli.py exposes a plain main() — an argparse front door that constructs
