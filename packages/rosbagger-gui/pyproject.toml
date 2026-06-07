@@ -39,7 +39,10 @@ classifiers = [
 # plot`-style base install) never pulls them, so a ROS-free base sync stays
 # ROS-free; only `uv sync --extra live` installs the siblings. They pull the ROS
 # runtime at runtime, not at install.
-dependencies = ["rosbagger-core>=0.2,<0.3", "textual>=8,<9"]
+# rich is a DIRECT dependency: scrubber.py imports it. It currently arrives
+# transitively via textual, but "declare what you import" — don't rely on a
+# sibling's transitive graph (cf. the bagq/click clean-install break).
+dependencies = ["rosbagger-core>=0.2,<0.3", "textual>=8,<9", "rich>=13"]
 
 [project.urls]
 Homepage = "https://github.com/AllenDevaraj/rosbagger"
