@@ -20,6 +20,7 @@ INSIDE method bodies; only PySide6 + stdlib live at module top.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -375,10 +376,22 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
-        """Close the overlay + the shared reader on shutdown (no leaked window / file handle)."""
+        """Close the overlay, tear down the live panels, and close the shared reader on shutdown.
+
+        Qt does NOT deliver ``closeEvent`` to CHILD widgets, so the live panels' own ``closeEvent``
+        (which stops the drive/record worker threads, tears down the rclpy transport, and closes the
+        spawned RViz + Rerun viewers) never runs on a window close — leaving those viewers to the
+        ``atexit`` backstop, which does NOT fire if the known Qt-teardown SIGBUS hits (the viewers
+        then orphan). So we explicitly ``close()`` each live panel here (delivering a QCloseEvent →
+        the panel's ``closeEvent`` teardown) during the controlled close, BEFORE the reader closes.
+        """
         if self._overlay is not None:
             self._overlay.close()
             self._overlay = None
+        # Live panels own the spawned viewers + worker threads; close them so teardown runs now.
+        for panel in (self.replay_panel, self.record_panel):
+            with contextlib.suppress(Exception):
+                panel.close()
         if self.reader is not None:
             self.reader.close()
             self.reader = None

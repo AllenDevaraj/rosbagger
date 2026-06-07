@@ -2500,3 +2500,24 @@ def test_overlay_close_button_quits(qtbot, monkeypatch) -> None:
 
     window.overlay.close_button.click()
     assert closed == ["close"]
+
+
+def test_window_close_tears_down_live_panels(qtbot, monkeypatch) -> None:
+    """260607-5xf: MainWindow.closeEvent closes the live panels so RViz/Rerun + threads tear down.
+
+    Qt does not deliver closeEvent to child widgets, so the window must explicitly close the live
+    panels (otherwise the spawned viewers only die via the unreliable atexit backstop). Spy on the
+    replay panel's viewer-close hooks and assert window.close() drives them.
+    """
+    from rosbagger_desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    fired: list = []
+    monkeypatch.setattr(window.replay_panel, "_close_rviz", lambda: fired.append("rviz"))
+    monkeypatch.setattr(window.replay_panel, "_close_rerun", lambda: fired.append("rerun"))
+
+    window.close()
+
+    assert "rviz" in fired, "MainWindow.close() did not close the spawned rviz2 viewer"
+    assert "rerun" in fired, "MainWindow.close() did not close the spawned Rerun viewer"
