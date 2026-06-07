@@ -313,6 +313,7 @@ name = "bagq"
 version = "0.2.0"
 source = { editable = "packages/bagq" }
 dependencies = [
+    { name = "click" },
     { name = "rich" },
     { name = "rosbagger-core" },
     { name = "typer" },
@@ -325,6 +326,7 @@ plot = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.1,<9" },
     { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.8" },
     { name = "rich", specifier = ">=13" },
     { name = "rosbagger-core", editable = "packages/rosbagger-core" },
@@ -2254,6 +2256,7 @@ name = "rosbagger-gui"
 version = "0.2.0"
 source = { editable = "packages/rosbagger-gui" }
 dependencies = [
+    { name = "rich" },
     { name = "rosbagger-core" },
     { name = "textual" },
 ]
@@ -2266,6 +2269,7 @@ live = [
 
 [package.metadata]
 requires-dist = [
+    { name = "rich", specifier = ">=13" },
     { name = "rosbagger-core", editable = "packages/rosbagger-core" },
     { name = "rosbagger-record", marker = "extra == 'live'", editable = "packages/rosbagger-record" },
     { name = "rosbagger-replay", marker = "extra == 'live'", editable = "packages/rosbagger-replay" },
