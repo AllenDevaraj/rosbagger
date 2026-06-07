@@ -25,7 +25,11 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["rosbagger-core>=0.2,<0.3", "typer>=0.15,<1", "rich>=13"]
+# click is a DIRECT dependency: cli.py imports it and rebuilds the `--plot`
+# option as a native click.Option (typer can't carry flag_value). Do NOT rely on
+# it arriving transitively via typer — newer typer (>=0.26) no longer pulls click,
+# which breaks a clean `pip install bagq` at import time. Declare what we import.
+dependencies = ["rosbagger-core>=0.2,<0.3", "typer>=0.15,<1", "click>=8.1,<9", "rich>=13"]
 
 [project.urls]
 Homepage = "https://github.com/AllenDevaraj/rosbagger"
