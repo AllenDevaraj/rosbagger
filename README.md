@@ -1,98 +1,110 @@
 # rosbagger
 
-A modular monorepo of ROS bag tooling. Its first deliverable, **`bagq`**, is a
+A modular monorepo of ROS bag tooling. Its headline tool, **`bagq`**, is a
 universal "DuckDB-for-bags" SQL CLI that queries ROS 1 / ROS 2 / MCAP bags with
 **no ROS install required**, and exports CSV / Parquet / plots.
 
 > Query and understand the data inside any ROS bag from one command — without
 > writing a one-off script and without needing ROS installed.
 
-## Layout
+## Quick start
 
-This is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
-with two independently-installable packages:
+Clone, then install the offline CLI with the one-command installer:
 
-| Package | Path | Role |
-|---------|------|------|
-| `rosbagger-core` | `packages/rosbagger-core/` | Pure-Python offline library (no ROS dependency) |
-| `bagq` | `packages/bagq/` | The CLI; depends on `rosbagger-core` |
+```bash
+git clone https://github.com/AllenDevaraj/rosbagger
+cd rosbagger
+./install.sh                 # creates .venv and installs bagq + rosbagger-core
+source .venv/bin/activate
+bagq info my.bag
+```
 
-## Install
-
-### End-user (plain `pip`)
-
-`bagq` depends on `rosbagger-core`, and that dependency resolves from the local
-package — so install **both** packages in a **single** `pip` command:
+Prefer plain `pip`? The packages aren't on PyPI yet, so install from the local
+checkout — and **name both in one command** (see [Why one command](#why-one-command)):
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install ./packages/rosbagger-core ./packages/bagq
-bagq --help
 ```
 
-Installing `bagq` alone (`pip install ./packages/bagq`) fails to resolve
-`rosbagger-core` — name both. `bagq` is not published to PyPI; v0.1 is a
-local install.
-
-For the optional plotting support (matplotlib), add the `plot` extra. Quote it
-so your shell does not glob-expand the brackets:
+## Usage (`bagq`)
 
 ```bash
-pip install ./packages/rosbagger-core "./packages/bagq[plot]"
-```
-
-### Developer (uv workspace)
-
-Reproducible from the committed `uv.lock`:
-
-```bash
-uv sync --locked --dev   # create .venv, install both packages + dev tools
-uv run bagq --help       # run the CLI console-script
-uv run pytest            # run the test suite
-```
-
-## Usage
-
-```bash
-# Inspect a bag: per-topic message type, count, approximate Hz, plus duration and size.
+# Inspect a bag: per-topic message type, count, approximate Hz, duration, size.
 bagq info my.bag
 
-# List each topic's SQL table name and column schema (heavy blobs marked lazy).
+# List each topic's SQL table name and column schema.
 bagq tables my.bag
 
-# Run SQL over a bag. Default prints a rich table to stdout.
+# Run SQL over a bag (default prints a rich table; -o writes CSV/Parquet by extension).
 bagq query "SELECT t, t_ns FROM cmd_vel" my.bag
+bagq query "SELECT * FROM cmd_vel" my.bag -o out.parquet
 
-# Show the version.
-bagq --version           # -> bagq 0.1.0
+# Plot numeric columns vs time (needs the `plot` extra).
+bagq query "SELECT t, linear.x FROM cmd_vel" my.bag --plot speed.png
 ```
 
-`bagq query` routes its result to one of several sinks:
+Pass more than one bag to any command and they merge as one time-ordered dataset.
+When a query names an unknown table or column, `bagq` prints one helpful line (with
+a did-you-mean) and exits non-zero — no Python traceback. Run `bagq --help` for the
+full reference.
 
-- `-o out.csv` / `-o out.parquet` — write a file, picking the format by
-  extension. An explicit `-o` always wins over `--format`.
-- `--format table|csv|parquet|json` — choose the sink when no `-o` is given:
-  `table` (default) renders a rich table; `csv` streams CSV to stdout; `parquet`
-  without `-o` errors (it is binary — use `-o out.parquet`); `json` emits
-  temporal-safe records.
-- `--plot [FILE]` — write a minimal headless line chart of the numeric result
-  columns versus time. A bare `--plot` writes `plot.png` in the current
-  directory; `--plot FILE` writes that file. (Requires the `plot` extra.)
+## The suite
 
-You can pass more than one bag path to any command (they merge as one
-time-ordered dataset). Run `bagq --help` or any subcommand's `--help` for the
-full reference; `python -m bagq ...` works too.
+A [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) of seven
+independently-installable packages (all **v0.2.0**):
 
-## Errors that teach
+| Package | Role | Needs ROS? |
+|---------|------|------------|
+| `rosbagger-core` | Pure-Python offline reader / query engine | no |
+| `bagq` | The DuckDB-for-bags SQL CLI | no |
+| `rosbagger-gui` | Textual terminal cockpit | no (live panels via `[live]`) |
+| `rosbagger-desktop` | Native PySide6 desktop cockpit | no offline; live/viz when sourced |
+| `rosbagger-record` | Live ROS 2 topic discovery + recording | sourced ROS 2 |
+| `rosbagger-replay` | Live ROS 2 replay with transport controls | sourced ROS 2 |
+| `rosbagger-rerun` | Bag → Rerun visualization bridge | no (lazy) |
 
-When a query references an unknown table or column, or a bag carries a custom
-message type that cannot be resolved, `bagq` prints a single helpful line (with
-a did-you-mean suggestion, the available tables, or the columns in scope) and
-exits non-zero — no Python traceback.
+`rosbagger-core` and `bagq` import and run with **no ROS installed** — no `rclpy`,
+no `rosbag2_py`. The live packages need a sourced ROS 2 environment, but only
+lazy-import `rclpy` at call time, so importing them stays ROS-free and the offline
+tools never pull ROS. The test suite (and CI) runs anywhere using bags written by
+[`rosbags`](https://gitlab.com/ternaris/rosbags).
 
-## Offline / no ROS
+## Install
 
-`rosbagger-core` and `bagq` import and run with **no ROS installed** — no
-`rclpy`, no `rosbag2_py`. The test suite uses bags written by
-[`rosbags`](https://gitlab.com/ternaris/rosbags), so everything (including CI)
-runs anywhere without a ROS environment.
+`./install.sh` covers the common cases:
+
+```bash
+./install.sh            # offline CLI: bagq + rosbagger-core
+./install.sh --plot     # + matplotlib for `bagq query --plot`
+./install.sh --desktop  # + the PySide6 desktop cockpit
+./install.sh --live     # + live record/replay (needs a sourced ROS 2)
+./install.sh --all      # everything
+./install.sh --help     # all flags (incl. --venv DIR)
+```
+
+<a name="why-one-command"></a>
+**Why one command?** Each package pins its sibling (`rosbagger-core`) by version
+spec only; the workspace source that resolves siblings is stripped from built
+wheels, and nothing is on PyPI yet. So a lone `pip install ./packages/bagq` can't
+find `rosbagger-core` and fails — you must **name every package you need in one
+`pip` invocation**. The installer does this for you. For the full matrix (git
+installs, downstream uv projects, the `[live]` extra), see [INSTALL.md](./INSTALL.md).
+
+## Development
+
+```bash
+uv sync --locked --dev   # create .venv, install all packages + dev tools
+uv run bagq --help
+uv run pytest
+```
+
+## Publishing
+
+The packages are PyPI-ready (valid metadata, `twine check`-clean). To publish them,
+see [PUBLISHING.md](./PUBLISHING.md). Once published, the one-command caveat goes
+away — siblings resolve from PyPI and `pip install bagq` just works.
+
+## License
+
+[MIT](./LICENSE).

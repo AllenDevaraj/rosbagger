@@ -1,6 +1,6 @@
 # Installing rosbagger v0.2.0
 
-rosbagger is a monorepo of five independently-installable packages:
+rosbagger is a monorepo of seven independently-installable packages:
 
 | Package | Subdirectory | Role |
 |---------|--------------|------|
@@ -9,11 +9,17 @@ rosbagger is a monorepo of five independently-installable packages:
 | `rosbagger-record` | `packages/rosbagger-record` | Live recording (needs `rclpy`, env-provided by a sourced ROS) |
 | `rosbagger-replay` | `packages/rosbagger-replay` | Live replay (needs `rclpy`) |
 | `rosbagger-gui` | `packages/rosbagger-gui` | Textual cockpit; offline by default, live panels via `[live]` |
+| `rosbagger-desktop` | `packages/rosbagger-desktop` | Native PySide6 desktop cockpit; pulls core + record + replay + rerun |
+| `rosbagger-rerun` | `packages/rosbagger-rerun` | Bag→Rerun visualization bridge; `rerun-sdk` via the `[sdk]` extra |
 
-All five are at version **0.2.0** and pin their one inter-package dependency
-(`rosbagger-core`) by **version spec only** (`rosbagger-core>=0.2,<0.3`) — never
-by a baked-in path or git URL. That keeps each wheel source-agnostic, but it has
-one consequence you must know before you install.
+All seven are at version **0.2.0**. Every package that depends on a sibling pins
+it by **version spec only** (e.g. `rosbagger-core>=0.2,<0.3`) — never by a
+baked-in path or git URL. That keeps each wheel source-agnostic, but it has one
+consequence you must know before you install.
+
+> **TL;DR** — from a checkout, run `./install.sh` (offline CLI) or
+> `./install.sh --all` (everything). It applies the one-transaction rule below for
+> you. The rest of this doc is the manual matrix (git, downstream uv, per-package).
 
 ## Why one command (read this first)
 
@@ -39,7 +45,7 @@ lookup needed. Do **not** lead with a single-package install; it does not work.
 
 ## 1. The one-transaction meta recipe (install everything)
 
-Installs all five packages from git in a single transaction. Use either form.
+Installs all seven packages from git in a single transaction. Use either form.
 
 > **Awaits push.** The git recipes below target the public remote
 > `https://github.com/AllenDevaraj/rosbagger` at tag **`v0.2.0`**. That remote is
@@ -53,22 +59,26 @@ With **uv**:
 
 ```bash
 uv pip install \
-  "rosbagger-core    @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-core" \
-  "bagq              @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/bagq" \
-  "rosbagger-record  @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-record" \
-  "rosbagger-replay  @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-replay" \
-  "rosbagger-gui     @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-gui"
+  "rosbagger-core      @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-core" \
+  "bagq                @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/bagq" \
+  "rosbagger-record    @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-record" \
+  "rosbagger-replay    @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-replay" \
+  "rosbagger-rerun     @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-rerun" \
+  "rosbagger-gui[live] @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-gui" \
+  "rosbagger-desktop   @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-desktop"
 ```
 
 With plain **pip**:
 
 ```bash
 pip install \
-  "rosbagger-core    @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-core" \
-  "bagq              @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/bagq" \
-  "rosbagger-record  @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-record" \
-  "rosbagger-replay  @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-replay" \
-  "rosbagger-gui     @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-gui"
+  "rosbagger-core      @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-core" \
+  "bagq                @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/bagq" \
+  "rosbagger-record    @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-record" \
+  "rosbagger-replay    @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-replay" \
+  "rosbagger-rerun     @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-rerun" \
+  "rosbagger-gui[live] @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-gui" \
+  "rosbagger-desktop   @ git+https://github.com/AllenDevaraj/rosbagger@v0.2.0#subdirectory=packages/rosbagger-desktop"
 ```
 
 ---
@@ -125,6 +135,17 @@ pip install ./packages/rosbagger-core ./packages/bagq \
 
 Quote any path carrying an extra (e.g. `"./packages/rosbagger-gui[live]"`) so
 your shell does not glob-expand the brackets.
+
+**The desktop cockpit** pulls four siblings — co-name them all in one transaction:
+
+```bash
+pip install ./packages/rosbagger-core ./packages/rosbagger-record \
+  ./packages/rosbagger-replay ./packages/rosbagger-rerun \
+  ./packages/rosbagger-desktop
+```
+
+Or just run `./install.sh --desktop` from the repo root — it builds the correct
+one-transaction command for you.
 
 ---
 
