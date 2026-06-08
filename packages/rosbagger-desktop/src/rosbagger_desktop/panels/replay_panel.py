@@ -586,13 +586,27 @@ class ReplayPanel(QWidget):
         )
 
     def _on_rerun_opened(self, rec: object) -> None:
-        """Off-thread spawn returned (viewer reachable) — build the bag-start-anchored sink."""
+        """Off-thread spawn returned (viewer reachable) — build the bag-start-anchored sink.
+
+        Records the viewer handle (``self._rerun_rec``) BEFORE building the sink so a
+        ``build_rerun_sink`` failure still routes through ``_close_rerun`` and closes the
+        already-spawned viewer. This callback runs on the UI thread (NOT the worker), so a raise
+        here never reaches ``_on_rerun_open_failed`` — without the guard it would propagate to the
+        Qt event loop, leaving the button CHECKED and a viewer running with no mirror (silent
+        no-op). Mirrors the pre-23-01 synchronous ``_open_rerun`` try/except.
+        """
         import rosbagger_rerun
 
-        self._rerun_sink, self._rerun_logged = rosbagger_rerun.build_rerun_sink(
-            rec, t0_ns=self._bag_start_ns
-        )
         self._rerun_rec = rec
+        try:
+            self._rerun_sink, self._rerun_logged = rosbagger_rerun.build_rerun_sink(
+                rec, t0_ns=self._bag_start_ns
+            )
+        except Exception as exc:  # noqa: BLE001 - teach + close the viewer, don't crash the loop
+            set_status(self._status, f"Rerun mirror failed: {exc}", is_error=True)
+            # setChecked(False) → _toggle_rerun(False) → _close_rerun() closes the spawned viewer.
+            self._rerun_button.setChecked(False)
+            return
         set_status(self._status, "Mirroring replay to Rerun (press Play).")
 
     def _on_rerun_open_failed(self, message: str) -> None:
@@ -773,8 +787,10 @@ class ReplayPanel(QWidget):
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".rviz", prefix="rosbagger_", delete=False
             ) as fh:
-                fh.write(cfg)
+                # Record the path BEFORE the write so a write failure (disk full / EACCES) still
+                # lets _close_rviz() unlink the file (delete=False) instead of orphaning it.
                 self._rviz_cfg_path = fh.name
+                fh.write(cfg)
             self._rviz_proc = rviz_session.open_rviz(self._rviz_cfg_path)
             set_status(self._status, "Opened RViz — subscribing to the bag topics (press Play).")
             # Re-prime /tf_static once the viewer has had time to subscribe (it then re-primes on
@@ -782,6 +798,9 @@ class ReplayPanel(QWidget):
             QTimer.singleShot(2500, self._reprime_rviz_static)
         except Exception as exc:  # noqa: BLE001 - teach, don't crash the panel
             set_status(self._status, f"RViz open failed: {exc}", is_error=True)
+            # Clean up directly (remove any temp cfg + kill any spawned proc) — don't rely solely
+            # on setChecked(False)'s toggled signal. _close_rviz is idempotent if it re-enters.
+            self._close_rviz()
             self._rviz_button.setChecked(False)
 
     def _reprime_rviz_static(self) -> None:

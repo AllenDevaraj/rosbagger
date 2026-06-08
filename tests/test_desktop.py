@@ -2521,3 +2521,134 @@ def test_window_close_tears_down_live_panels(qtbot, monkeypatch) -> None:
 
     assert "rviz" in fired, "MainWindow.close() did not close the spawned rviz2 viewer"
     assert "rerun" in fired, "MainWindow.close() did not close the spawned Rerun viewer"
+
+
+# ----------------------------------------------- code-review hardening (260608-2g6)
+
+
+def test_replay_rerun_open_failed_sink_unchecks_and_closes_viewer(qtbot, monkeypatch) -> None:
+    """260608-2g6: a build_rerun_sink failure in _on_rerun_opened unchecks + closes the viewer.
+
+    23-01 moved the viewer spawn off-thread; the post-spawn build_rerun_sink runs in this
+    UI-thread callback, so a raise here never reaches _on_rerun_open_failed. Without the guard
+    the button stays CHECKED and the spawned viewer runs with no mirror (silent no-op). Assert
+    the failure path unchecks the button, drops the sink, and closes the already-spawned viewer.
+    """
+    import rosbagger_rerun
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(panel, "_ensure_transport", lambda: True)
+    panel._bag_start_ns = 0
+
+    closed = {"n": 0}
+
+    class _Rec:
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(rosbagger_rerun, "rerun_available", lambda: True)
+    monkeypatch.setattr(rosbagger_rerun, "open_viewer", lambda *a, **k: _Rec())
+    monkeypatch.setattr(rosbagger_rerun, "close_viewer", lambda: closed.__setitem__("n", 1))
+
+    def _boom(rec, *, t0_ns=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(rosbagger_rerun, "build_rerun_sink", _boom)
+
+    panel.rerun_button.click()  # check → _open_rerun (worker) → _on_rerun_opened → build raises
+    qtbot.waitUntil(lambda: not panel.rerun_button.isChecked(), timeout=5000)
+
+    assert panel._rerun_sink is None
+    assert panel._rerun_rec is None  # _close_rerun cleared the recorded viewer handle
+    assert closed["n"] == 1  # the spawned viewer was closed (not left orphaned)
+    assert "Rerun mirror failed" in panel.status_label.text()
+
+
+def test_rviz_launch_write_failure_cleans_temp_file(qtbot, monkeypatch, tmp_path: Path) -> None:
+    """260608-2g6: a config-write failure in _launch_rviz unlinks the temp file (no orphan).
+
+    The .rviz NamedTemporaryFile uses delete=False; the path must be recorded BEFORE the write
+    so _close_rviz can unlink it when the write raises. Assert no orphaned temp file remains,
+    open_rviz is never reached, and the button is unchecked with an error status.
+    """
+    import tempfile as tempfile_mod
+    import types
+
+    from rosbagger_desktop import rviz_session
+    from rosbagger_desktop.panels.replay_panel import ReplayPanel
+
+    panel = ReplayPanel()
+    qtbot.addWidget(panel)
+    monkeypatch.setattr(panel, "_ros_available", lambda: True)
+    monkeypatch.setattr(rviz_session, "rviz_available", lambda: True)
+
+    fake_reader = object()
+    monkeypatch.setattr(panel, "window", lambda: types.SimpleNamespace(reader=fake_reader))
+    import rosbagger_core.inspect as inspect_mod
+
+    fake_info = types.SimpleNamespace(
+        topics=[types.SimpleNamespace(topic="/scan", msgtype="sensor_msgs/msg/LaserScan")]
+    )
+    monkeypatch.setattr(inspect_mod, "collect_bag_info", lambda reader: fake_info)
+
+    # A real on-disk temp path so we can assert it is unlinked (not orphaned) on write failure.
+    cfg_file = tmp_path / "rosbagger_fail.rviz"
+    cfg_file.write_text("")  # exists; the NamedTemporaryFile stand-in hands back its name
+
+    class _FailingTemp:
+        name = str(cfg_file)
+
+        def write(self, _data):
+            raise OSError("disk full")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(tempfile_mod, "NamedTemporaryFile", lambda *a, **k: _FailingTemp())
+
+    opened = {"n": 0}
+    monkeypatch.setattr(rviz_session, "open_rviz", lambda path: opened.__setitem__("n", 1))
+
+    panel.rviz_button.click()
+
+    assert not cfg_file.exists(), "write-failure orphaned the temp .rviz config"
+    assert opened["n"] == 0  # never reached open_rviz (the write failed first)
+    assert not panel.rviz_button.isChecked()
+    assert "RViz open failed" in panel.status_label.text()
+
+
+def test_window_close_survives_overlay_close_failure(qtbot, monkeypatch) -> None:
+    """260608-2g6: an overlay-close failure must not skip the live-panel teardown on window close.
+
+    closeEvent closes the overlay first; if that raised unguarded, the panel-teardown loop (which
+    closes RViz/Rerun) would be skipped. Force overlay.close() to raise and assert both panels are
+    still torn down and the overlay ref is cleared.
+    """
+    from rosbagger_desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._stack.setCurrentWidget(window.replay_panel)
+    window.enter_overlay()
+    assert window.overlay is not None
+
+    def _boom():
+        raise RuntimeError("overlay close blew up")
+
+    monkeypatch.setattr(window.overlay, "close", _boom)
+    fired: list = []
+    monkeypatch.setattr(window.replay_panel, "_close_rviz", lambda: fired.append("rviz"))
+    monkeypatch.setattr(window.replay_panel, "_close_rerun", lambda: fired.append("rerun"))
+
+    window.close()
+
+    assert "rviz" in fired, "overlay-close failure skipped the rviz teardown"
+    assert "rerun" in fired, "overlay-close failure skipped the rerun teardown"
+    assert window._overlay is None  # ref cleared despite the close() raise

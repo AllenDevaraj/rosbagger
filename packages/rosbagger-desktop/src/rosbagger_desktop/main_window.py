@@ -386,7 +386,10 @@ class MainWindow(QMainWindow):
         the panel's ``closeEvent`` teardown) during the controlled close, BEFORE the reader closes.
         """
         if self._overlay is not None:
-            self._overlay.close()
+            # Suppress so an overlay-close raise can't skip the live-panel teardown below (the
+            # whole point of this override) — matches the panel-close loop's guarding.
+            with contextlib.suppress(Exception):
+                self._overlay.close()
             self._overlay = None
         # Live panels own the spawned viewers + worker threads; close them so teardown runs now.
         for panel in (self.replay_panel, self.record_panel):
