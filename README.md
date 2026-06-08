@@ -92,6 +92,22 @@ find `rosbagger-core` and fails — you must **name every package you need in on
 `pip` invocation**. The installer does this for you. For the full matrix (git
 installs, downstream uv projects, the `[live]` extra), see [INSTALL.md](./INSTALL.md).
 
+## ROS 2 (optional)
+
+Want to open the desktop cockpit from a `ros2 launch`? The repo ships a thin ROS 2
+bringup package, `rosbagger_ros` (under [`ros/`](./ros/rosbagger_ros/)). Clone into
+your colcon workspace, build just that package, and launch:
+
+```bash
+colcon build --packages-select rosbagger_ros
+ros2 launch rosbagger_ros desktop.launch.py [bag:=/path/to/bag]
+```
+
+The GUI then runs inside your sourced ROS environment, so its live
+record/replay/RViz/Rerun features share your ROS graph. Setup details (installing
+the GUI it launches) are in [`ros/rosbagger_ros/README.md`](./ros/rosbagger_ros/README.md).
+The 7 Python packages stay ROS-free — `rosbagger_ros` is only a launcher.
+
 ## Development
 
 ```bash
