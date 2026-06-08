@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rosbagger_ros</name>
+  <version>0.2.0</version>
+  <description>
+    ROS 2 bringup for rosbagger: launch the self-contained rosbagger desktop
+    cockpit GUI inside a sourced ROS environment. A thin launcher only — the GUI
+    and tools are pip-installed (see README); this package adds the launch file.
+  </description>
+  <maintainer email="allendevaraj33333@gmail.com">Allen Devaraj</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>python3</exec_depend>
+  <!--
+    The rosbagger GUI + tools are NOT rosdep keys: install them with pip into the
+    Python your ROS uses (see README). Optional, for the GUI's "Open in RViz"
+    feature: rviz2.
+  -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -19,3 +19,7 @@ build/
 # (they are version-coupled to rosbags; tests generate them per-run into tmp_path).
 fixtures/
 out/
+
+# colcon workspace artifacts (if someone runs colcon build in-tree; ros/rosbagger_ros)
+install/
+log/
