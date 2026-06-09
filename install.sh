@@ -7,7 +7,7 @@
 # "Why one command"). Run it from anywhere; paths resolve to this script's repo.
 #
 # Usage:
-#   ./install.sh [--venv DIR] [--plot] [--gui] [--desktop] [--live] [--all]
+#   ./install.sh [--venv DIR | --user] [--plot] [--gui] [--desktop] [--live] [--all]
 #
 # With no flags it installs the offline CLI: rosbagger-core + bagq.
 set -euo pipefail
@@ -18,7 +18,7 @@ ROOT="$SCRIPT_DIR"
 PKGS="$ROOT/packages"
 
 VENV="$ROOT/.venv"
-plot=0; gui=0; live=0; desktop=0; all=0
+plot=0; gui=0; live=0; desktop=0; all=0; user=0
 
 usage() {
   cat <<'USAGE'
@@ -28,6 +28,9 @@ Usage: ./install.sh [options]
 
 Options:
   --venv DIR   Target virtualenv directory (default: ./.venv)
+  --user       Install into your user site instead of a venv, so the commands
+               (rosbagger, bagq, ...) land on ~/.local/bin and work from ANY
+               terminal with no activation. (Ignores --venv.)
   --plot       Add the bagq[plot] extra (matplotlib) for `bagq query --plot`
   --gui        Add the offline Textual cockpit (rosbagger-gui)
   --desktop    Add the PySide6 desktop cockpit (rosbagger-desktop + siblings)
@@ -45,6 +48,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --venv) VENV="${2:?--venv needs a directory}"; shift 2 ;;
     --venv=*) VENV="${1#*=}"; [ -n "$VENV" ] || { echo "error: --venv= needs a directory" >&2; exit 2; }; shift ;;
+    --user) user=1; shift ;;
     --plot) plot=1; shift ;;
     --gui) gui=1; shift ;;
     --desktop) desktop=1; shift ;;
@@ -82,6 +86,48 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
   exit 1
 fi
 
+# --- User-site (global) install: no venv. Commands land on ~/.local/bin and work
+# from ANY terminal with no activation. On a box with ROS, installing into the
+# ROS-capable interpreter also lets the live features import rclpy once ROS is
+# sourced. --user takes precedence over --venv.
+if [ "$user" = 1 ]; then
+  echo ">> installing ${#specs[@]} package(s) into your user site (pip --user), one transaction:"
+  for s in "${specs[@]}"; do echo "     ${s#"$ROOT"/}"; done
+  # Put the build toolchain in the user site, then build with
+  # --no-build-isolation so it uses that ambient toolchain. Why: under a distro
+  # system pip (Debian/Ubuntu), an ISOLATED build can pick up the OLD system
+  # `packaging` from /usr/lib/pythonX/dist-packages and die with
+  # "No module named 'packaging.licenses'" — our packages use PEP 639 SPDX
+  # licensing (Metadata 2.4), which needs packaging>=24.2. A modern `packaging`
+  # in the user site shadows the system one for the ambient build. (The default
+  # venv path doesn't need this — a fresh venv isolates cleanly.)
+  "$PYTHON" -m pip install --user -q "hatchling>=1.18" "packaging>=24.2" || {
+    echo "error: could not install build prerequisites (hatchling, packaging>=24.2) into the user site." >&2
+    exit 1
+  }
+  "$PYTHON" -m pip install --user --no-build-isolation "${specs[@]}"
+
+  USERBIN="$("$PYTHON" -c 'import os, site; print(os.path.join(site.getuserbase(), "bin"))' 2>/dev/null || echo "$HOME/.local/bin")"
+  echo
+  echo "Done. Commands installed to: $USERBIN"
+  case ":$PATH:" in
+    *":$USERBIN:"*) : ;;
+    *) echo "  NOTE: $USERBIN is not on your PATH yet. Add this to ~/.bashrc:"
+       echo "      export PATH=\"$USERBIN:\$PATH\"" ;;
+  esac
+  echo
+  echo "Try it from any terminal:"
+  echo "    bagq --help"
+  [ "$gui_mode" != 0 ] && echo "    rosbagger-gui [BAG]"
+  [ "$desktop" = 1 ] && echo "    rosbagger [BAG]            # the desktop cockpit (= rosbagger-desktop)"
+  if [ "$live" = 1 ] || [ "$desktop" = 1 ]; then
+    echo
+    echo "Live record/replay/RViz/Rerun need a sourced ROS 2 environment, e.g.:"
+    echo "    source /opt/ros/humble/setup.bash"
+  fi
+  exit 0
+fi
+
 # Create the venv if it does not already exist (reuse is non-destructive).
 if [ ! -x "$VENV/bin/python" ]; then
   echo ">> creating virtualenv at $VENV"
@@ -100,7 +146,7 @@ echo "Done. Activate the environment and try it:"
 echo "    source $VENV/bin/activate"
 echo "    bagq --help"
 [ "$gui_mode" != 0 ] && echo "    rosbagger-gui [BAG]"
-[ "$desktop" = 1 ] && echo "    rosbagger-desktop [BAG]"
+[ "$desktop" = 1 ] && echo "    rosbagger [BAG]            # the desktop cockpit (= rosbagger-desktop)"
 if [ "$live" = 1 ]; then
   echo
   echo "Live record/replay needs a sourced ROS 2 environment, e.g.:"
