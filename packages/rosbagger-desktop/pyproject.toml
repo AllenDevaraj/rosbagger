@@ -62,6 +62,11 @@ Issues = "https://github.com/AllenDevaraj/rosbagger/issues"
 # QApplication only AFTER parse_args, so `rosbagger-desktop --help` exits 0
 # WITHOUT building any Qt object (D-16).
 rosbagger-desktop = "rosbagger_desktop.cli:main"
+# `rosbagger` is the short, friendly alias — SAME entry point — so the desktop
+# cockpit opens with one word from any terminal. It is the primary brand command;
+# `rosbagger-desktop` stays for the explicit/long name (and is what the ROS launch
+# file calls). Both build Qt only after argparse, so `rosbagger --help` is Qt-free.
+rosbagger = "rosbagger_desktop.cli:main"
 
 [build-system]
 requires = ["hatchling"]
