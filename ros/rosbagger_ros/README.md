@@ -34,18 +34,34 @@ ROS's `rclpy` / `rosbag2_py` for the **live** features (offline panels work unde
 any Python). Pick one:
 
 **A. apt-installed ROS (simplest)** — install into the system Python that already
-has `rclpy`, in ONE transaction (the packages resolve each other only when
-co-named in a single command):
+has `rclpy`. The repo installer does the one-transaction, global (`~/.local/bin`)
+install for you:
 
 ```bash
 cd src/rosbagger
-pip install --user \
+./install.sh --desktop --user
+```
+
+That puts **`rosbagger`** (and the long `rosbagger-desktop`) on your `PATH` for
+every terminal — both are the same command, and the launch file calls
+`rosbagger-desktop`. If `~/.local/bin` isn't on your `PATH`, the installer prints
+the line to add.
+
+<details><summary>Equivalent manual one-liner</summary>
+
+The packages resolve each other only when co-named in a single command. Under a
+distro system `pip`, seed the build prereqs and skip build isolation first — an
+isolated source build can otherwise pick up the old system `packaging` and fail
+on our PEP 639 license metadata (this is exactly what `install.sh --user` does):
+
+```bash
+pip install --user "hatchling>=1.18" "packaging>=24.2"
+pip install --user --no-build-isolation \
   ./packages/rosbagger-core ./packages/rosbagger-record \
   ./packages/rosbagger-replay ./packages/rosbagger-rerun \
   ./packages/rosbagger-desktop
 ```
-
-Make sure `~/.local/bin` is on your `PATH` so `rosbagger-desktop` is found.
+</details>
 
 **B. virtualenv** — let it see ROS by creating it with `--system-site-packages` on
 a ROS-sourced shell, then use the repo installer:

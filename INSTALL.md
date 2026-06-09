@@ -18,8 +18,10 @@ baked-in path or git URL. That keeps each wheel source-agnostic, but it has one
 consequence you must know before you install.
 
 > **TL;DR** — from a checkout, run `./install.sh` (offline CLI) or
-> `./install.sh --all` (everything). It applies the one-transaction rule below for
-> you. The rest of this doc is the manual matrix (git, downstream uv, per-package).
+> `./install.sh --all` (everything); add `--user` to install into `~/.local/bin`
+> (commands work from any terminal, no venv to activate). It applies the
+> one-transaction rule below for you. The rest of this doc is the manual matrix
+> (git, downstream uv, per-package).
 
 ## Why one command (read this first)
 
@@ -145,7 +147,12 @@ pip install ./packages/rosbagger-core ./packages/rosbagger-record \
 ```
 
 Or just run `./install.sh --desktop` from the repo root — it builds the correct
-one-transaction command for you.
+one-transaction command for you. Add `--user` to install globally into
+`~/.local/bin` (so `rosbagger`/`bagq` work from any terminal, no venv) instead of
+a venv: `./install.sh --desktop --user`. On a distro system `pip`, `--user` mode
+seeds the build prereqs and builds with `--no-build-isolation` so the source build
+doesn't trip over an old system `packaging` (our PEP 639 license metadata needs
+`packaging>=24.2`).
 
 ---
 

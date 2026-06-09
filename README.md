@@ -81,7 +81,7 @@ tools never pull ROS. The test suite (and CI) runs anywhere using bags written b
 ./install.sh --desktop  # + the PySide6 desktop cockpit
 ./install.sh --live     # + live record/replay (needs a sourced ROS 2)
 ./install.sh --all      # everything
-./install.sh --help     # all flags (incl. --venv DIR)
+./install.sh --help     # all flags (incl. --venv DIR, --user)
 ```
 
 <a name="why-one-command"></a>
@@ -92,21 +92,35 @@ find `rosbagger-core` and fails — you must **name every package you need in on
 `pip` invocation**. The installer does this for you. For the full matrix (git
 installs, downstream uv projects, the `[live]` extra), see [INSTALL.md](./INSTALL.md).
 
-## ROS 2 (optional)
+## Open the desktop GUI
 
-Want to open the desktop cockpit from a `ros2 launch`? The repo ships a thin ROS 2
-bringup package, `rosbagger_ros` (under [`ros/`](./ros/rosbagger_ros/)). Clone into
-your colcon workspace, build just that package, and launch:
+Two ways to launch the self-contained desktop cockpit — pick whichever fits:
+
+**1. `rosbagger` — from any terminal.** Install once into your user site and the
+command is on your `PATH` everywhere, no venv to activate:
+
+```bash
+./install.sh --desktop --user      # installs to ~/.local/bin
+rosbagger                          # open the cockpit  (or: rosbagger /path/to/bag)
+```
+
+(Prefer a venv? `./install.sh --desktop`, then `source .venv/bin/activate` and run
+`rosbagger`. `rosbagger-desktop` is the same command under its long name.)
+
+**2. `ros2 launch` — inside your ROS 2 project.** The repo ships a thin bringup
+package, `rosbagger_ros` (under [`ros/`](./ros/rosbagger_ros/)). Drop it in a colcon
+workspace, build just that package, and launch:
 
 ```bash
 colcon build --packages-select rosbagger_ros
 ros2 launch rosbagger_ros desktop.launch.py [bag:=/path/to/bag]
 ```
 
-The GUI then runs inside your sourced ROS environment, so its live
-record/replay/RViz/Rerun features share your ROS graph. Setup details (installing
-the GUI it launches) are in [`ros/rosbagger_ros/README.md`](./ros/rosbagger_ros/README.md).
-The 7 Python packages stay ROS-free — `rosbagger_ros` is only a launcher.
+Either way the GUI runs inside your sourced ROS environment, so its live
+record / replay / RViz / Rerun features share your ROS graph. Setup details (and
+the one-time GUI install the launch file needs) are in
+[`ros/rosbagger_ros/README.md`](./ros/rosbagger_ros/README.md). The 7 Python
+packages stay ROS-free — `rosbagger_ros` is only a launcher.
 
 ## Development
 

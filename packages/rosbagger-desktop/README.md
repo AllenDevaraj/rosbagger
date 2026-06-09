@@ -13,8 +13,11 @@ Once published to PyPI:
 
 ```bash
 pip install rosbagger-desktop
-rosbagger-desktop [BAG]
+rosbagger [BAG]            # short command (alias of `rosbagger-desktop [BAG]`)
 ```
+
+This package installs two equivalent console commands — `rosbagger` (short) and
+`rosbagger-desktop` (long). Both open the same cockpit.
 
 `rosbagger-desktop` pulls `rosbagger-core`, `rosbagger-record`, `rosbagger-replay`,
 and `rosbagger-rerun`; until published, co-install the siblings in one transaction
