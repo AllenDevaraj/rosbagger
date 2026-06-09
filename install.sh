@@ -18,7 +18,7 @@ ROOT="$SCRIPT_DIR"
 PKGS="$ROOT/packages"
 
 VENV="$ROOT/.venv"
-plot=0; gui=0; live=0; desktop=0; all=0; user=0
+plot=0; gui=0; live=0; desktop=0; all=0; user=0; reinstall=0
 
 usage() {
   cat <<'USAGE'
@@ -36,6 +36,9 @@ Options:
   --desktop    Add the PySide6 desktop cockpit (rosbagger-desktop + siblings)
   --live       Add live record/replay + the GUI live panels (needs a sourced ROS 2)
   --all        Install everything (plot + desktop + live GUI)
+  --reinstall  Force-reinstall the rosbagger packages even at the same version,
+               without re-resolving deps (used by update.sh so same-version code
+               changes actually apply)
   -h, --help   Show this help
 
 With no flags, installs the offline CLI: rosbagger-core + bagq.
@@ -49,6 +52,7 @@ while [ $# -gt 0 ]; do
     --venv) VENV="${2:?--venv needs a directory}"; shift 2 ;;
     --venv=*) VENV="${1#*=}"; [ -n "$VENV" ] || { echo "error: --venv= needs a directory" >&2; exit 2; }; shift ;;
     --user) user=1; shift ;;
+    --reinstall) reinstall=1; shift ;;
     --plot) plot=1; shift ;;
     --gui) gui=1; shift ;;
     --desktop) desktop=1; shift ;;
@@ -106,6 +110,12 @@ if [ "$user" = 1 ]; then
     exit 1
   }
   "$PYTHON" -m pip install --user --no-build-isolation "${specs[@]}"
+  if [ "$reinstall" = 1 ]; then
+    # Same-version code changes are skipped by a plain install ("already
+    # satisfied"); force just our packages (deps already handled above).
+    echo ">> --reinstall: force-reinstalling the rosbagger packages (no deps)"
+    "$PYTHON" -m pip install --user --no-build-isolation --no-deps --force-reinstall "${specs[@]}"
+  fi
 
   USERBIN="$("$PYTHON" -c 'import os, site; print(os.path.join(site.getuserbase(), "bin"))' 2>/dev/null || echo "$HOME/.local/bin")"
   echo
@@ -140,6 +150,12 @@ for s in "${specs[@]}"; do echo "     ${s#"$ROOT"/}"; done
 
 "$VPY" -m pip install --upgrade pip >/dev/null 2>&1 || true
 "$VPY" -m pip install "${specs[@]}"
+if [ "$reinstall" = 1 ]; then
+  # Same-version code changes are skipped by a plain install ("already
+  # satisfied"); force just our packages (deps already handled above).
+  echo ">> --reinstall: force-reinstalling the rosbagger packages (no deps)"
+  "$VPY" -m pip install --no-deps --force-reinstall "${specs[@]}"
+fi
 
 echo
 echo "Done. Activate the environment and try it:"
