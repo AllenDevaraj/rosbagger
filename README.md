@@ -122,6 +122,24 @@ the one-time GUI install the launch file needs) are in
 [`ros/rosbagger_ros/README.md`](./ros/rosbagger_ros/README.md). The 7 Python
 packages stay ROS-free — `rosbagger_ros` is only a launcher.
 
+## Updating
+
+Already installed it? Pull the latest and reinstall in **one command**, from your
+rosbagger checkout:
+
+```bash
+./update.sh                  # fetch latest + reinstall (defaults to --desktop --user)
+```
+
+`update.sh` brings the checkout to the latest commit — works whether rosbagger is
+a plain clone **or a git submodule** (no separate `git pull` / `git submodule
+update`) — then re-runs `./install.sh … --reinstall` so the new code applies even
+when the version number is unchanged. Pass the same install flags you used (e.g.
+`./update.sh --all`). Inside a colcon workspace it also rebuilds `rosbagger_ros`
+for you (or prints the `colcon build` command when ROS isn't sourced). Tip: build
+the launch package once with `colcon build --symlink-install` and routine updates
+won't need a rebuild at all.
+
 ## Development
 
 ```bash

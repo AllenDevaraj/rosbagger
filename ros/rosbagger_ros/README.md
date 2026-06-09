@@ -77,6 +77,22 @@ cd src/rosbagger && ./install.sh --desktop --venv "$VIRTUAL_ENV"
 > with the packages installed works. Only record / replay / RViz / Rerun need the
 > shared-with-ROS Python above.
 
+## Updating
+
+Pull the latest rosbagger (source **and** the installed GUI) in one command, from
+your workspace:
+
+```bash
+./src/rosbagger/update.sh        # fetch latest + reinstall the GUI
+```
+
+It works whether you vendored rosbagger as a plain clone or a **git submodule**
+(no separate `git submodule update`), and — because it runs inside
+`<ws>/src/rosbagger` — it rebuilds `rosbagger_ros` for you when ROS is sourced
+(otherwise it prints the `colcon build` line). Tip: build the launch package once
+with `colcon build --symlink-install --packages-select rosbagger_ros` so
+launch-file updates are picked up without rebuilding.
+
 ## Troubleshooting
 
 **`colcon build` fails with** `canonicalize_version() got an unexpected keyword
