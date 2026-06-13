@@ -366,3 +366,40 @@ def test_bagq_tf_wrong_type_is_clean_error(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert not isinstance(result.exception, AttributeError)
     assert "not tf2_msgs/msg/TFMessage" in result.output
+
+
+# ---------------------------------------------------------------------------
+# newA8 — an empty (registered-but-zero-message) /tf bag yields None bounds.
+# ---------------------------------------------------------------------------
+
+
+def test_collect_tf_report_empty_bag_has_no_garbage_bounds(tmp_path: Path) -> None:
+    """A registered-but-empty /tf bag yields None start/end, not AnyReader sentinels (newA8).
+
+    When message_count == 0 the underlying AnyReader returns 2**63-1 / 0 time sentinels;
+    those are ints, so the isinstance(int) guard could not catch them and JSON emitted
+    start_ns=9223372036854775807. The analyzer now mirrors inspect.collect_bag_info's
+    count==0 guard and reports None bounds.
+    """
+    from tools.make_fixtures import write_empty_tf_bag
+
+    bag = write_empty_tf_bag(tmp_path)
+    with RosbagsReader(bag) as reader:
+        report = collect_tf_report(reader)
+    assert report.start_ns is None
+    assert report.end_ns is None
+    assert report.edges == []
+    assert report.gaps == []
+
+
+def test_bagq_tf_json_empty_bag_emits_null_bounds(tmp_path: Path) -> None:
+    """`bagq tf --format json` on an empty /tf bag emits null bounds, no 2**63-1 (newA8)."""
+    from tools.make_fixtures import write_empty_tf_bag
+
+    bag = write_empty_tf_bag(tmp_path)
+    result = CliRunner().invoke(app, ["tf", str(bag), "--format", "json"])
+    assert result.exit_code == 0
+    assert "9223372036854775807" not in result.output
+    payload = json.loads(result.output)
+    assert payload["start_ns"] is None
+    assert payload["end_ns"] is None

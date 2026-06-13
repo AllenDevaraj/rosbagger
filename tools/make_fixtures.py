@@ -343,6 +343,23 @@ def write_wrong_type_tf_bag(dest_dir: Path | str) -> Path:
     return path
 
 
+def write_empty_tf_bag(dest_dir: Path | str) -> Path:
+    """Write a ROS 2 sqlite bag with a ``/tf`` connection but ZERO messages (newA8 fixture).
+
+    Reproduces a recording started and immediately stopped: the ``/tf`` topic is registered
+    (so the TF analyzer's name guard passes) but ``message_count == 0``, so the underlying
+    ``AnyReader`` returns its ``2**63-1`` / ``0`` time sentinels — which the analyzer must
+    coerce to ``None`` rather than emit as garbage bounds. Returns the bag directory path.
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / "empty_tf"
+    ts = get_typestore(Stores.ROS2_HUMBLE)
+    with Ros2Writer(path, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
+        writer.add_connection(_TOPIC_TF, _MSGTYPE_TFMESSAGE, typestore=ts)  # registered, never written
+    return path
+
+
 def write_tf_bag(dest_dir: Path | str, *, ros1: bool, storage: str = "sqlite3") -> Path:
     """Write a TF fixture bag (``/tf`` + ``/tf_static``) with a seeded ~800ms gap.
 

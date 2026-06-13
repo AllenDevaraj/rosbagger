@@ -247,12 +247,21 @@ def collect_tf_report(
             else:
                 dynamic_keys.add(key)
 
-    # 3. BAG BOUNDS for the bag-relative gap display (Decision 3). A TF stream was
-    #    found (message_count > 0), but guard the start against a None/garbage value
-    #    so the at_rel math never raises (zero-duration / clock-skew guard, mirrors
-    #    inspect.collect_bag_info's defensive bounds handling).
-    start_ns = reader.start_time
-    end_ns = reader.end_time
+    # 3. BAG BOUNDS for the bag-relative gap display (Decision 3). Mirror
+    #    inspect.collect_bag_info's empty-bag guard (newA8): when the bag has ZERO messages
+    #    AnyReader returns its `2**63-1` / `0` time SENTINELS — and those are ints, so the
+    #    `isinstance(int)` check below cannot catch them. A `/tf` topic can be REGISTERED yet
+    #    carry no messages (a recording started and immediately stopped), so coerce the
+    #    bounds to None on an empty bag rather than emit garbage (`start_ns == 2**63-1` in
+    #    JSON, or an absurd negative span in the table header). `getattr` keeps the duck-typed
+    #    unit-test stubs (which omit `message_count`) working; the `rel_base` guard still
+    #    defends against any other non-int / None value.
+    if getattr(reader, "message_count", None) == 0:
+        start_ns = None
+        end_ns = None
+    else:
+        start_ns = reader.start_time
+        end_ns = reader.end_time
     rel_base = start_ns if isinstance(start_ns, int) else None
 
     # 4. GAP DETECTION per edge.
