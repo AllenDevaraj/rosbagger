@@ -158,3 +158,28 @@ class NonTfMessageError(ValueError):
             f"so it cannot be analyzed as a transform topic. Check for a topic remap or a "
             f"republisher publishing the wrong type on {topic!r}."
         )
+
+
+class MixedTypeTopicError(ValueError):
+    """A referenced topic exists but carries MORE THAN ONE message type (newE22).
+
+    ``rosbags`` reports ``TopicInfo.msgtype is None`` for a topic that appears with
+    different message types — within one bag, or (more commonly) for the SAME topic name
+    recorded with different types across MERGED multi-bag inputs. The query orchestrator
+    skips such topics (it cannot build one schema for two types), so a query against the
+    topic previously failed with :class:`UnknownTableError` listing only the OTHER tables —
+    telling the user the data was missing when it actually exists but is mixed-type. This
+    error says so truthfully (the topic exists; it just is not singly-typed).
+
+    Subclasses ``ValueError``; stdlib-only (no new import). Carries ``.topic`` and ``.table``.
+    """
+
+    def __init__(self, topic: str, table: str) -> None:
+        self.topic = topic
+        self.table = table
+        super().__init__(
+            f"Table {table!r} maps to topic {topic!r}, which carries more than one message "
+            f"type and so cannot be queried as a single table. This usually means the topic "
+            f"was recorded with different message types (often across the bags you merged). "
+            f"Query a single bag, or split the inputs so {topic!r} has one consistent type."
+        )

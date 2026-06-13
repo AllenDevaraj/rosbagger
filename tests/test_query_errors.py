@@ -93,3 +93,35 @@ def test_group_by_misuse_is_not_relabeled_as_unknown_column(ros1_bag: Path) -> N
     assert not isinstance(err, UnknownColumnError)
     assert "Unknown column" not in str(err)  # NOT the teaching message
     assert "GROUP BY" in str(err)  # the real DuckDB binder error surfaces verbatim
+
+
+def test_query_mixed_type_topic_raises_truthful_error(tmp_path: Path) -> None:
+    """A topic recorded with >1 msgtype across merged bags raises MixedTypeTopicError (newE22).
+
+    rosbags collapses the differing types to msgtype=None, so the orchestrator skips the
+    topic — and a query against it previously failed with UnknownTableError listing only
+    the OTHER tables, reading as 'the data is missing'. It now raises a truthful
+    MixedTypeTopicError naming the topic.
+    """
+    from tools.make_fixtures import write_mixed_type_topic_bags
+
+    from rosbagger_core.errors import MixedTypeTopicError
+
+    a, b = write_mixed_type_topic_bags(tmp_path)
+    with RosbagsReader([a, b]) as reader:
+        # Sanity: rosbags reports the merged /status as mixed-type (msgtype None).
+        assert reader.topics["/status"].msgtype is None
+        with pytest.raises(MixedTypeTopicError) as excinfo:
+            query("SELECT * FROM status", reader)
+    assert excinfo.value.topic == "/status"
+    assert "more than one message type" in str(excinfo.value)
+
+
+def test_query_mixed_type_error_is_value_error(tmp_path: Path) -> None:
+    """MixedTypeTopicError stays a ValueError (so existing handlers keep catching it)."""
+    from tools.make_fixtures import write_mixed_type_topic_bags
+
+    a, b = write_mixed_type_topic_bags(tmp_path)
+    with RosbagsReader([a, b]) as reader:
+        with pytest.raises(ValueError):
+            query("SELECT * FROM status", reader)

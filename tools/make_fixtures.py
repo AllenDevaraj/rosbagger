@@ -343,6 +343,32 @@ def write_wrong_type_tf_bag(dest_dir: Path | str) -> Path:
     return path
 
 
+def write_mixed_type_topic_bags(
+    dest_dir: Path | str, *, topic: str = "/status"
+) -> tuple[Path, Path]:
+    """Two ROS 2 sqlite bags sharing a topic name with DIFFERENT msgtypes (newE22 fixture).
+
+    Merged via ``RosbagsReader([a, b])``, ``topic`` has ``TopicInfo.msgtype is None`` —
+    ``rosbags`` collapses the differing types — so the query orchestrator skips it. Models a
+    team re-recording ``/status`` with a new message type. Returns the two bag paths
+    ``(a, b)``; both use standard types so the bags self-describe.
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    ts = get_typestore(Stores.ROS2_HUMBLE)
+    a = dest_dir / "mixed_a"
+    b = dest_dir / "mixed_b"
+    string_t = ts.types["std_msgs/msg/String"]
+    bool_t = ts.types["std_msgs/msg/Bool"]
+    with Ros2Writer(a, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
+        conn = writer.add_connection(topic, "std_msgs/msg/String", typestore=ts)
+        writer.write(conn, _timestamp_ns(0), ts.serialize_cdr(string_t(data="hi"), "std_msgs/msg/String"))
+    with Ros2Writer(b, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
+        conn = writer.add_connection(topic, "std_msgs/msg/Bool", typestore=ts)
+        writer.write(conn, _timestamp_ns(1), ts.serialize_cdr(bool_t(data=True), "std_msgs/msg/Bool"))
+    return a, b
+
+
 def write_empty_tf_bag(dest_dir: Path | str) -> Path:
     """Write a ROS 2 sqlite bag with a ``/tf`` connection but ZERO messages (newA8 fixture).
 

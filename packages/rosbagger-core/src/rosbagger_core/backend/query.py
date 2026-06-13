@@ -42,7 +42,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from rosbagger_core.errors import UnknownColumnError, UnknownTableError
+from rosbagger_core.errors import MixedTypeTopicError, UnknownColumnError, UnknownTableError
 
 from .base import QueryBackend
 
@@ -88,8 +88,10 @@ _STANDARD_COLUMNS: frozenset[str] = frozenset({"t", "t_ns", "stamp", "topic"})
 _EVENTS_TABLE = "events"
 
 
-def _topic_table_maps(reader: BagReader) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-    """Build ``(topic_to_table, table_to_topic, topic_to_msgtype)`` from the reader.
+def _topic_table_maps(
+    reader: BagReader,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str, str]]:
+    """Build ``(topic_to_table, table_to_topic, topic_to_msgtype, mixed_type_topics)``.
 
     Mirrors ``inspect.collect_table_schemas`` exactly: a SHARED
     ``TableNameResolver`` over ``sorted(reader.topics.items())`` so collision
@@ -97,19 +99,27 @@ def _topic_table_maps(reader: BagReader) -> tuple[dict[str, str], dict[str, str]
     (a multi-msgtype topic — passing ``None`` to ``build_table_schema`` raises
     ``KeyError: None``; 05-RESEARCH Pattern 4 / Pitfall 4). The inversion is safe
     because the resolver guarantees unique table names, so no topic is dropped.
+
+    A skipped multi-msgtype topic is recorded in ``mixed_type_topics`` keyed by its
+    base sanitized name (``sanitize_table_name`` — NOT the shared resolver, so a skipped
+    topic never consumes a collision suffix and the real topics' names stay identical to
+    before). query() uses it to raise a truthful :class:`MixedTypeTopicError` instead of
+    a misleading :class:`UnknownTableError` when such a topic is referenced (newE22).
     """
-    from rosbagger_core.schema import TableNameResolver
+    from rosbagger_core.schema import TableNameResolver, sanitize_table_name
 
     resolver = TableNameResolver()  # shared so collision state accumulates across topics
     topic_to_table: dict[str, str] = {}
     topic_to_msgtype: dict[str, str] = {}
+    mixed_type_topics: dict[str, str] = {}  # base sanitized table name -> topic (newE22)
     for topic, info in sorted(reader.topics.items()):
         if info.msgtype is None:  # multi-msgtype topic — skip, never pass None
+            mixed_type_topics[sanitize_table_name(topic)] = topic
             continue
         topic_to_table[topic] = resolver.resolve(topic)
         topic_to_msgtype[topic] = info.msgtype
     table_to_topic = {table: topic for topic, table in topic_to_table.items()}
-    return topic_to_table, table_to_topic, topic_to_msgtype
+    return topic_to_table, table_to_topic, topic_to_msgtype, mixed_type_topics
 
 
 def query(
@@ -207,7 +217,7 @@ def query(
     tree = parse(sql)
 
     # Step 2 — build the per-bag topic↔table map and invert it (Pattern 4).
-    topic_to_table, table_to_topic, topic_to_msgtype = _topic_table_maps(reader)
+    topic_to_table, table_to_topic, topic_to_msgtype, mixed_type_topics = _topic_table_maps(reader)
 
     # Step 3 — schema construction, ON DEMAND and memoized (10-RESEARCH Pattern 4).
     # `_schema_for(table)` builds a topic's TableSchema the first time it is needed and
@@ -319,11 +329,21 @@ def query(
     # Step 6 — resolve each referenced (non-`events`) table name to a topic; an unmapped
     # name raises a clear error listing the available tables, BEFORE any load
     # (T-05-06: no silent empty result). v1 just lists; Phase 7 owns did-you-mean.
+    # Case-fold the mixed-type map too (newE22 + newA5), so a reference to a mixed-type
+    # topic is recognized regardless of the SQL's identifier case.
+    mixed_type_topics_ci = {name.lower(): topic for name, topic in mixed_type_topics.items()}
     referenced_topics: list[str] = []
     seen_topics: set[str] = set()
     for table in data_tables:
         topic = _resolve_table(table)  # case-insensitive (newA5)
         if topic is None:
+            # Distinguish a genuinely-absent table from a topic that EXISTS but was skipped
+            # for carrying >1 message type (newE22). Such a topic is real but unqueryable,
+            # so a UnknownTableError listing only the OTHER tables would wrongly read as
+            # "the data is missing" — raise a truthful MixedTypeTopicError instead.
+            mixed_topic = mixed_type_topics.get(table) or mixed_type_topics_ci.get(table.lower())
+            if mixed_topic is not None:
+                raise MixedTypeTopicError(mixed_topic, table)
             # The constructor now owns the message + the difflib did-you-mean (CLI-02);
             # pass it the offending name and the available table names.
             raise UnknownTableError(table, sorted(table_to_topic))
