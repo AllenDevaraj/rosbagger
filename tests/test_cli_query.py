@@ -188,3 +188,27 @@ def test_render_result_zero_rows_prints_shape(capsys) -> None:
     out = capsys.readouterr().out
     assert "(0 rows)" in out
     assert "t_ns" in out and "topic" in out
+
+
+def test_query_bad_output_extension_fails_fast_clean(ros1_bag: Path, tmp_path: Path) -> None:
+    """`-o out.txt` is rejected BEFORE the query runs, with a clean message (newA6).
+
+    The extension was validated only inside write_table — AFTER materializing the
+    result — and raised a bare ValueError that @teaching_errors does not catch, so the
+    user got a Python traceback after waiting for the whole query. It is now preflighted
+    to a typer.BadParameter: a clean message, no traceback, and no output file written.
+    """
+    import re
+
+    out = tmp_path / "result.txt"
+    result = runner.invoke(
+        app, ["query", "SELECT t_ns FROM cmd_vel", str(ros1_bag), "-o", str(out)]
+    )
+    assert result.exit_code != 0
+    # rich renders the BadParameter inside a box, wrapping the message across border
+    # chars — collapse box-drawing + whitespace before matching the phrase.
+    flat = re.sub(r"[│╭╮╰╯─\s]+", " ", result.output)
+    assert "Unknown output extension 'txt'; use .csv or .parquet" in flat
+    # No raw ValueError traceback escaped (BadParameter -> click usage error, exit 2).
+    assert not isinstance(result.exception, ValueError)
+    assert not out.exists()

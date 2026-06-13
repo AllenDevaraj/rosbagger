@@ -388,6 +388,22 @@ def query(
     from rosbagger_core.output import plot_table, to_json, write_csv_to_string, write_table
     from rosbagger_core.reader import RosbagsReader
 
+    # Preflight the -o output extension BEFORE opening the bag / running the query (newA6).
+    # `write_table` validates the extension only AFTER the full result is materialized and
+    # raises a bare `ValueError` — which @teaching_errors does NOT catch (it deliberately
+    # avoids a broad `except ValueError`), so a bad extension dumped a Python traceback
+    # after a (potentially minutes-long) query. Validate up front and fail fast with a clean
+    # message via typer.BadParameter (exit 2, no traceback) — mirroring the --format guards
+    # below. The wording matches export.write_table's own ValueError (core stays the
+    # authoritative guard for non-CLI callers).
+    if out is not None:
+        ext = out.suffix.lstrip(".").lower()
+        if ext not in ("csv", "parquet"):
+            raise typer.BadParameter(
+                f"Unknown output extension {ext!r}; use .csv or .parquet",
+                param_hint="'-o' / '--output'",
+            )
+
     # UnknownTableError (unknown table) and FileNotFoundError (missing bag) are caught by
     # the @teaching_errors wrapper -> a clean one-line message + Exit(1), no traceback.
     # The result Arrow table is fully materialized inside query() (the backend closes
