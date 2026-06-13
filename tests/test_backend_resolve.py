@@ -118,6 +118,32 @@ def test_select_star_has_no_referenced_columns() -> None:
     assert has_star(tree) is True
 
 
+def test_has_star_false_for_count_star() -> None:
+    """``COUNT(*)`` is NOT a projection star (newA1).
+
+    A star nested in a function selects no columns; treating it as one made
+    ``SELECT COUNT(*) FROM image`` materialize every heavy ``data`` blob just to
+    count rows. ``has_star`` must see the star inside ``COUNT(...)`` as non-projection.
+    """
+    assert has_star(parse("SELECT COUNT(*) FROM image")) is False
+
+
+def test_has_star_false_for_aggregate_star_variants() -> None:
+    """Other function-wrapped stars (and a WHERE-side count) are likewise not projection stars."""
+    assert has_star(parse("SELECT COUNT(*) AS n FROM image WHERE height > 0")) is False
+    assert has_star(parse("SELECT count(*) FROM image GROUP BY encoding")) is False
+
+
+def test_has_star_true_for_qualified_star() -> None:
+    """A qualified ``t.*`` IS a projection star (it selects all of t's columns, blobs included)."""
+    assert has_star(parse("SELECT t.* FROM image t")) is True
+
+
+def test_has_star_true_when_star_mixed_with_columns() -> None:
+    """``SELECT *, x`` still projects a star (heavy blobs included)."""
+    assert has_star(parse("SELECT *, height FROM image")) is True
+
+
 def test_parse_is_reused_for_columns_and_star() -> None:
     """``parse`` returns a tree that feeds BOTH column + star helpers (parse once)."""
     tree = parse('SELECT t_ns, "linear.x" FROM cmd_vel WHERE "linear.x" > 0.5')

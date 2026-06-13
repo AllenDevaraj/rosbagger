@@ -76,12 +76,32 @@ def referenced_columns(tree: exp.Expression) -> set[str]:
 
 
 def has_star(tree: exp.Expression) -> bool:
-    """True iff the parsed ``tree`` contains a ``SELECT *`` (an ``exp.Star``).
+    """True iff the parsed ``tree`` PROJECTS a ``SELECT *`` (a projection ``exp.Star``).
 
-    ``SELECT *`` emits an ``exp.Star`` and NO ``exp.Column`` nodes (05-RESEARCH
-    Pattern 3, VERIFIED). The orchestrator treats a star as "include this
-    topic's heavy blobs too" — otherwise ``SELECT * FROM image`` would silently
-    drop ``image.data`` (Pitfall 3 / A1). A qualified star (``t.*``) is also an
-    ``exp.Star`` and counts.
+    A *projection* star sits DIRECTLY in a ``SELECT``'s projection list: a bare ``*``
+    (an ``exp.Star`` whose parent is the ``Select``) or a qualified ``t.*`` (an
+    ``exp.Column`` wrapping the ``Star``). The orchestrator treats such a star as
+    "include this topic's heavy blobs too" — otherwise ``SELECT * FROM image`` would
+    silently drop ``image.data`` (Pitfall 3 / A1).
+
+    A ``Star`` NESTED INSIDE A FUNCTION CALL is NOT a projection star: ``COUNT(*)``,
+    ``array_agg(*)``, etc. select no columns, so treating them as "include heavy blobs"
+    needlessly materialized every blob — ``SELECT COUNT(*) FROM image`` decoded every
+    ``image.data`` payload just to count rows (newA1). ``find_all(exp.Star)`` matched
+    those too (it walks the WHOLE tree); we now keep only a ``Star`` (or its
+    qualified-``Star`` ``Column``) that is a direct expression of a ``Select``
+    projection, never one wrapped in a function. (A star inside a sub-SELECT's
+    projection still counts — that sub-SELECT genuinely selects all of its source
+    topic's columns, blobs included.)
     """
-    return bool(list(tree.find_all(exp.Star)))
+    for star in tree.find_all(exp.Star):
+        # A qualified star ``t.*`` parses as ``Column(this=Star)`` — treat the Column as
+        # the projection node; a bare ``*`` is the Star itself (VERIFIED via sqlglot).
+        parent = star.parent
+        node = parent if isinstance(parent, exp.Column) and parent.this is star else star
+        owner = node.parent
+        # Identity (`is`) membership, NOT `==`: sqlglot's `Expression.__eq__` compares by
+        # rendered SQL, so two distinct `*` nodes would compare equal under `in`.
+        if isinstance(owner, exp.Select) and any(e is node for e in owner.expressions):
+            return True
+    return False
