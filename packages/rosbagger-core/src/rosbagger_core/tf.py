@@ -43,6 +43,13 @@ from dataclasses import dataclass
 _TOPIC_TF = "/tf"
 _TOPIC_TF_STATIC = "/tf_static"
 
+# Accepted ``TFMessage`` msgtype spellings (newA7). Matching is by TOPIC NAME (above), but
+# a present TF topic carrying a NON-TFMessage type is rejected before the stream walk so
+# ``m.msg.transforms`` never raises a raw ``AttributeError``. ``rosbags`` normalizes both
+# the ROS 1 (``tf2_msgs/TFMessage``) and ROS 2 (``tf2_msgs/msg/TFMessage``) names — accept
+# both so a legitimate TF topic is never falsely rejected.
+_TFMESSAGE_TYPES = frozenset({"tf2_msgs/msg/TFMessage", "tf2_msgs/TFMessage"})
+
 # Default dropout threshold (Decision 6 / 09-RESEARCH A1): a delta is a gap when it
 # exceeds 5x the edge's median inter-arrival interval. Median (not mean) resists the
 # very gaps being detected; 5x tolerates healthy jitter without false positives.
@@ -193,7 +200,7 @@ def collect_tf_report(
             ``/tf_static`` — there is no transform graph to build (Decision 7). The
             guard reads ``reader.topics`` (O(1) metadata), NOT the stream.
     """
-    from rosbagger_core.errors import NoTransformsError
+    from rosbagger_core.errors import NonTfMessageError, NoTransformsError
 
     # 1. EMPTY-TOPIC GUARD FIRST (Decision 7). Read the O(1) topic metadata — do NOT
     #    walk the stream to discover this. If neither standard TF topic is present
@@ -201,6 +208,20 @@ def collect_tf_report(
     topic_names = set(reader.topics.keys())
     if _TOPIC_TF not in topic_names and _TOPIC_TF_STATIC not in topic_names:
         raise NoTransformsError(sorted(topic_names))
+
+    # 1b. MSGTYPE GUARD (newA7). The name guard above is not enough — a remap mistake or a
+    #     republisher can put a non-TFMessage type on /tf, and `m.msg.transforms` would then
+    #     raise a raw AttributeError mid-stream (a traceback, not a teaching error). Reject a
+    #     PRESENT TF topic whose msgtype is a known non-TFMessage type, from O(1) metadata,
+    #     before the walk. A msgtype of None (a mixed-type topic) is left alone here — the
+    #     per-message body is what would matter and that is a separate, rarer case.
+    for tf_topic in (_TOPIC_TF, _TOPIC_TF_STATIC):
+        info = reader.topics.get(tf_topic)
+        # `getattr` (not `info.msgtype`): a missing/None msgtype means "type unknown" — do
+        # NOT reject it as wrong-type, only reject a KNOWN non-TFMessage type.
+        msgtype = getattr(info, "msgtype", None) if info is not None else None
+        if msgtype is not None and msgtype not in _TFMESSAGE_TYPES:
+            raise NonTfMessageError(tf_topic, msgtype)
 
     # 2. STREAM WALK. Connection-filtered: only /tf + /tf_static are deserialized.
     #    Tag static by TOPIC NAME (Decision 4). Key edges by (parent, child) so a

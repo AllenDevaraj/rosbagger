@@ -133,3 +133,28 @@ class NoTransformsError(ValueError):
             else " The bag has no topics."
         )
         super().__init__(f"Bag has no /tf or /tf_static topics.{hint}")
+
+
+class NonTfMessageError(ValueError):
+    """A ``/tf`` / ``/tf_static`` topic carries a non-``TFMessage`` message type (TF-02).
+
+    :func:`rosbagger_core.tf.collect_tf_report` matches the TF topics by NAME (so the
+    ``tf2_msgs/TFMessage`` vs ``tf2_msgs/msg/TFMessage`` spelling never matters), then reads
+    ``msg.transforms`` off every message. A remap mistake or a republisher can put a
+    non-``TFMessage`` type on ``/tf`` — and ``.transforms`` would then raise a raw
+    ``AttributeError`` mid-stream (a traceback, not a teaching error). The analyzer guards on
+    the O(1) topic METADATA before the stream walk and raises this instead (newA7).
+
+    Like its siblings it subclasses ``ValueError`` (so existing ``except ValueError`` handlers
+    keep working) and stays stdlib-only — it names no other class and adds no import, so the
+    module's offline invariant holds. Carries ``.topic`` and ``.msgtype``.
+    """
+
+    def __init__(self, topic: str, msgtype: str) -> None:
+        self.topic = topic
+        self.msgtype = msgtype
+        super().__init__(
+            f"Topic {topic!r} carries message type {msgtype!r}, not tf2_msgs/msg/TFMessage, "
+            f"so it cannot be analyzed as a transform topic. Check for a topic remap or a "
+            f"republisher publishing the wrong type on {topic!r}."
+        )

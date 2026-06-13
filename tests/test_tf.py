@@ -331,3 +331,38 @@ def test_cli_tf_bad_format_is_rejected(tf_bags: dict[str, Path]) -> None:
     bag = tf_bags["ros2_sqlite"]
     result = runner.invoke(app, ["tf", str(bag), "--format", "bogus"])
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# newA7 — a /tf topic carrying a non-TFMessage type teaches, not tracebacks.
+# ---------------------------------------------------------------------------
+
+
+def test_collect_tf_report_rejects_non_tfmessage_topic(tmp_path: Path) -> None:
+    """A `/tf` carrying std_msgs/msg/String raises NonTfMessageError, not AttributeError.
+
+    The analyzer matches `/tf` by name then reads `msg.transforms`; a non-TFMessage
+    payload has no such attribute, so without the metadata guard it raised a raw
+    AttributeError mid-stream. The guard rejects it from O(1) topic metadata.
+    """
+    from tools.make_fixtures import write_wrong_type_tf_bag
+
+    from rosbagger_core.errors import NonTfMessageError
+
+    bag = write_wrong_type_tf_bag(tmp_path)
+    with RosbagsReader(bag) as reader:
+        with pytest.raises(NonTfMessageError) as excinfo:
+            collect_tf_report(reader)
+    assert excinfo.value.topic == "/tf"
+    assert "std_msgs/msg/String" in str(excinfo.value)
+
+
+def test_bagq_tf_wrong_type_is_clean_error(tmp_path: Path) -> None:
+    """`bagq tf` on a wrong-typed /tf prints a clean teaching line, no traceback (newA7)."""
+    from tools.make_fixtures import write_wrong_type_tf_bag
+
+    bag = write_wrong_type_tf_bag(tmp_path)
+    result = CliRunner().invoke(app, ["tf", str(bag)])
+    assert result.exit_code == 1
+    assert not isinstance(result.exception, AttributeError)
+    assert "not tf2_msgs/msg/TFMessage" in result.output

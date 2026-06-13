@@ -91,6 +91,7 @@ def teaching_errors(fn):
         # 07-02 widened this to the full teaching set; errors.py is stdlib-only so the
         # import pulls no heavy stack until the wrapped command actually runs.
         from rosbagger_core.errors import (
+            NonTfMessageError,
             NoTransformsError,
             UnknownColumnError,
             UnknownTableError,
@@ -104,6 +105,7 @@ def teaching_errors(fn):
             UnknownColumnError,
             UnresolvedTypeError,
             NoTransformsError,
+            NonTfMessageError,
         ) as e:
             # Each carries its own teaching message: did-you-mean / available tables
             # (CLI-02), the referenced tables' columns (CLI-03), or .msg/.idl

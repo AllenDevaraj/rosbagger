@@ -322,6 +322,27 @@ def write_capitalized_topic_bag(dest_dir: Path | str, *, topic: str = "/Imu") ->
     return path
 
 
+def write_wrong_type_tf_bag(dest_dir: Path | str) -> Path:
+    """Write a ROS 2 sqlite bag whose ``/tf`` carries ``std_msgs/msg/String`` (newA7 fixture).
+
+    Reproduces a remap/republisher mistake: the TF analyzer matches ``/tf`` by NAME, then
+    reads ``msg.transforms`` — which a non-``TFMessage`` payload does not have, so without a
+    msgtype guard it raised a raw ``AttributeError`` mid-stream. ``std_msgs/msg/String`` is a
+    standard type (the bag self-describes, no ``default_typestore`` needed). Returns the bag
+    directory path.
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / "wrong_type_tf"
+    ts = get_typestore(Stores.ROS2_HUMBLE)
+    string_t = ts.types["std_msgs/msg/String"]
+    with Ros2Writer(path, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
+        conn = writer.add_connection(_TOPIC_TF, "std_msgs/msg/String", typestore=ts)
+        raw = ts.serialize_cdr(string_t(data="not a transform"), "std_msgs/msg/String")
+        writer.write(conn, _timestamp_ns(0), raw)
+    return path
+
+
 def write_tf_bag(dest_dir: Path | str, *, ros1: bool, storage: str = "sqlite3") -> Path:
     """Write a TF fixture bag (``/tf`` + ``/tf_static``) with a seeded ~800ms gap.
 
