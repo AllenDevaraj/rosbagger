@@ -777,8 +777,14 @@ def events_add(
 
     path = add_event(
         bag,
-        t_start_ns=int(start * 1e9),
-        t_end_ns=int(end * 1e9),
+        # round(), NOT int() (newA2): a float seconds value that is not exactly representable
+        # (e.g. 4.1 held as 4.0999999...) truncates ONE ns SHORT under int(), so a point event
+        # lands 1 ns before the message it marks and the documented interval join
+        # (... ON data.t_ns BETWEEN events.t_start_ns AND events.t_end_ns) returns 0 rows for
+        # that exact message. This is the same WR-06 bug already fixed in
+        # EditOps.trim_window_ns (edit/operations.py); round() keeps the boundary message.
+        t_start_ns=round(start * 1e9),
+        t_end_ns=round(end * 1e9),
         label=label,
         note=note,
     )

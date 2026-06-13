@@ -111,3 +111,21 @@ def test_events_in_help() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0, result.output
     assert "events" in result.stdout
+
+
+def test_events_add_rounds_float_seconds_to_exact_ns(bag: Path) -> None:
+    """`--start 4.1 --end 8.2` stores exact ns, not int()-truncated values (newA2).
+
+    int(4.1 * 1e9) == 4_099_999_999 (1 ns short) — a point event would then miss the
+    very message it marks under the documented BETWEEN interval join. round() lands it
+    on the exact ns boundary. Verified directly against the sidecar.
+    """
+    from rosbagger_core.events import list_events
+
+    add = runner.invoke(
+        app, ["events", "add", str(bag), "--start", "4.1", "--end", "8.2", "--label", "spike"]
+    )
+    assert add.exit_code == 0, add.output
+    table = list_events(bag)
+    assert table.column("t_start_ns").to_pylist() == [4_100_000_000]
+    assert table.column("t_end_ns").to_pylist() == [8_200_000_000]
