@@ -50,6 +50,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import pyarrow
 
     from rosbagger_core.reader import BagReader
+    from rosbagger_core.schema import TableSchema
 
 # UnknownTableError moved to rosbagger_core.errors (the stdlib-only shared home);
 # imported above and re-exported here so the canonical class is identical and any
@@ -208,18 +209,28 @@ def query(
     # Step 2 — build the per-bag topic↔table map and invert it (Pattern 4).
     topic_to_table, table_to_topic, topic_to_msgtype = _topic_table_maps(reader)
 
-    # Step 3 — HOIST schema construction (10-RESEARCH Pattern 4). Build every mapped
-    # topic's TableSchema up front, keyed by its SANITIZED table name. This is O(1)
-    # metadata (no `reader.read()`), so it is cheap to do before resolution — and it
-    # gives the alias existence-gate (D-04) the per-topic column-name sets it needs.
-    # The same schemas are REUSED in the load loop below (no double-build). The
-    # `typestore` binding is hoisted here with it (it was previously bound in Step 4,
-    # AFTER this point — without the move build_table_schema would NameError).
+    # Step 3 — schema construction, ON DEMAND and memoized (10-RESEARCH Pattern 4).
+    # `_schema_for(table)` builds a topic's TableSchema the first time it is needed and
+    # caches it, so the alias gate (Step 4) and the load loop (Step 7) reuse one build
+    # per referenced table (no double-build). It is built ONLY for tables the SQL
+    # actually references — NOT for every topic in the bag (newA4). The previous eager
+    # comprehension built a schema for every mapped topic up front, so one unbuildable
+    # topic (a vendor msgtype absent from a caller-supplied default_typestore, or a
+    # recursive type) raised here — before resolution — and crashed queries that never
+    # touched it. Building is O(1) metadata (no `reader.read()`). The `typestore` binding
+    # is captured in the closure.
     typestore = reader.typestore
-    schemas_by_table = {
-        topic_to_table[topic]: build_table_schema(topic_to_msgtype[topic], typestore, topic=topic)
-        for topic in topic_to_table
-    }
+    schemas_by_table: dict[str, TableSchema] = {}
+
+    def _schema_for(table: str) -> TableSchema:
+        """Build (once) and return the schema for a real topic table. Caller guarantees
+        ``table`` is in ``table_to_topic`` (a resolved topic table, never ``events``)."""
+        if table not in schemas_by_table:
+            topic = table_to_topic[table]
+            schemas_by_table[table] = build_table_schema(
+                topic_to_msgtype[topic], typestore, topic=topic
+            )
+        return schemas_by_table[table]
 
     # Step 4 — alias expansion (D-02), gated to the single-base-topic case (Open Q1).
     # Map the referenced base tables (CTE-subtracted) through to their topics; ignore
@@ -242,7 +253,7 @@ def query(
         base_tables = [t for t in referenced_tables_in(tree) if t in table_to_topic]
         if len(base_tables) == 1:
             only_table = base_tables[0]
-            schema = schemas_by_table[only_table]
+            schema = _schema_for(only_table)
             before = tree.sql("duckdb")
             new_tree = expand_aliases(
                 tree,
@@ -303,8 +314,9 @@ def query(
     columns_by_table: dict[str, list[str]] = {}
     try:
         for topic in referenced_topics:
-            # Reuse the hoisted schema (Step 3) — no double-build (Pattern 4).
-            schema = schemas_by_table[topic_to_table[topic]]
+            # Build (or reuse the cached) schema for this referenced topic (Step 3) —
+            # no double-build (Pattern 4), and never for an unreferenced topic (newA4).
+            schema = _schema_for(topic_to_table[topic])
             columns_by_table[topic_to_table[topic]] = [c.name for c in schema.columns]
             # Per-topic column filters (10-RESEARCH Code Example 4), composed:
             #   include  — heavy-blob filter (the UNCHANGED QURY-07 rule): a topic's

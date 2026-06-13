@@ -708,3 +708,43 @@ def test_query_events_join_does_not_break_aliasing(tmp_path: Path) -> None:
     # vx expands to linear.x; the result column is the dotted expanded name.
     assert result.num_rows == 2
     assert sorted(result.column("linear.x").to_pylist()) == [0.0, 1.0]
+
+
+# ---------------------------------------------------------------------------
+# newA4 — schemas are built ONLY for referenced topics, never for every topic.
+# ---------------------------------------------------------------------------
+
+
+def test_query_builds_schema_only_for_referenced_topics(
+    fixture_bags: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unbuildable UNREFERENCED topic must not crash a query (newA4).
+
+    The orchestrator previously built a TableSchema for EVERY topic in the bag up
+    front (Step 3 eager comprehension), so one unbuildable topic (a vendor msgtype
+    absent from a caller-supplied typestore, or a recursive type) raised before
+    resolution and crashed queries that never touched it. We patch
+    ``build_table_schema`` to FAIL for ``/image`` and assert that querying ``/cmd_vel``
+    still succeeds and that ``/image`` (and ``/imu``) were never built.
+    """
+    import rosbagger_core.schema as schema_mod
+
+    real_build = schema_mod.build_table_schema
+    built: list[str] = []
+
+    def spy(msgtype: str, typestore: object, *, topic: str):
+        built.append(topic)
+        if topic == "/image":  # simulate an unbuildable, unreferenced topic
+            raise KeyError("simulated unbuildable topic /image")
+        return real_build(msgtype, typestore, topic=topic)
+
+    # query() does `from rosbagger_core.schema import build_table_schema` at call time,
+    # so patching the package attribute is picked up by the function-local import.
+    monkeypatch.setattr(schema_mod, "build_table_schema", spy)
+
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader:
+        result = query("SELECT t_ns FROM cmd_vel", reader)
+
+    assert result.column("t_ns").to_pylist() == [1_000_000_000, 1_100_000_000, 1_200_000_000]
+    # Only the referenced topic was built — /image (unbuildable) and /imu never were.
+    assert built == ["/cmd_vel"]
