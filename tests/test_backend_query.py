@@ -748,3 +748,26 @@ def test_query_builds_schema_only_for_referenced_topics(
     assert result.column("t_ns").to_pylist() == [1_000_000_000, 1_100_000_000, 1_200_000_000]
     # Only the referenced topic was built — /image (unbuildable) and /imu never were.
     assert built == ["/cmd_vel"]
+
+
+# ---------------------------------------------------------------------------
+# newA5 — table-name resolution is case-insensitive (DuckDB folds identifiers).
+# ---------------------------------------------------------------------------
+
+
+def test_query_table_name_resolves_case_insensitively(tmp_path: Path) -> None:
+    """A lowercase reference to a capitalized topic's table resolves (newA5).
+
+    A bag with topic ``/Imu`` has table name ``Imu``. The orchestrator resolved table
+    names with a case-SENSITIVE dict lookup, so ``SELECT ... FROM imu`` raised
+    UnknownTableError even though DuckDB (case-insensitive) would have matched the
+    registered ``Imu`` relation had the SQL reached it. Resolution now folds case.
+    """
+    from tools.make_fixtures import write_capitalized_topic_bag
+
+    bag = write_capitalized_topic_bag(tmp_path)  # topic /Imu -> table "Imu"
+    with RosbagsReader(bag) as reader:
+        lower = query("SELECT t_ns FROM imu", reader)
+        exact = query("SELECT t_ns FROM Imu", reader)
+    assert lower.column("t_ns").to_pylist() == [1_000_000_000, 1_100_000_000, 1_200_000_000]
+    assert exact.column("t_ns").to_pylist() == lower.column("t_ns").to_pylist()

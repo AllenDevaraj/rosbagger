@@ -300,6 +300,28 @@ def write_ros2_sqlite_bag_defless(dest_dir: Path | str) -> Path:
     return path
 
 
+def write_capitalized_topic_bag(dest_dir: Path | str, *, topic: str = "/Imu") -> Path:
+    """Write a ROS 2 sqlite bag with a single CAPITALIZED topic name (the newA5 fixture).
+
+    The topic sanitizes to a mixed-case table name (``/Imu`` -> ``Imu``), so a lowercase
+    SQL reference (``FROM imu``) must resolve case-insensitively — DuckDB folds identifier
+    case and the orchestrator forwards the SQL verbatim, so its own pre-flight resolution
+    must fold case too. Uses the standard ``sensor_msgs/msg/Imu`` payload (``_imu``) so the
+    bag self-describes and needs no ``default_typestore``.
+
+    Returns the bag directory path.
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / "capitalized_topic"
+    ts = get_typestore(Stores.ROS2_HUMBLE)
+    with Ros2Writer(path, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
+        conn = writer.add_connection(topic, _MSGTYPE_IMU, typestore=ts)
+        for i in range(_N_MSGS):
+            writer.write(conn, _timestamp_ns(i), ts.serialize_cdr(_imu(ts, i, ros1=False), _MSGTYPE_IMU))
+    return path
+
+
 def write_tf_bag(dest_dir: Path | str, *, ros1: bool, storage: str = "sqlite3") -> Path:
     """Write a TF fixture bag (``/tf`` + ``/tf_static``) with a seeded ~800ms gap.
 

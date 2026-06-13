@@ -232,6 +232,24 @@ def query(
             )
         return schemas_by_table[table]
 
+    # Case-INSENSITIVE table resolution (newA5). DuckDB folds identifier case, and the
+    # orchestrator forwards the user's SQL verbatim, so DuckDB happily matches `imu`
+    # against a relation registered as `Imu`. The orchestrator's OWN pre-flight
+    # resolution must fold case the same way — otherwise an unquoted lowercase reference
+    # to a capitalized topic's table (a `/Imu` bag, `FROM imu`) raised UnknownTableError
+    # for SQL the backend would have accepted. `TableNameResolver` already dedupes table
+    # names case-insensitively (names.py), so lower-casing the keys can never collapse
+    # two DISTINCT topics into one bucket. The exact map is tried first (fast path /
+    # exact-case win); the folded map is the fallback.
+    table_to_topic_ci = {table.lower(): topic for table, topic in table_to_topic.items()}
+
+    def _resolve_table(table: str) -> str | None:
+        """Resolve a SQL table name to its topic, case-insensitively (newA5); None if unmapped."""
+        topic = table_to_topic.get(table)
+        if topic is None:
+            topic = table_to_topic_ci.get(table.lower())
+        return topic
+
     # Step 4 — alias expansion (D-02), gated to the single-base-topic case (Open Q1).
     # Map the referenced base tables (CTE-subtracted) through to their topics; ignore
     # names that map to no topic (those raise UnknownTableError below). Only when
@@ -250,10 +268,18 @@ def query(
     # a true no-op, so an unchanged render reliably means "nothing was expanded."
     expanded = False
     if alias:
-        base_tables = [t for t in referenced_tables_in(tree) if t in table_to_topic]
-        if len(base_tables) == 1:
-            only_table = base_tables[0]
-            schema = _schema_for(only_table)
+        # Resolve referenced base tables to their TOPICS (case-insensitively, newA5) and
+        # count DISTINCT topics — so `FROM imu`/`FROM Imu` against one `/Imu` topic still
+        # gates as the single-base-topic case (and two case-variant references to the same
+        # topic never miscount as two).
+        base_topics = {
+            topic
+            for table in referenced_tables_in(tree)
+            if (topic := _resolve_table(table)) is not None
+        }
+        if len(base_topics) == 1:
+            only_topic = next(iter(base_topics))
+            schema = _schema_for(topic_to_table[only_topic])
             before = tree.sql("duckdb")
             new_tree = expand_aliases(
                 tree,
@@ -294,13 +320,18 @@ def query(
     # name raises a clear error listing the available tables, BEFORE any load
     # (T-05-06: no silent empty result). v1 just lists; Phase 7 owns did-you-mean.
     referenced_topics: list[str] = []
+    seen_topics: set[str] = set()
     for table in data_tables:
-        topic = table_to_topic.get(table)
+        topic = _resolve_table(table)  # case-insensitive (newA5)
         if topic is None:
             # The constructor now owns the message + the difflib did-you-mean (CLI-02);
             # pass it the offending name and the available table names.
             raise UnknownTableError(table, sorted(table_to_topic))
-        referenced_topics.append(topic)
+        # Dedupe: two case-variant references (`imu`, `Imu`) resolve to one topic — load
+        # and register it once (newA5).
+        if topic not in seen_topics:
+            seen_topics.add(topic)
+            referenced_topics.append(topic)
 
     # Step 7 — load only the referenced topics, register, execute. The backend is
     # entered via `with` so its connection is released even on error; `execute`
