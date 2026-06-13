@@ -125,3 +125,28 @@ def test_query_mixed_type_error_is_value_error(tmp_path: Path) -> None:
     with RosbagsReader([a, b]) as reader:
         with pytest.raises(ValueError):
             query("SELECT * FROM status", reader)
+
+
+def test_query_events_multi_bag_raises_not_silently_wrong(tmp_path: Path) -> None:
+    """Referencing `events` with >1 bag open raises MultiBagEventsError (newE23).
+
+    The events sidecar is per-bag and loaded for reader.paths[0] only; joining one bag's
+    events against the merged multi-bag stream silently dropped the other bags' events.
+    The orchestrator now refuses rather than return a quietly-wrong result.
+    """
+    from rosbagger_core.errors import MultiBagEventsError
+
+    a = write_ros1_bag(tmp_path / "a")
+    b = write_ros1_bag(tmp_path / "b")
+    with RosbagsReader([a, b]) as reader:
+        with pytest.raises(MultiBagEventsError) as excinfo:
+            query("SELECT * FROM events", reader)
+    assert excinfo.value.n_bags == 2
+
+
+def test_query_events_single_bag_still_works(tmp_path: Path) -> None:
+    """The single-bag events path is unaffected by the multi-bag guard (newE23 regression)."""
+    a = write_ros1_bag(tmp_path / "solo")
+    with RosbagsReader(a) as reader:
+        result = query("SELECT * FROM events", reader)  # empty sidecar -> 0 rows, no error
+    assert result.num_rows == 0

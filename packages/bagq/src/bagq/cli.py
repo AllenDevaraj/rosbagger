@@ -92,6 +92,7 @@ def teaching_errors(fn):
         # import pulls no heavy stack until the wrapped command actually runs.
         from rosbagger_core.errors import (
             MixedTypeTopicError,
+            MultiBagEventsError,
             NonTfMessageError,
             NoTransformsError,
             UnknownColumnError,
@@ -108,6 +109,7 @@ def teaching_errors(fn):
             NoTransformsError,
             NonTfMessageError,
             MixedTypeTopicError,
+            MultiBagEventsError,
         ) as e:
             # Each carries its own teaching message: did-you-mean / available tables
             # (CLI-02), the referenced tables' columns (CLI-03), or .msg/.idl

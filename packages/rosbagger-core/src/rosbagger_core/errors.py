@@ -183,3 +183,26 @@ class MixedTypeTopicError(ValueError):
             f"was recorded with different message types (often across the bags you merged). "
             f"Query a single bag, or split the inputs so {topic!r} has one consistent type."
         )
+
+
+class MultiBagEventsError(ValueError):
+    """The reserved ``events`` table was referenced against a MULTI-bag reader (newE23).
+
+    The per-bag event sidecar (``<bag>.events.parquet``) is loaded for a SINGLE bag
+    (``reader.paths[0]``); multi-bag events are deferred. When the SQL references ``events``
+    while more than one bag is open, the orchestrator previously loaded ONLY the first bag's
+    sidecar and silently joined it against the merged multi-bag stream — dropping every event
+    recorded against the 2nd..Nth bags with no warning (quietly wrong analysis). It now raises
+    this instead of returning a wrong result.
+
+    Subclasses ``ValueError``; stdlib-only (no new import). Carries ``.n_bags``.
+    """
+
+    def __init__(self, n_bags: int) -> None:
+        self.n_bags = n_bags
+        super().__init__(
+            f"The 'events' table is not supported across multiple bags yet (you opened "
+            f"{n_bags} bags). Each bag has its own '<bag>.events.parquet' sidecar; joining one "
+            f"bag's events against the merged multi-bag stream would silently drop the others' "
+            f"events. Query a single bag at a time when referencing 'events'."
+        )

@@ -42,7 +42,12 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from rosbagger_core.errors import MixedTypeTopicError, UnknownColumnError, UnknownTableError
+from rosbagger_core.errors import (
+    MixedTypeTopicError,
+    MultiBagEventsError,
+    UnknownColumnError,
+    UnknownTableError,
+)
 
 from .base import QueryBackend
 
@@ -403,6 +408,12 @@ def query(
         # LOCKED). `list_events` is imported LAZILY here to keep this module's top level —
         # and `import rosbagger_core.backend` — free of pyarrow (offline invariant).
         if events_referenced:
+            # Multi-bag events are deferred (v1 is single-bag): the sidecar sits next to
+            # reader.paths[0]. With >1 bag open, joining ONLY that bag's events against the
+            # MERGED multi-bag stream silently dropped the 2nd..Nth bags' events (newE23) —
+            # raise rather than return a quietly-wrong result.
+            if len(reader.paths) > 1:
+                raise MultiBagEventsError(len(reader.paths))
             from rosbagger_core.events import list_events
 
             backend.register_table(_EVENTS_TABLE, list_events(reader.paths[0]))
