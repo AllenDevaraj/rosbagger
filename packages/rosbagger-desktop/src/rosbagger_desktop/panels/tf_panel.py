@@ -44,17 +44,14 @@ _GAPS_HEADERS = ["parent", "child", "gap", "at (bag t)", "at (abs ns)"]
 
 
 def _human_dur(ns: int) -> str:
-    """Format a nanosecond duration human-readably — presentation only.
+    """Format a nanosecond duration human-readably — delegates to the shared core formatter (R2).
 
-    Mirrors the TUI tf panel's ``_human_dur``; the core API keeps every duration as
-    raw integer nanoseconds. Sub-second values print as milliseconds (a whole number
-    of ms drops the decimal, e.g. ``800ms``); a second or more prints seconds with two
-    decimals (e.g. ``12.40s``).
+    Was byte-identical in three faces; now the single ``rosbagger_core.format.human_dur``.
+    Imported INSIDE the function so the module top stays PySide6-only (offline invariant).
     """
-    ms = ns / 1e6
-    if ms < 1000.0:
-        return f"{int(ms)}ms" if ms == int(ms) else f"{ms:.1f}ms"
-    return f"{ns / 1e9:.2f}s"
+    from rosbagger_core.format import human_dur
+
+    return human_dur(ns)
 
 
 class TfPanel(QWidget):

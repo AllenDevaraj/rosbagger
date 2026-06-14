@@ -99,8 +99,9 @@ def test_human_size_formats_units() -> None:
     assert _human_size(1536) == "1.5 KB"  # 1.5 * 1024
     assert _human_size(5 * 1024 * 1024) == "5.0 MB"
     assert _human_size(3 * 1024 * 1024 * 1024) == "3.0 GB"
-    # beyond GB stays in GB (the renderer never exceeds GB for real bags)
-    assert _human_size(2048 * 1024 * 1024 * 1024).endswith("GB")
+    # R3: now backed by the shared rosbagger_core.format.human_size, which divides through
+    # to TB/PB — the old bagq copy wrongly capped at GB (2 TiB printed "2048.0 GB").
+    assert _human_size(2 * 1024**4) == "2.0 TB"
 
 
 def test_render_empty_bag_uses_em_dash(capsys) -> None:

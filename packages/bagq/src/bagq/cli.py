@@ -172,36 +172,28 @@ def main(
 
 
 def _human_size(num_bytes: int) -> str:
-    """Format a byte count as a human-readable string (B / KB / MB / GB / TB).
+    """Format a byte count human-readably — delegates to the shared core formatter (R3).
 
-    Presentation-only (the inspect API keeps ``size_bytes`` raw — Open Q2).
-    Uses 1024-based units; whole bytes print without a decimal, larger units
-    print one decimal (e.g. ``9.2 KB``, ``29.3 KB``, ``1.5 MB``).
+    Was a third copy that had drifted (it capped at ``GB``, so a 2 TiB bag printed
+    ``2048.0 GB`` while the GUIs printed ``2.0 TB``). Now the one
+    ``rosbagger_core.format.human_size`` (TB/PB-capable). Imported lazily to keep ``cli.py``'s
+    module top free of ``rosbagger_core`` (offline-guard discipline) — the formatter is
+    stdlib-only, so calling it pulls no heavy stack.
     """
-    size = float(num_bytes)
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024.0 or unit == "GB":
-            if unit == "B":
-                return f"{int(size)} {unit}"
-            return f"{size:.1f} {unit}"
-        size /= 1024.0
-    return f"{size:.1f} TB"  # pragma: no cover - unreachable (GB branch returns first)
+    from rosbagger_core.format import human_size
+
+    return human_size(num_bytes)
 
 
 def _human_dur(ns: int) -> str:
-    """Format a nanosecond duration human-readably (the TF gap/interval analog of ``_human_size``).
+    """Format a nanosecond duration human-readably — delegates to the shared core formatter (R2).
 
-    Presentation-only — the ``rosbagger_core.tf`` API keeps every duration as raw
-    integer nanoseconds (``gap_ns``/``max_gap_ns``/``expected_ns``); this renderer
-    formats them for ``bagq tf``. Sub-second values print as milliseconds (a whole
-    number of ms drops the decimal, e.g. ``800ms``; a fractional ms keeps one, e.g.
-    ``1.5ms``); a second or more prints seconds with two decimals (e.g. ``12.40s``).
-    The 09-01 seeded ``800_000_000`` ns dropout therefore renders exactly as ``800ms``.
+    Was byte-identical in three faces; now the one ``rosbagger_core.format.human_dur``
+    (lazy-imported, stdlib-only — offline-guard discipline).
     """
-    ms = ns / 1e6
-    if ms < 1000.0:
-        return f"{int(ms)}ms" if ms == int(ms) else f"{ms:.1f}ms"
-    return f"{ns / 1e9:.2f}s"
+    from rosbagger_core.format import human_dur
+
+    return human_dur(ns)
 
 
 def _render_bag_info(info, console: Console | None = None) -> None:

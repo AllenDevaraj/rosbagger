@@ -43,17 +43,15 @@ _SCHEMAS_HEADERS = ["table", "column", "type", "lazy"]
 
 
 def _human_size(size_bytes: int) -> str:
-    """Format a byte count human-readably (B/KB/MB/GB/TB) — presentation only.
+    """Format a byte count human-readably — delegates to the shared core formatter (R3).
 
-    Mirrors the TUI inspect panel's ``_human_size``; the core API keeps ``size_bytes``
-    as a raw int (display formatting is the face's job, not the API's).
+    Was a per-face copy (the bagq copy had drifted, capping at GB); now the single
+    ``rosbagger_core.format.human_size``. Imported INSIDE the function so the module top stays
+    PySide6-only (the panel's offline-import invariant); the formatter is stdlib-only.
     """
-    size = float(size_bytes)
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024.0:
-            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} {unit}"
-        size /= 1024.0
-    return f"{size:.1f} TB"
+    from rosbagger_core.format import human_size
+
+    return human_size(size_bytes)
 
 
 class InspectPanel(QWidget):
