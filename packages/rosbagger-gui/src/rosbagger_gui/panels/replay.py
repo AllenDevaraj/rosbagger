@@ -359,18 +359,19 @@ class ReplayPanel(Widget):
                 self.query_one("#replay-scrubber", Scrubber).set_markers([])
                 return
 
-            # bag_start_ns / span come from load_items(bag) ALONE (WR-04): merely viewing
-            # the Replay tab must NOT build the publish transport (rclpy.init + node +
-            # publishers) — that stays lazy on first Play/Step/seek per the panel contract.
-            # The marker fractions need only the item timestamps, which load_items provides
-            # without any ROS context, so they line up with the seek mapping all the same.
-            from rosbagger_replay import load_items
-
-            items = load_items(bag)
-            if not items:
+            # F1: bag_start_ns / span come from the shared reader's O(1) start_time/end_time —
+            # NOT a full load_items decode of every message (which froze the UI tens of seconds on
+            # a multi-GB bag just to read the first/last timestamps). An empty bag is guarded via
+            # message_count == 0 (AnyReader's 2**63-1 / 0 sentinels would make garbage fractions —
+            # cf. newA8). The span is ~1ns off the seek mapping's load_items span (end_time is
+            # last+1) — sub-pixel, acceptable. Merely viewing the Replay tab still builds NO ROS
+            # transport (WR-04); the reader is the already-open OFFLINE reader.
+            reader = getattr(self.app, "reader", None)
+            if reader is None or reader.message_count == 0:
+                self.query_one("#replay-scrubber", Scrubber).set_markers([])
                 return
-            bag_start_ns = items[0].t_ns
-            span = max(1, items[-1].t_ns - bag_start_ns)
+            bag_start_ns = reader.start_time
+            span = max(1, reader.end_time - bag_start_ns)
 
             starts = table.column("t_start_ns").to_pylist()
             labels = table.column("label").to_pylist()

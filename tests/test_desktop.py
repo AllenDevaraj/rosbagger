@@ -1523,14 +1523,16 @@ def test_window_typestore_resolves_defless_sqlite_bag(qtbot, tmp_path: Path) -> 
     assert len(items) > 0, "window.default_typestore did not resolve the def-less sqlite3 bag"
 
 
-def test_replay_panel_threads_typestore_into_load_items(qtbot, tmp_path: Path, monkeypatch) -> None:
-    """quick-3w6 (B): the replay panel passes window.default_typestore into load_items.
+def test_replay_panel_markers_use_reader_o1_times_not_full_decode(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    """F1: ``_load_markers`` builds fractions from the reader's O(1) start/end, NOT a full decode.
 
-    Drives the rclpy-FREE ``_load_markers`` path (the marker overlay also reads the bag via
-    ``load_items``) so this runs headlessly in CI. Stubs ``list_events`` to a one-row sidecar
-    so the method proceeds past the events gate, and spies ``rosbagger_replay.load_items`` to
-    capture its kwargs. Asserts the panel forwarded ``default_typestore=window.default_typestore``
-    — before the fix the panel called ``load_items(bag)`` with no typestore (kwargs empty).
+    The marker overlay used to call ``load_items`` (decoding EVERY message) just to read the
+    first/last timestamps — a multi-second UI freeze on a large bag. It now uses the shared
+    reader's ``start_time``/``end_time``. This asserts ``load_items`` is NOT called for markers
+    and that a one-row sidecar still yields a sane in-range marker. (The def-less sqlite3 bag also
+    proves the window's reader — opened WITH the typestore — supplies the bounds without a decode.)
     """
     import pyarrow as pa
 
@@ -1541,29 +1543,30 @@ def test_replay_panel_threads_typestore_into_load_items(qtbot, tmp_path: Path, m
     window = MainWindow(bag_path=str(bag))
     qtbot.addWidget(window)
 
-    # One-row event sidecar so _load_markers proceeds to load_items (num_rows > 0).
+    # An event at the bag start so _load_markers proceeds past the events gate (num_rows > 0).
+    start_ns = window.reader.start_time
     monkeypatch.setattr(
         events_mod,
         "list_events",
-        lambda _bag: pa.table({"t_start_ns": [0], "label": ["e"]}),
+        lambda _bag: pa.table({"t_start_ns": [start_ns], "label": ["e"]}),
     )
-
+    # F1: markers must NOT trigger a full load_items decode anymore.
+    decoded: list[int] = []
+    monkeypatch.setattr(replay_mod, "load_items", lambda *a, **k: decoded.append(1) or [])
+    # Capture the marks the panel pushes onto the scrubber.
     captured: dict[str, object] = {}
-    real_load = replay_mod.load_items
-
-    def spy(_bag, **kwargs):
-        captured["kwargs"] = kwargs
-        return real_load(_bag, **kwargs)  # honestly load with whatever the panel passed
-
-    monkeypatch.setattr(replay_mod, "load_items", spy)
+    monkeypatch.setattr(
+        window.replay_panel._scrubber, "set_markers", lambda marks: captured.update(marks=marks)
+    )
 
     window.replay_panel._load_markers()
 
-    assert "kwargs" in captured, "replay panel never reached load_items in _load_markers"
-    assert captured["kwargs"].get("default_typestore") is window.default_typestore, (
-        "replay panel did not thread window.default_typestore into load_items"
-    )
-    assert captured["kwargs"]["default_typestore"] is not None
+    assert decoded == [], "F1: _load_markers must NOT full-decode the bag via load_items"
+    assert "marks" in captured, "markers were never set on the scrubber"
+    marks = captured["marks"]
+    assert len(marks) == 1
+    frac, label = marks[0]
+    assert 0.0 <= frac <= 1.0 and label == "e"  # an event at the bag start → fraction ~0.0
 
 
 # --------------------------------------------------------------------------- #

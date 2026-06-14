@@ -1145,12 +1145,16 @@ class ReplayPanel(QWidget):
     def _load_markers(self) -> None:
         """Read the event sidecar and overlay jump-to-event markers on the scrubber (D-14).
 
-        Lazily imports ``list_events`` (the offline-safe events I/O) + ``load_items`` INSIDE
-        this body and maps each row to a ``(fraction, label)`` via
-        ``(t_start_ns - bag_start_ns) / max(1, span)``. ``bag_start_ns`` / ``span`` come from
-        ``load_items(bag)`` ALONE (WR-04 — merely viewing the Replay tab must NOT build the
-        publish transport; that stays lazy on first Play/Step/seek). On any read failure the
-        markers are left empty — markers are an aid, not a gate.
+        Lazily imports ``list_events`` (the offline-safe events I/O) INSIDE this body and maps
+        each row to a ``(fraction, label)`` via ``(t_start_ns - bag_start_ns) / max(1, span)``.
+
+        F1: ``bag_start_ns`` / ``span`` come from the shared reader's O(1) ``start_time`` /
+        ``end_time`` — NOT a full ``load_items`` decode of every message (which froze the UI tens
+        of seconds on a multi-GB bag just to read the first/last timestamps, twice per session).
+        An empty bag is guarded via ``message_count == 0`` (``AnyReader`` returns the ``2**63-1`` /
+        ``0`` time sentinels otherwise, which would make garbage fractions — cf. newA8). The span
+        basis is ~1ns off the playhead/seek's ``load_items`` span (``end_time`` is last+1): that is
+        sub-pixel and acceptable. A read failure leaves the markers empty (an aid, not a gate).
         """
         bag = self._bag_path()
         if bag is None:
@@ -1163,13 +1167,13 @@ class ReplayPanel(QWidget):
                 self._scrubber.set_markers([])
                 return
 
-            from rosbagger_replay import load_items
-
-            items = load_items(bag, default_typestore=self._default_typestore())
-            if not items:
+            # F1: O(1) bag bounds from the shared reader instead of a full load_items decode.
+            reader = getattr(self.window(), "reader", None)
+            if reader is None or reader.message_count == 0:
+                self._scrubber.set_markers([])  # no reader / empty bag → no usable time bounds
                 return
-            bag_start_ns = items[0].t_ns
-            span = max(1, items[-1].t_ns - bag_start_ns)
+            bag_start_ns = reader.start_time
+            span = max(1, reader.end_time - bag_start_ns)
 
             starts = table.column("t_start_ns").to_pylist()
             labels = table.column("label").to_pylist()
