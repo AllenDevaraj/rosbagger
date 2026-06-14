@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from textual.widgets import ContentSwitcher, DataTable, Input, ListItem
+from textual.widgets import ContentSwitcher, DataTable, Input, ListItem, Static
 
 # Self-contained src/repo-root resolution (mirrors tests/test_tf.py / test_reader.py):
 # put the repo root + the gui/core src trees on the path so ``tools.make_fixtures`` and
@@ -257,3 +257,38 @@ async def test_query_panel_select_star_renders_timestamp_columns(bag: Path) -> N
             f"SELECT * rendered {results.row_count} rows; expected 3 (timestamp columns "
             "must not crash _fill_results)"
         )
+
+
+async def test_replay_panel_rejects_bad_rate_on_play(
+    bag: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """newD16: pressing Play with a bad rate teaches 'Invalid rate' instead of silently 1.0.
+
+    The TUI replay panel's old ``_read_rate`` coerced a non-numeric / ``<=0`` entry to 1.0 at
+    transport-build time, so Play quietly played at 1.0 while reporting ``"Playing… rate 1"``.
+    The fix validates the rate up front in ``_ensure_transport`` — BEFORE any ``import rclpy`` —
+    so the rejection path is exercisable OFFLINE: we force ``ros_available`` True (so the Play
+    handler runs) and the bad rate short-circuits the build before the ROS context, no ROS
+    needed. Asserts the teaching status AND that no transport was built.
+    """
+    # Force ROS "present" so the Play handler runs; the bad rate returns before `import rclpy`.
+    # app.py binds `_detect_ros` at import (`from . import _detect_ros`), so patch the name on
+    # the app module — patching the package attr would miss the already-bound reference.
+    monkeypatch.setattr("rosbagger_gui.app._detect_ros", lambda: True)
+
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.ros_available is True
+        await pilot.click("#nav-replay")
+        await pilot.pause()
+
+        panel = app.query_one("#replay")
+        app.query_one("#replay-rate", Input).value = "abc"
+        panel._play()  # noqa: SLF001 - drive the Play handler directly (the build-path under test)
+        await pilot.pause()
+
+        status = str(app.query_one("#replay-status", Static).render())
+        assert "Invalid rate" in status, f"expected a teaching status, got {status!r}"
+        # The bad rate refused the build (no half-built transport, no silent rate-1 playback).
+        assert panel._replayer is None  # noqa: SLF001

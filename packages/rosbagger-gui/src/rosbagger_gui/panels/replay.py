@@ -135,6 +135,17 @@ class ReplayPanel(Widget):
             self._show_status("Open a bag to replay (no bag loaded).")
             return False
 
+        # newD16: validate the rate BEFORE building any ROS context — a bad/<=0 entry teaches
+        # here and refuses to build, instead of the old _read_rate() silently coercing it to 1.0
+        # and Play reporting "rate 1". (Done before rclpy.init() so a bad rate never leaves a
+        # half-built context behind — the WR-04 clean-teaching discipline.)
+        try:
+            rate = self._parse_rate()
+        except ValueError:
+            raw = self.query_one("#replay-rate", Input).value.strip()
+            self._show_status(f"Invalid rate {raw!r}: enter a number > 0.")
+            return False
+
         import rclpy
 
         from rosbagger_replay import (
@@ -160,7 +171,7 @@ class ReplayPanel(Widget):
             # The SINGLE production publish sink (D-09a) — same mechanics replay() drives.
             sink, self._published = build_publish_sink(self._node)
             loop_on = self.query_one("#replay-loop", Switch).value
-            self._replayer = Replayer(items, sink, rate=self._read_rate(), loop=loop_on)
+            self._replayer = Replayer(items, sink, rate=rate, loop=loop_on)
             self._item_count = len(items)
             self._bag_span_ns = items[-1].t_ns - items[0].t_ns
         except RosNotAvailableError as exc:
@@ -230,7 +241,9 @@ class ReplayPanel(Widget):
         if not self._ensure_transport():
             return
         self._replayer.play()  # type: ignore[union-attr]
-        self._show_status(f"Playing… ({self._item_count} msg, rate {self._read_rate():g})")
+        # Report the Replayer's ACTUAL rate (validated at build), not a re-read of the box (newD16).
+        rate = self._replayer.rate  # type: ignore[union-attr]
+        self._show_status(f"Playing… ({self._item_count} msg, rate {rate:g})")
         self._drive_worker()
 
     def _pause(self) -> None:
@@ -280,14 +293,21 @@ class ReplayPanel(Widget):
         if self._replayer is not None:
             self._replayer.loop = event.value  # type: ignore[union-attr]
 
-    def _read_rate(self) -> float:
-        """Parse the rate Input to a float > 0 (default 1.0 on a blank/invalid entry)."""
+    def _parse_rate(self) -> float:
+        """Parse the rate Input to a float > 0, raising ValueError on a bad/``<=0`` entry (newD16).
+
+        The SINGLE rate-parse contract for the build path: ``_ensure_transport`` calls it so a bad
+        rate teaches on Play/Step (and refuses to build) instead of the old ``_read_rate`` silently
+        coercing it to 1.0 and ``_play`` reporting ``"Playing… rate 1"`` — a quiet wrong-rate. The
+        Enter handler already validated via the scheduler's ``set_rate``; this closes the build
+        path the same way the desktop panel's ``_validated_rate`` does. The scheduler enforces
+        ``> 0`` too, so this is the widget-edge guard with a teaching message.
+        """
         raw = self.query_one("#replay-rate", Input).value.strip()
-        try:
-            value = float(raw)
-        except ValueError:
-            return 1.0
-        return value if value > 0 else 1.0
+        rate = float(raw)  # ValueError on a non-numeric entry
+        if rate <= 0:
+            raise ValueError("rate must be > 0")
+        return rate
 
     # ----------------------------------------------------------------- scrubber/seek
 
