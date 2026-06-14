@@ -303,6 +303,71 @@ def test_run_unbounded_stops_when_rclpy_not_ok(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# WR-04 re-entrant rclpy lifecycle (C2/C5): record()/list_topics() must NOT init or
+# shut down a context they did NOT create — a shared GUI context (a live replay node)
+# has to survive a record/discovery scan. rclpy MOCKED via sys.modules (Pitfall 6).
+# --------------------------------------------------------------------------- #
+
+
+def test_list_topics_reentrant_preserves_shared_context(monkeypatch):
+    """C5/WR-04: with a context already up (``rclpy.ok()`` True), ``list_topics`` neither inits
+    nor shuts it down — so a live replay node's shared context survives a discovery scan."""
+    import rosbagger_record.record as ri
+
+    fake_rclpy = MagicMock()
+    fake_rclpy.ok.return_value = True  # a context already exists (e.g. a live replay node)
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+    monkeypatch.setattr(ri, "discover_topics", lambda node: {"/a": "std_msgs/msg/String"})
+
+    assert ri.list_topics() == {"/a": "std_msgs/msg/String"}
+    fake_rclpy.init.assert_not_called()
+    fake_rclpy.shutdown.assert_not_called()
+    fake_rclpy.create_node.return_value.destroy_node.assert_called_once()
+
+
+def test_list_topics_owning_context_inits_and_shuts_down(monkeypatch):
+    """WR-04: with NO pre-existing context (``rclpy.ok()`` False), ``list_topics`` inits + shuts
+    down the context it created — the standalone-CLI path is byte-for-byte unchanged."""
+    import rosbagger_record.record as ri
+
+    fake_rclpy = MagicMock()
+    fake_rclpy.ok.return_value = False
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+    monkeypatch.setattr(ri, "discover_topics", lambda node: {})
+
+    ri.list_topics()
+    fake_rclpy.init.assert_called_once()
+    fake_rclpy.shutdown.assert_called_once()
+
+
+def test_record_reentrant_preserves_shared_context(monkeypatch):
+    """C2/WR-04: ``record()`` with a context already up neither inits nor shuts it down — so an
+    unconditional ``rclpy.shutdown()`` can no longer kill a live replay node's shared context.
+
+    The full record pipeline (storage check / discover / select / writer / subscribe / run loop)
+    is stubbed so the test isolates the rclpy LIFECYCLE; the writer's ``close()`` still fires in
+    the finally (a MagicMock), proving teardown order is unchanged while init/shutdown are skipped.
+    """
+    import rosbagger_record.record as ri
+
+    fake_rclpy = MagicMock()
+    fake_rclpy.ok.return_value = True
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+    monkeypatch.setattr(ri, "_check_storage", lambda storage: None)
+    monkeypatch.setattr(ri, "discover_topics", lambda node: {"/a": "std_msgs/msg/String"})
+    monkeypatch.setattr(ri, "select_topics", lambda *a, **k: {"/a": "std_msgs/msg/String"})
+    writer = MagicMock()
+    monkeypatch.setattr(ri, "_make_writer", lambda out, storage: writer)
+    monkeypatch.setattr(ri, "_subscribe_and_record", lambda *a, **k: None)
+    monkeypatch.setattr(ri, "_run", lambda *a, **k: None)
+
+    ri.record(["/a"], "out.bag", duration=1.0)
+    fake_rclpy.init.assert_not_called()
+    fake_rclpy.shutdown.assert_not_called()
+    writer.close.assert_called_once()  # the bag is STILL finalized (finally) — only init/shutdown skip
+
+
+# --------------------------------------------------------------------------- #
 # _check_storage — capability gate, with rosbag2_py MOCKED via sys.modules
 # --------------------------------------------------------------------------- #
 #

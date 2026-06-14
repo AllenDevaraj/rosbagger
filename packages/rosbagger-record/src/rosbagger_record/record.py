@@ -236,7 +236,8 @@ def record(
 
     1. Lazy ``import rclpy``; :func:`_check_storage` FIRST so an unavailable storage
        raises the teaching error BEFORE any ROS graph spins up (cheap fail).
-    2. ``rclpy.init()`` + create the recorder node.
+    2. ``rclpy.init()`` ONLY if we create the context (WR-04 ``created_ctx`` guard, C2/C5) +
+       create the recorder node.
     3. ``discover_topics(node)`` (settle so external publishers appear — Pattern 3),
        then ``select_topics(discovered, topics=topics, all_topics=..., regex=...,
        exclude=...)`` (delegated to Plan 01's pure filter — selection is NOT
@@ -248,7 +249,8 @@ def record(
        bounded-stop loop. ``writer.close()`` is in a ``finally`` so the bag is
        finalized on EVERY exit path — including an exception in the loop (SC3 / T-12-05;
        Plan 02's mocked test proves close-on-error).
-    5. Always ``node.destroy_node()`` + ``rclpy.shutdown()``.
+    5. Always ``node.destroy_node()``; ``rclpy.shutdown()`` ONLY for a context we created
+       (WR-04 — a shared context the GUI's replay node owns must survive, C2).
 
     ``storage`` is the public flag name (the CLI's ``--storage``); the default string
     is literally ``"mcap"`` so D-08 is not weakened.
@@ -256,7 +258,14 @@ def record(
     import rclpy
 
     _check_storage(storage)
-    rclpy.init()
+    # WR-04 re-entrant rclpy lifecycle (C2/C5): only init/shutdown the context WE create. The
+    # GUI runs record + replay in ONE process over a SHARED context — an unconditional
+    # rclpy.shutdown() in the finally killed a live replay node's context for the rest of the
+    # session (C2), and an unconditional rclpy.init() raised "context already initialized" on
+    # replay-then-record in the TUI (C5). Guard on rclpy.ok() like replay.py does.
+    created_ctx = not rclpy.ok()
+    if created_ctx:
+        rclpy.init()
     counter = {"n": 0}
     node = None
     try:
@@ -288,21 +297,27 @@ def record(
     finally:
         if node is not None:
             node.destroy_node()
-        rclpy.shutdown()
+        if created_ctx:  # WR-04: only shut down a context we created (C2)
+            rclpy.shutdown()
 
 
 def list_topics() -> dict[str, str]:
     """List currently-discoverable live topics + their types (SC1, Pattern / Code Example).
 
-    Lazy ``import rclpy``; ``rclpy.init()`` → create a short-lived node →
-    :func:`~rosbagger_record.discovery.discover_topics` (settle + ``{topic: type_str}``)
-    → always ``destroy_node()`` + ``rclpy.shutdown()``. The pure selection (``--regex``
-    etc.) is applied by the caller / CLI over this map; this just returns the full
-    discovered map.
+    Lazy ``import rclpy``; ``rclpy.init()`` (only if we create the context — WR-04, C5) →
+    create a short-lived node → :func:`~rosbagger_record.discovery.discover_topics` (settle +
+    ``{topic: type_str}``) → always ``destroy_node()``, and ``rclpy.shutdown()`` only for a
+    context we created. The pure selection (``--regex`` etc.) is applied by the caller / CLI
+    over this map; this just returns the full discovered map.
     """
     import rclpy
 
-    rclpy.init()
+    # WR-04 re-entrant rclpy lifecycle (C5): guard init/shutdown so a discovery scan does not
+    # clash with (or tear down) a SHARED context a live replay node owns — replay-then-record
+    # in the TUI raised "context already initialized" without this.
+    created_ctx = not rclpy.ok()
+    if created_ctx:
+        rclpy.init()
     node = None
     try:
         node = rclpy.create_node("rosbagger_record_list")
@@ -310,4 +325,5 @@ def list_topics() -> dict[str, str]:
     finally:
         if node is not None:
             node.destroy_node()
-        rclpy.shutdown()
+        if created_ctx:  # WR-04: only shut down a context we created
+            rclpy.shutdown()
