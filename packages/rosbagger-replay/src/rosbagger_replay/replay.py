@@ -34,6 +34,7 @@ counts published messages.
 from __future__ import annotations
 
 import contextlib
+import threading
 import time
 
 
@@ -99,6 +100,16 @@ def build_publish_sink(node, *, publish_clock: bool = False, static_topics=froze
     # topic -> (msg_cls, publisher); built lazily on first sight of each topic.
     pubs: dict[str, tuple] = {}
 
+    # C1/C6/C7: a publish-serializing lock. The Replayer drive worker calls sink() on its
+    # OWN thread (scheduler.run releases its lock BEFORE the publish), while a UI-thread
+    # republish_static (live seek/skip, or the RViz /tf_static re-prime timer) ALSO calls
+    # sink() on the SAME node — concurrent pub.publish() + pubs mutation + published["n"] += 1
+    # from two threads is a data race (InvalidHandle / native use-after-free / lost count).
+    # This lock serializes every publish through the single shared sink, fixing all three
+    # republish call sites at once (the TUI panel shares this sink, so it benefits too). It
+    # NEVER nests with the scheduler lock (released before the sink call) → no deadlock.
+    publish_lock = threading.Lock()
+
     # Phase-20 opt-ins, both off by default. The StaticTracker is pure (20-01); the /clock
     # publisher + Clock class are resolved ONCE here (never per-item — Pitfall C publisher churn).
     tracker = StaticTracker(static_topics) if static_topics else None
@@ -109,31 +120,34 @@ def build_publish_sink(node, *, publish_clock: bool = False, static_topics=froze
         clock_pub = node.create_publisher(clock_cls, "/clock", 10)
 
     def sink(item) -> None:
-        # Phase 21: publish on the remapped name when a remap is set (a name lookup inside this
-        # single sink — the publisher dict is keyed on the remapped target). Default = item.topic.
-        pub_topic = remap.get(item.topic, item.topic) if remap else item.topic
-        if pub_topic not in pubs:
-            cls = get_message(item.msgtype)  # type string -> message class (VERIFIED)
-            # Sane default QoS (depth-10 RELIABLE VOLATILE) — Pitfall 4. Per-topic
-            # QoS override is a deferred enhancement (Phase 13 out of scope).
-            pubs[pub_topic] = (cls, node.create_publisher(cls, pub_topic, 10))
-        cls, pub = pubs[pub_topic]
-        msg = deserialize_message(item.cdr, cls)  # raw CDR -> typed message (VERIFIED)
-        pub.publish(msg)  # any subscriber on the topic receives it (VERIFIED)
-        # WR-07: published["n"] is the SOURCE OF TRUTH for the returned count. The
-        # scheduler's own max_messages bound counts SINK INVOCATIONS, not this counter —
-        # the two cannot diverge today because the sink fires exactly once per scheduler
-        # publish (one increment per drive-loop publish). If a future sink ever filtered
-        # or dropped a message, this counter and the scheduler's bound would need to be
-        # reconciled (the bound would over-run); they agree only under the one-fire coupling.
-        published["n"] += 1
-        # Phase-20: record static-topic state + emit /clock (both no-ops when opted out).
-        if tracker is not None:
-            tracker.record(item)
-        if clock_pub is not None:
-            cmsg = clock_cls()
-            cmsg.clock.sec, cmsg.clock.nanosec = clock_stamp_ns(item.t_ns)
-            clock_pub.publish(cmsg)
+        # C1/C6/C7: serialize the whole publish so a UI-thread republish_static cannot race the
+        # drive worker's publish on the same node. The lock never nests with the scheduler lock.
+        with publish_lock:
+            # Phase 21: publish on the remapped name when a remap is set (a name lookup inside this
+            # single sink — the publisher dict is keyed on the remapped target). Default = item.topic.
+            pub_topic = remap.get(item.topic, item.topic) if remap else item.topic
+            if pub_topic not in pubs:
+                cls = get_message(item.msgtype)  # type string -> message class (VERIFIED)
+                # Sane default QoS (depth-10 RELIABLE VOLATILE) — Pitfall 4. Per-topic
+                # QoS override is a deferred enhancement (Phase 13 out of scope).
+                pubs[pub_topic] = (cls, node.create_publisher(cls, pub_topic, 10))
+            cls, pub = pubs[pub_topic]
+            msg = deserialize_message(item.cdr, cls)  # raw CDR -> typed message (VERIFIED)
+            pub.publish(msg)  # any subscriber on the topic receives it (VERIFIED)
+            # WR-07: published["n"] is the SOURCE OF TRUTH for the returned count. The
+            # scheduler's own max_messages bound counts SINK INVOCATIONS, not this counter —
+            # the two cannot diverge today because the sink fires exactly once per scheduler
+            # publish (one increment per drive-loop publish). If a future sink ever filtered
+            # or dropped a message, this counter and the scheduler's bound would need to be
+            # reconciled (the bound would over-run); they agree only under the one-fire coupling.
+            published["n"] += 1
+            # Phase-20: record static-topic state + emit /clock (both no-ops when opted out).
+            if tracker is not None:
+                tracker.record(item)
+            if clock_pub is not None:
+                cmsg = clock_cls()
+                cmsg.clock.sec, cmsg.clock.nanosec = clock_stamp_ns(item.t_ns)
+                clock_pub.publish(cmsg)
 
     # Expose the tracker on the sink (back-compatible: the 2-tuple return is unchanged, so the
     # existing `sink, published = build_publish_sink(node)` unpackings keep working). A caller
