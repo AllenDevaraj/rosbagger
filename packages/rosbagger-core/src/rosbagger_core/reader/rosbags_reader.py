@@ -87,6 +87,84 @@ def _unresolved_msgtypes(reader: AnyReader, typestore: object) -> set[str]:
     return unresolved
 
 
+def open_bag(
+    paths: Iterable[str | Path],
+    *,
+    default_typestore: object = None,
+) -> AnyReader:
+    """Open an ``AnyReader`` over ``paths``, owning the typestore fallback + error translation (T2).
+
+    The SINGLE bag-open chokepoint shared by :class:`RosbagsReader`, the edit pipeline
+    (``edit_bag``), and the replay source (``load_items``) — previously three independent
+    opens with divergent handling of the same ``"no type definitions"`` failure (one wrapped
+    it, one copy-pasted the string match with no typestore, one didn't wrap it at all).
+
+    With NO explicit ``default_typestore``: open with the bag's embedded defs; on the specific
+    ``"no type definitions"`` error fall back to the env-resolved default typestore (T1) and
+    verify it covers the bag's connection msgtypes — raising :class:`UnresolvedTypeError`
+    (CLI-04 teaching) only when a custom type is uncovered. With an explicit typestore: honor
+    it (no fallback, no coverage verify), translating only the no-defs error. Never leaks the
+    partially-opened sub-readers rosbags leaves behind on the no-defs path (newE19).
+
+    Returns an OPEN ``AnyReader``; the caller owns ``close()``. A non-no-defs ``AnyReaderError``
+    (e.g. a mixed-format merge) propagates unchanged (Pitfall 3); ``FileNotFoundError`` (a
+    missing path) is never caught here.
+    """
+    from rosbagger_core.errors import UnresolvedTypeError
+
+    path_list = [Path(p) for p in paths]
+
+    # Explicit typestore: the caller owns the choice — open as-is, translating only no-defs.
+    if default_typestore is not None:
+        reader = AnyReader(path_list, default_typestore=default_typestore)
+        try:
+            reader.open()
+        except AnyReaderError as e:
+            _force_close_subreaders(reader)
+            if "no type definitions" in str(e):
+                raise UnresolvedTypeError(str(e)) from e
+            raise
+        return reader
+
+    # No explicit typestore: try the bag's embedded defs first (modern bags self-describe).
+    reader = AnyReader(path_list)
+    try:
+        reader.open()
+    except AnyReaderError as e:
+        _force_close_subreaders(reader)  # newE19 — never leak the partial open
+        if "no type definitions" not in str(e):
+            raise
+        return _open_with_fallback_typestore(path_list, str(e))
+    return reader
+
+
+def _open_with_fallback_typestore(path_list: list[Path], original_detail: str) -> AnyReader:
+    """Retry a def-less open with the env-resolved default typestore, verifying coverage (T1/T2).
+
+    Opens with :func:`rosbagger_core.typestore.resolve_default_typestore`; if any connection's
+    msgtype is NOT in that typestore (a custom type the store lacks), closes the reader (no fd
+    leak — newE19) and raises :class:`UnresolvedTypeError` — so a standard real ``.db3`` opens
+    while a custom-type def-less bag still teaches.
+    """
+    from rosbagger_core.errors import UnresolvedTypeError
+    from rosbagger_core.typestore import resolve_default_typestore
+
+    typestore = resolve_default_typestore()
+    reader = AnyReader(path_list, default_typestore=typestore)
+    try:
+        reader.open()
+        unresolved = _unresolved_msgtypes(reader, typestore)
+        if unresolved:
+            raise UnresolvedTypeError(
+                f"{original_detail} (the default typestore does not cover: "
+                f"{', '.join(sorted(unresolved))})"
+            )
+    except BaseException:
+        _force_close_subreaders(reader)
+        raise
+    return reader
+
+
 class RosbagsReader(BagReader):
     """``BagReader`` implementation #1, wrapping ``rosbags.highlevel.AnyReader``.
 
@@ -145,62 +223,11 @@ class RosbagsReader(BagReader):
         type-registration problem (07-RESEARCH Pitfall 3): a non-no-defs ``AnyReaderError``
         (e.g. mixed ROS 1 / ROS 2 paths) re-raises as itself, and ``FileNotFoundError``
         (missing path) is never even caught here.
+
+        The open/fallback/verify/translate logic lives in the shared module-level
+        :func:`open_bag` (T2) so the edit pipeline and replay source open bags identically.
         """
-        from rosbagger_core.errors import UnresolvedTypeError
-
-        # Explicit typestore: the caller owns the choice — open as-is (no fallback, no
-        # coverage verify), translating only the no-defs error to the teaching one.
-        if self._default_typestore is not None:
-            reader = AnyReader(self._paths, default_typestore=self._default_typestore)
-            try:
-                reader.open()
-            except AnyReaderError as e:
-                _force_close_subreaders(reader)
-                if "no type definitions" in str(e):
-                    raise UnresolvedTypeError(str(e)) from e
-                raise  # mixed-format / other AnyReaderError propagate (Pitfall 3)
-            self._reader = reader
-            return
-
-        # No explicit typestore: try the bag's embedded defs first (modern bags self-describe).
-        reader = AnyReader(self._paths)
-        try:
-            reader.open()
-        except AnyReaderError as e:
-            _force_close_subreaders(reader)  # newE19 — never leak the partial open
-            if "no type definitions" not in str(e):
-                raise  # mixed-format / other AnyReaderError propagate (Pitfall 3)
-            # Def-less bag: fall back to the env-resolved default typestore (T1), verifying coverage.
-            self._reader = self._open_with_default_typestore(str(e))
-            return
-        self._reader = reader
-
-    def _open_with_default_typestore(self, original_detail: str) -> AnyReader:
-        """Retry a def-less open with the env-resolved default typestore, verifying coverage (T1).
-
-        Opens with :func:`rosbagger_core.typestore.resolve_default_typestore`; if any
-        connection's msgtype is NOT in that typestore (a custom type the store lacks), closes
-        the reader (no fd leak — newE19) and raises :class:`UnresolvedTypeError` carrying the
-        registration guidance — so a standard real ``.db3`` opens while a custom-type def-less
-        bag still teaches.
-        """
-        from rosbagger_core.errors import UnresolvedTypeError
-        from rosbagger_core.typestore import resolve_default_typestore
-
-        typestore = resolve_default_typestore()
-        reader = AnyReader(self._paths, default_typestore=typestore)
-        try:
-            reader.open()
-            unresolved = _unresolved_msgtypes(reader, typestore)
-            if unresolved:
-                raise UnresolvedTypeError(
-                    f"{original_detail} (the default typestore does not cover: "
-                    f"{', '.join(sorted(unresolved))})"
-                )
-        except BaseException:
-            _force_close_subreaders(reader)
-            raise
-        return reader
+        self._reader = open_bag(self._paths, default_typestore=self._default_typestore)
 
     def close(self) -> None:
         """Release the underlying ``AnyReader``. Idempotent (safe if not open)."""

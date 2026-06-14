@@ -92,13 +92,17 @@ def load_items(
     """
     # Lazy ROS-free imports (offline invariant — rosbags only, never at module top, never
     # rclpy/rosbag2_py). ConnectionExtRosbag1 is the rosbags ROS 1 connection-extension type
-    # used for the IN-01 isinstance detection below.
-    from rosbags.highlevel import AnyReader
+    # used for the IN-01 isinstance detection below. open_bag is the SHARED core bag-open
+    # chokepoint (T2): it owns the env-resolved typestore fallback, the no-defs ->
+    # UnresolvedTypeError translation, and the fd-leak-safe close — so a bare load_items(bag)
+    # (e.g. the TUI replay panel) now opens a real def-less .db3 instead of raising a raw
+    # AnyReaderError. An explicit default_typestore is still honored unchanged.
     from rosbags.interfaces import ConnectionExtRosbag1
 
+    from rosbagger_core.reader import open_bag
+
     items: list[ReplayItem] = []
-    reader = AnyReader(_as_path_list(bag_paths), default_typestore=default_typestore)
-    reader.open()
+    reader = open_bag(_as_path_list(bag_paths), default_typestore=default_typestore)
     try:
         conns = reader.connections
         if topics is not None:

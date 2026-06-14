@@ -241,8 +241,13 @@ def edit_bag(
     :class:`~rosbagger_core.errors.UnresolvedTypeError` (mixed-format ``AnyReaderError``
     propagates unchanged — Pitfall 6).
     """
-    # Lazy imports keep `import rosbagger_core.edit` off the rosbags graph (Pitfall 5).
-    from rosbags.highlevel import AnyReader, AnyReaderError
+    # Lazy import keeps `import rosbagger_core.edit` off the rosbags graph (Pitfall 5).
+    # open_bag is the SHARED bag-open chokepoint (T2): it owns the env-resolved typestore
+    # fallback (so `bagq edit` opens a real def-less .db3 — previously it copy-pasted the
+    # no-defs string match with NO typestore and raised), the coverage verify (a custom-type
+    # bag still teaches), the no-defs -> UnresolvedTypeError translation, and the fd-leak-safe
+    # close (newE19). A mixed-format-merge AnyReaderError still propagates unchanged (Pitfall 6).
+    from rosbagger_core.reader import open_bag
 
     src_list = [Path(srcs)] if isinstance(srcs, (str, Path)) else [Path(s) for s in srcs]
     dst = Path(dst)
@@ -253,17 +258,7 @@ def edit_bag(
     # unreadable bag) BEFORE opening any reader — the ValueError maps to a clean CLI error.
     _validate_fmt_suffix(dst, fmt)
 
-    reader = AnyReader(src_list)
-    try:
-        reader.open()
-    except AnyReaderError as e:
-        # Re-raise the no-defs case as the Phase 7 teaching error (copying the
-        # RosbagsReader.open() pattern); mixed-format/other errors propagate.
-        if "no type definitions" in str(e):
-            from rosbagger_core.errors import UnresolvedTypeError
-
-            raise UnresolvedTypeError(str(e)) from e
-        raise  # mixed-format merge (Pitfall 6) and any other AnyReaderError surface as-is
+    reader = open_bag(src_list)
 
     written = 0
     try:

@@ -12,6 +12,6 @@ NOT import this subpackage, so ``import rosbagger_core`` remains ROS-free and
 """
 
 from .base import BagReader, Message
-from .rosbags_reader import RosbagsReader
+from .rosbags_reader import RosbagsReader, open_bag
 
-__all__ = ["BagReader", "Message", "RosbagsReader"]
+__all__ = ["BagReader", "Message", "RosbagsReader", "open_bag"]

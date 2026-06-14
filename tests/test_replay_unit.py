@@ -45,6 +45,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import (  # noqa: E402  (after sys.path)
     write_ros1_bag,
+    write_ros2_sqlite_bag_defless,
     write_ros2_mcap_bag,
     write_ros2_sqlite_bag,
 )
@@ -959,3 +960,16 @@ def test_cli_replay_remap_malformed_errors_cleanly(monkeypatch):
     assert result.exit_code != 0
     # typer renders BadParameter as a usage error (SystemExit), not an escaping exception.
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_source_standard_def_less_bag_without_typestore(tmp_path):
+    """load_items opens a standard def-less bag with NO default_typestore (T2 fallback).
+
+    Previously load_items opened a raw AnyReader, so a bare load_items(real_db3) raised the
+    no-defs AnyReaderError — the TUI replay panel's exact crash. It now routes through the
+    shared open_bag chokepoint, which falls back to the env-resolved typestore.
+    """
+    bag = write_ros2_sqlite_bag_defless(tmp_path / "defless")
+    items = load_items(bag)  # no default_typestore — the fallback resolves it
+    assert len(items) == 9  # 3 topics x 3 messages
+    assert all(isinstance(it.cdr, bytes) for it in items)

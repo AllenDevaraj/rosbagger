@@ -43,9 +43,11 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import (  # noqa: E402  (after sys.path setup)
     make_all_fixtures,
+    write_def_less_bag,
     write_ros1_bag,
     write_ros2_mcap_bag,
     write_ros2_sqlite_bag,
+    write_ros2_sqlite_bag_defless,
 )
 
 from rosbagger_core.edit import EditOps, edit_bag  # noqa: E402
@@ -641,3 +643,29 @@ def test_downsample_typo_raises_unknown_topic(fixture_bags, tmp_path):
     out = _dst_for("ros1", tmp_path)
     with pytest.raises(UnknownTopicError):
         edit_bag([src], out, EditOps(downsample={"nope": 2}))
+
+
+# ---------------------------------------------------------------------------
+# T2 — edit_bag opens via the shared open_bag chokepoint: a standard def-less
+# bag (real .db3) now edits with no explicit typestore; custom types still teach.
+# ---------------------------------------------------------------------------
+
+
+def test_edit_standard_def_less_bag_without_typestore(tmp_path):
+    """edit_bag on a standard def-less bag (no typestore) writes all messages (T2)."""
+    src = write_ros2_sqlite_bag_defless(tmp_path / "src")
+    out = tmp_path / "out"  # directory dest -> ROS 2 sqlite
+    n = edit_bag([src], out, EditOps())
+    assert n == _N_PER_TOPIC * len(EXPECTED_TOPICS)  # 9 messages, not a no-defs crash
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == EXPECTED_TOPICS
+
+
+def test_edit_custom_def_less_bag_still_teaches(tmp_path):
+    """A CUSTOM-type def-less bag still raises UnresolvedTypeError through edit_bag (CLI-04)."""
+    from rosbagger_core.errors import UnresolvedTypeError
+
+    src = write_def_less_bag(tmp_path / "custom")
+    out = tmp_path / "out"
+    with pytest.raises(UnresolvedTypeError):
+        edit_bag([src], out, EditOps())

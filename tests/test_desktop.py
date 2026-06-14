@@ -1389,11 +1389,15 @@ def test_set_status_sets_text_a11y_and_error_affordance(qtbot) -> None:
 def test_window_typestore_resolves_defless_sqlite_bag(qtbot, tmp_path: Path) -> None:
     """quick-3w6 (A): MainWindow exposes a typestore that loads a def-less sqlite3 bag.
 
-    A real rosbag2 sqlite3 recording embeds NO message definitions, so the replay
-    loader needs a typestore. The window must expose the SAME ROS2_HUMBLE typestore the
-    offline reader uses (Pitfall 5). Asserts ``window.default_typestore`` is non-None AND
-    that feeding it to ``rosbagger_replay.load_items`` resolves the def-less fixture that
-    fails WITHOUT it — i.e. the window provides what the replay path needs.
+    A real rosbag2 sqlite3 recording embeds NO message definitions, so the replay loader
+    needs a typestore. The window must expose the SAME ROS2_HUMBLE typestore the offline
+    reader uses (Pitfall 5). Asserts ``window.default_typestore`` is non-None AND that
+    feeding it to ``rosbagger_replay.load_items`` resolves the def-less fixture.
+
+    Note (T2): since the open chokepoint now falls back to the env-resolved typestore,
+    ``load_items(bag)`` with NO explicit typestore ALSO resolves this standard def-less bag
+    (it no longer raises ``AnyReaderError`` — that obsolete assertion was removed). The
+    window still provides its typestore (the explicit path), which this test verifies works.
     """
     from rosbagger_replay import load_items
 
@@ -1401,12 +1405,8 @@ def test_window_typestore_resolves_defless_sqlite_bag(qtbot, tmp_path: Path) -> 
     window = MainWindow(bag_path=str(bag))
     qtbot.addWidget(window)
 
-    # The fixture is genuinely def-less: load_items with no typestore reproduces the bug.
-    import pytest
-    from rosbags.highlevel import AnyReaderError
-
-    with pytest.raises(AnyReaderError):
-        load_items(bag)
+    # T2: a bare load_items now resolves the standard def-less bag via the typestore fallback.
+    assert len(load_items(bag)) > 0
 
     # The window exposes the resolving typestore, and it actually loads the bag.
     assert window.default_typestore is not None, "MainWindow did not expose default_typestore"
