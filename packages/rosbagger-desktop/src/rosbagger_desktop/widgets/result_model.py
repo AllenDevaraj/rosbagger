@@ -26,6 +26,21 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import pyarrow
 
 
+def _temporal_column_indices(table: pyarrow.Table | None) -> frozenset[int]:
+    """Indices of ``table``'s temporal (``timestamp[ns]``) columns — computed once per table.
+
+    ``pyarrow`` is imported lazily here (the module top stays PySide6 + stdlib only); this is
+    metadata-only (column TYPES, no row materialization), so it is cheap to do on set_table.
+    """
+    if table is None:
+        return frozenset()
+    import pyarrow as pa
+
+    return frozenset(
+        i for i, field in enumerate(table.schema) if pa.types.is_temporal(field.type)
+    )
+
+
 class _ResultTableModel(QAbstractTableModel):
     """A lazy, allocation-light ``QAbstractTableModel`` over a ``pyarrow.Table`` (P2).
 
@@ -44,6 +59,9 @@ class _ResultTableModel(QAbstractTableModel):
         """Hold an optional ``pyarrow.Table`` (``None`` → an empty 0×0 model)."""
         super().__init__()
         self._table: pyarrow.Table | None = table
+        # Which columns are timestamp[ns] (QURY-04 t/stamp) — those cells need temporal-safe
+        # rendering (SW1); computed once here (metadata-only) so data() stays O(1) per cell.
+        self._temporal_cols: frozenset[int] = _temporal_column_indices(table)
 
     def rowCount(self, _parent: QModelIndex | None = None) -> int:  # noqa: N802 - Qt override
         """The result's row count (``num_rows``), or 0 when there is no table."""
@@ -56,8 +74,12 @@ class _ResultTableModel(QAbstractTableModel):
     def data(self, index: QModelIndex, role: int = int(Qt.DisplayRole)) -> object | None:
         """Return ``str()`` of the cell at ``index`` for the DisplayRole, else ``None``.
 
-        Lazy per-cell access (P2): read ``column(col)[row].as_py()`` only for the cell being
-        painted rather than materializing ``to_pylist()`` up front. An out-of-range index or a
+        Lazy per-cell access (P2): read the single painted cell rather than materializing
+        ``to_pylist()`` up front. A ``timestamp[ns]`` cell (the always-present ``t``/``stamp``
+        columns) is rendered temporal-safe via ``numpy.datetime64`` from the scalar's raw ns
+        value (SW1): ``.as_py()`` on a sub-microsecond ns timestamp RAISES ``ValueError`` when
+        pandas is absent (it is not a desktop dependency), which previously made the time
+        columns paint blank with per-cell traceback spam. An out-of-range index or a
         non-DisplayRole returns ``None``.
         """
         if role != int(Qt.DisplayRole) or self._table is None:
@@ -66,8 +88,15 @@ class _ResultTableModel(QAbstractTableModel):
         col = index.column()
         if not (0 <= row < self._table.num_rows and 0 <= col < len(self._table.column_names)):
             return None
-        value = self._table.column(col)[row].as_py()
-        return str(value)
+        scalar = self._table.column(col)[row]
+        if col in self._temporal_cols:
+            value = scalar.value  # raw int64 ns — .as_py() would raise on sub-µs ns
+            if value is None:
+                return ""
+            import numpy as np
+
+            return str(np.datetime64(int(value), "ns"))
+        return str(scalar.as_py())
 
     def headerData(  # noqa: N802 - Qt override name
         self,
@@ -89,4 +118,5 @@ class _ResultTableModel(QAbstractTableModel):
         """Swap the backing table inside a begin/endResetModel so the view refreshes (P2)."""
         self.beginResetModel()
         self._table = table
+        self._temporal_cols = _temporal_column_indices(table)
         self.endResetModel()

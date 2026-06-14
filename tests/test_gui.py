@@ -232,3 +232,28 @@ async def test_query_panel_runs_real_core(bag: Path) -> None:
         assert results.row_count == 1, (
             f"query results had {results.row_count} rows; expected exactly 1 real query() row"
         )
+
+
+async def test_query_panel_select_star_renders_timestamp_columns(bag: Path) -> None:
+    """SW2: `SELECT *` (which projects the timestamp[ns] `t`/`stamp` columns) renders rows.
+
+    Before the fix the TUI panel's _fill_results called table.to_pylist(), which RAISES
+    ValueError on a timestamp[ns] column with no pandas — and the crash was outside the run
+    handler's try/except, so the query action broke. rows_for_display renders it safely.
+    """
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#nav-query")
+        await pilot.pause()
+        sql_input = app.query_one("#sql-input", Input)
+        sql_input.focus()
+        await pilot.pause()
+        sql_input.value = "SELECT * FROM imu"
+        await pilot.press("enter")
+        await pilot.pause()
+        results = app.query_one("#results", DataTable)
+        assert results.row_count == 3, (
+            f"SELECT * rendered {results.row_count} rows; expected 3 (timestamp columns "
+            "must not crash _fill_results)"
+        )

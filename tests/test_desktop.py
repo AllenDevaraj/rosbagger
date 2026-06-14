@@ -2652,3 +2652,33 @@ def test_window_close_survives_overlay_close_failure(qtbot, monkeypatch) -> None
     assert "rviz" in fired, "overlay-close failure skipped the rviz teardown"
     assert "rerun" in fired, "overlay-close failure skipped the rerun teardown"
     assert window._overlay is None  # ref cleared despite the close() raise
+
+
+# --------------------------------------------------------------------------- #
+# SW1: the lazy result model renders timestamp[ns] cells temporal-safely.     #
+# Before the fix, _ResultTableModel.data() called .as_py() on a timestamp[ns] #
+# scalar, which raises ValueError (no pandas) — the t/stamp columns painted    #
+# blank with per-cell traceback spam on the canonical `SELECT * FROM imu`.     #
+# --------------------------------------------------------------------------- #
+
+
+def test_result_model_renders_timestamp_columns_without_crashing(qtbot, tmp_path: Path) -> None:
+    """_ResultTableModel.data() returns a datetime string for a timestamp[ns] cell (SW1)."""
+    from rosbagger_core.backend.query import query
+    from rosbagger_core.reader import RosbagsReader
+    from rosbagger_desktop.widgets.result_model import _ResultTableModel
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    with RosbagsReader(bag) as reader:
+        result = query("SELECT * FROM imu", reader)  # includes the t (timestamp[ns]) column
+
+    model = _ResultTableModel(result)
+    qtbot.addWidget  # noqa: B018 - ensure the QApplication exists via the fixture
+    t_col = result.column_names.index("t")
+    # The cell that used to raise: a real sub-microsecond ns log time rendered via .as_py().
+    cell = model.data(model.index(0, t_col))
+    assert isinstance(cell, str) and cell != "", "timestamp[ns] cell rendered blank/crashed"
+    assert cell.startswith("19") or cell.startswith("20"), f"not a datetime string: {cell!r}"
+    # A non-temporal column still renders.
+    tn_col = result.column_names.index("t_ns")
+    assert model.data(model.index(0, tn_col)) == "1000000000"

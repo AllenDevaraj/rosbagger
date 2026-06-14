@@ -54,6 +54,11 @@ from textual.widgets import (
 _CSV_PATH = "query_result.csv"
 _PARQUET_PATH = "query_result.parquet"
 
+# Max rows rendered into the DataTable (F6). The full result is kept on `_last_result` for
+# export; the on-screen table is bounded so a `SELECT *` over a 500k-row topic does not
+# materialize every cell and freeze the event loop. Export still writes ALL rows.
+_MAX_DISPLAY_ROWS = 1000
+
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import pyarrow
 
@@ -194,23 +199,34 @@ class QueryPanel(Vertical):
         # A result now exists — enable export (D-06).
         self.query_one("#export-csv", Button).disabled = False
         self.query_one("#export-parquet", Button).disabled = False
-        status.update(f"{result.num_rows} row(s) · {len(result.column_names)} column(s)")
+        # Note truncation when the on-screen table is capped (F6); export still writes all rows.
+        shown = min(result.num_rows, _MAX_DISPLAY_ROWS)
+        capped = f" · showing first {shown}" if result.num_rows > _MAX_DISPLAY_ROWS else ""
+        status.update(
+            f"{result.num_rows} row(s) · {len(result.column_names)} column(s){capped}"
+        )
 
     def _fill_results(self, table: pyarrow.Table) -> None:
         """Map a ``pyarrow.Table`` into the ``results`` DataTable (14-RESEARCH Pattern 4).
 
-        ``query()`` already bounds the result (the user's SQL + the QURY-07 heavy-blob
-        gating), so ``to_pylist()`` is safe — this never materializes an unbounded raw
-        stream. Temporal/list cell values are ``str()``-rendered for display (the
-        ns-timestamp → datetime crash class is sidestepped; 14-RESEARCH temporal note).
+        Renders via the core temporal-safe coercer ``rows_for_display`` (SW2): the previous
+        ``table.to_pylist()`` RAISED ``ValueError`` on the always-present ``timestamp[ns]``
+        ``t``/``stamp`` columns when pandas is absent (it is not a GUI dependency) — and that
+        crash was OUTSIDE the run handler's try/except, so it bubbled out and broke the query
+        action. ``rows_for_display`` converts temporal columns the safe way and CAPS the row
+        count at ``_MAX_DISPLAY_ROWS`` (F6) so a ``SELECT *`` over a huge topic does not
+        materialize every cell into the DataTable. Export still writes ALL rows (``_last_result``).
         """
+        from rosbagger_core.output.render import rows_for_display
+
         dt = self.query_one("#results", DataTable)
         dt.clear(columns=True)
         if not table.column_names:
             return
-        dt.add_columns(*table.column_names)
-        for row in table.to_pylist():
-            dt.add_row(*(str(row[c]) for c in table.column_names))
+        names, rows = rows_for_display(table, max_rows=_MAX_DISPLAY_ROWS)
+        dt.add_columns(*names)
+        for row in rows:
+            dt.add_row(*row)
 
     def _append_history(self, sql: str) -> None:
         """Append a successfully-run SQL to the ``history`` ListView (D-06).
