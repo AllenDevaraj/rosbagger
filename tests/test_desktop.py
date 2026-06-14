@@ -763,6 +763,54 @@ def test_open_reader_stops_offline_workers_before_closing_reader(
     ), f"workers must stop BEFORE reader.close(); got order {order}"
 
 
+def test_query_result_discarded_when_reader_swapped(qtbot, tmp_path: Path) -> None:
+    """newE21: a query result arriving AFTER a File ▸ Open swap is discarded, not shown.
+
+    The in-flight query was launched against reader A; by the time its result lands the window
+    holds reader B. Storing it would attribute A's rows to B. The reader-identity guard drops it:
+    ``_last_result`` stays None and export stays disabled.
+    """
+    from types import SimpleNamespace
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+    panel = window.query_panel
+
+    panel._query_reader = object()  # reader A — no longer the window's reader (which is B)
+    panel._on_query_result(SimpleNamespace(num_rows=5, column_names=["x"]))
+
+    assert panel._last_result is None, "a result from a swapped-out reader must be discarded"
+    assert not panel.export_csv_button.isEnabled()
+    assert not panel.export_parquet_button.isEnabled()
+
+
+def test_query_export_refused_after_reader_swap(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """newE21: export refuses once the open bag changed — never writes the prior bag's rows.
+
+    A result exists (``_last_result``) but it belongs to a swapped-out reader; export must refuse
+    with a teaching status and write nothing, instead of silently saving the wrong bag's rows.
+    """
+    from types import SimpleNamespace
+
+    import rosbagger_core.output.export as exp
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+    panel = window.query_panel
+
+    panel._last_result = SimpleNamespace(num_rows=3)  # a result exists…
+    panel._result_reader = object()  # …but it belongs to a DIFFERENT (swapped-out) reader
+    wrote: list[int] = []
+    monkeypatch.setattr(exp, "write_table", lambda *a, **k: wrote.append(1))
+
+    panel._export("query_result.csv", "CSV (*.csv)")
+
+    assert wrote == [], "export must refuse to write rows from a swapped-out bag"
+    assert "open bag changed" in panel.status_label.text().lower()
+
+
 def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> None:
     """WR-03: export routes through ``QFileDialog.getSaveFileName`` to a user-chosen path.
 

@@ -101,6 +101,15 @@ class QueryPanel(QWidget):
         self._query_worker: BlockingWorker | None = None
         self._pending_sql: str | None = None
 
+        # Reader-identity guards (newE21): the window owns ONE shared reader the user can SWAP
+        # (File ▸ Open) WHILE a query runs off-thread. ``_query_reader`` is the reader the
+        # in-flight query was launched against (a result that arrives after a swap is discarded,
+        # not attributed to the new bag); ``_result_reader`` is the reader ``_last_result``
+        # belongs to (export refuses once the window's reader is no longer that one). Compared by
+        # IDENTITY (``is``) and held as references, so — unlike id() — an address can't be reused.
+        self._query_reader: object | None = None
+        self._result_reader: object | None = None
+
         # P2-a11y: mark the status line as an accessibly-named status region so screen
         # readers announce it; a stable objectName lets the error stylesheet target it.
         self._status = QLabel("Open a bag to query")
@@ -345,6 +354,10 @@ class QueryPanel(QWidget):
         )
         # Remember the in-flight SQL so the result slot can append it to history.
         self._pending_sql = sql
+        # Bind this in-flight query to its reader by IDENTITY (newE21): ``reader`` is the exact
+        # object the work() closure forwards to query(); a result arriving after a File ▸ Open
+        # swap is discarded rather than shown as the new bag's rows.
+        self._query_reader = reader
         # Disable Run + show the running status BEFORE starting (P1 responsiveness contract).
         self._run_button.setEnabled(False)
         self._set_status("Running…")
@@ -368,7 +381,14 @@ class QueryPanel(QWidget):
         populates the lazy model, appends the in-flight SQL to history, enables both export
         buttons, and reports the row/column count.
         """
+        # newE21: drop a result whose reader was swapped out from under the worker (File ▸ Open
+        # mid-query). Storing it would attribute one bag's rows to the bag now open. The user
+        # initiated the swap, so discard silently — no render, no history append, no export.
+        if self._query_reader is not self._reader():
+            self._pending_sql = None
+            return
         self._last_result = result  # type: ignore[assignment]  # always a pyarrow.Table here
+        self._result_reader = self._query_reader  # the reader these rows belong to (export guard)
         self._fill_results(result)  # type: ignore[arg-type]
         if self._pending_sql is not None:
             self._append_history(self._pending_sql)
@@ -389,6 +409,12 @@ class QueryPanel(QWidget):
         ``"Query failed: <exc>"`` otherwise) — never a traceback. Export state is untouched.
         """
         self._pending_sql = None
+        # newE21 (symmetric with _on_query_result): if the reader was swapped out from under the
+        # worker, this error belongs to the PRIOR bag's query — discard it rather than show a
+        # stale/misleading message against the bag now open. (C3 normally joins the worker before
+        # the reader closes, so this is a defensive guard for any residual swap-then-fail window.)
+        if self._query_reader is not self._reader():
+            return
         # Teaching message rendered VERBATIM (THIN-FACE) with error styling + an a11y alert.
         self._set_status(message, is_error=True)
 
@@ -442,6 +468,14 @@ class QueryPanel(QWidget):
         """
         if self._last_result is None:  # export disabled until a result exists
             self._set_status("Run a query first, then export.")
+            return
+        # newE21: refuse to export rows from a bag that is no longer open. The shared reader can
+        # be swapped (File ▸ Open) after a query ran; ``_last_result`` still holds the OLD bag's
+        # rows, so exporting now would silently write the wrong bag's data under the chosen name.
+        if self._result_reader is not self._reader():
+            self._set_status(
+                "The open bag changed — re-run the query before exporting.", is_error=True
+            )
             return
 
         path, _selected = QFileDialog.getSaveFileName(
