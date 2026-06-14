@@ -110,6 +110,12 @@ class QueryPanel(QWidget):
         self._query_reader: object | None = None
         self._result_reader: object | None = None
 
+        # F7: the reader the schema tree was last built from. ``showEvent`` calls ``refresh_view``
+        # on EVERY Query-tab visit; rebuilding the tree each time is pure waste. Cache by reader
+        # OBJECT IDENTITY (held ref + ``is`` — NOT id(), which CPython can reuse for a freed reader
+        # and serve a STALE schema): a new bag is a new reader object, so it still rebuilds.
+        self._schema_reader: object | None = None
+
         # P2-a11y: mark the status line as an accessibly-named status region so screen
         # readers announce it; a stable objectName lets the error stylesheet target it.
         self._status = QLabel("Open a bag to query")
@@ -265,12 +271,18 @@ class QueryPanel(QWidget):
         for the click-to-insert handler — the panel constructs no SQL. With no bag
         open the tree is cleared and the status shows the empty-state line.
         """
-        self._schema_tree.clear()
         reader = self._reader()
         if reader is None:
+            self._schema_tree.clear()
+            self._schema_reader = None
             self._set_status("Open a bag to query")
             return
+        # F7: rebuild ONLY when the reader object changed (a new bag). A same-bag re-show (the
+        # common Query-tab revisit) is a no-op — the tree is already built for this reader.
+        if reader is self._schema_reader:
+            return
 
+        self._schema_tree.clear()
         # Lazy import (D-08): keep this module's top level PySide6-only.
         from rosbagger_core.inspect import collect_table_schemas
 
@@ -283,6 +295,7 @@ class QueryPanel(QWidget):
                 table_item.addChild(leaf)
             self._schema_tree.addTopLevelItem(table_item)
         self._schema_tree.expandAll()
+        self._schema_reader = reader  # F7: remember the bag this tree was built from
 
     def _on_schema_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         """Click a schema column leaf → insert its name into the SQL input (D-11).

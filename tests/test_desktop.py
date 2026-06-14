@@ -811,6 +811,36 @@ def test_query_export_refused_after_reader_swap(qtbot, tmp_path: Path, monkeypat
     assert "open bag changed" in panel.status_label.text().lower()
 
 
+def test_query_schema_tree_cached_across_revisits(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """F7: the schema tree is built once per bag, not re-walked on every Query-tab revisit.
+
+    ``showEvent`` calls ``refresh_view`` on every visit; the reader-identity cache skips the
+    rebuild when the bag is unchanged, and a NEW bag (new reader object) still rebuilds.
+    """
+    import rosbagger_core.inspect as insp
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+    panel = window.query_panel
+    panel._schema_reader = None  # clean slate (a construction-time show may have built once)
+
+    calls: list[int] = []
+    real = insp.collect_table_schemas
+    monkeypatch.setattr(
+        insp, "collect_table_schemas", lambda reader: (calls.append(1), real(reader))[1]
+    )
+
+    panel.refresh_view()  # first visit: build
+    panel.refresh_view()  # revisit, same reader: cached (no rebuild)
+    panel.refresh_view()
+    assert len(calls) == 1, f"schema tree rebuilt {len(calls)}x; expected 1 (cached by identity)"
+
+    window._open_reader(bag)  # re-open => a fresh reader OBJECT
+    panel.refresh_view()
+    assert len(calls) == 2, "a new reader (new bag) must rebuild the schema tree"
+
+
 def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> None:
     """WR-03: export routes through ``QFileDialog.getSaveFileName`` to a user-chosen path.
 

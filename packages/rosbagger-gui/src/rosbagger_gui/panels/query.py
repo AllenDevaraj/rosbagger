@@ -72,6 +72,11 @@ class QueryPanel(Vertical):
         # or None; the panel never inspects its contents beyond Pattern-4 rendering.
         self._last_result: pyarrow.Table | None = None
 
+        # F7: the reader the schema Tree was last built from. ``on_show`` calls ``refresh_view``
+        # on every Query-tab visit; rebuilding the Tree each time is waste. Cache by reader OBJECT
+        # IDENTITY (held ref + ``is`` — NOT id(), which could be reused for a freed reader).
+        self._schema_reader: object | None = None
+
     def compose(self) -> ComposeResult:
         """Schema Tree + SQL input/Run, results DataTable, status, history, export."""
         yield Static("Open a bag to query", id="query-status")
@@ -104,12 +109,18 @@ class QueryPanel(Vertical):
         open the Tree is reset to its empty root and the status shows the empty-state.
         """
         tree = self.query_one("#schema-tree", Tree)
-        tree.clear()
         reader = getattr(self.app, "reader", None)
         if reader is None:
+            tree.clear()
+            self._schema_reader = None
             self.query_one("#query-status", Static).update("Open a bag to query")
             return
+        # F7: rebuild ONLY when the reader object changed (a new bag); a same-bag re-show is a
+        # no-op — the Tree is already built. A new bag is a new reader object, so it rebuilds.
+        if reader is self._schema_reader:
+            return
 
+        tree.clear()
         # Lazy import (D-03): keep this module's top level textual-only.
         from rosbagger_core.inspect import collect_table_schemas
 
@@ -119,6 +130,7 @@ class QueryPanel(Vertical):
                 # data = the verbatim column name; clicking inserts it as-is (no SQL).
                 branch.add_leaf(col.name, data=col.name)
         tree.root.expand()
+        self._schema_reader = reader  # F7: remember the bag this Tree was built from
 
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         """Click a schema column leaf → insert its name into ``sql-input`` (D-06).

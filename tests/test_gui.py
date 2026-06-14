@@ -292,3 +292,37 @@ async def test_replay_panel_rejects_bad_rate_on_play(
         assert "Invalid rate" in status, f"expected a teaching status, got {status!r}"
         # The bad rate refused the build (no half-built transport, no silent rate-1 playback).
         assert panel._replayer is None  # noqa: SLF001
+
+
+async def test_query_schema_tree_cached_across_revisits(
+    bag: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F7 (TUI): re-visiting the Query tab does NOT rebuild the schema Tree (reader-identity cache).
+
+    ``on_show`` calls ``refresh_view`` on every Query-tab visit. We measure the DELTA in
+    ``collect_table_schemas`` calls across a query → tf → query revisit (the TF panel does NOT
+    call ``collect_table_schemas``, unlike inspect — so any delta is the query panel rebuilding).
+    A working cache => zero delta on the revisit.
+    """
+    import rosbagger_core.inspect as insp
+
+    calls: list[int] = []
+    real = insp.collect_table_schemas
+    monkeypatch.setattr(
+        insp, "collect_table_schemas", lambda reader: (calls.append(1), real(reader))[1]
+    )
+
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#nav-query")
+        await pilot.pause()
+        before = len(calls)  # the query tree was built (at most) once by now
+        await pilot.click("#nav-tf")  # tf does NOT call collect_table_schemas
+        await pilot.pause()
+        await pilot.click("#nav-query")  # revisit — must hit the cache, not rebuild
+        await pilot.pause()
+        assert len(calls) == before, (
+            f"revisiting the Query tab rebuilt the schema Tree ({len(calls) - before} extra "
+            "collect_table_schemas calls); the reader-identity cache should make it a no-op"
+        )
