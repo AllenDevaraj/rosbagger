@@ -23,27 +23,82 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR"
 
-# Split our own flags (--no-build / --force) from the install.sh pass-through.
+usage() {
+  cat <<'USAGE'
+rosbagger updater — fetch the latest rosbagger and reinstall, in ONE command.
+
+Usage: ./update.sh [install flags...] [--no-build] [--force]
+
+With NO install flags, reuses the flags recorded by your last ./install.sh (the
+.rosbagger-install manifest); if none is recorded it defaults to --desktop --user.
+
+  --no-build   Skip the colcon rebuild step (in a colcon workspace)
+  --force      Update even with local changes (stashes them; reminds you to restore)
+  -h, --help   Show this help and exit (does NOT touch the repo)
+USAGE
+}
+
+# Split our own flags (--no-build / --force / --help) from the install.sh pass-through.
 do_build=1
 force=0
 passthrough=()
 for a in "$@"; do
   case "$a" in
+    -h|--help)  usage; exit 0 ;;   # B3: help BEFORE any repo mutation
     --no-build) do_build=0 ;;
     --force)    force=1 ;;
     *)          passthrough+=("$a") ;;
   esac
 done
-# Default install face if the caller named none.
-if [ ${#passthrough[@]} -eq 0 ]; then passthrough=(--desktop --user); fi
+
+# B2: if the caller named no install flags, reuse the face the LAST install.sh recorded
+# (mode + venv + flags) instead of guessing --desktop --user — which silently installed a
+# divergent --user copy when the user actually has a venv install. Fall back to the old
+# default only when no manifest exists.
+if [ ${#passthrough[@]} -eq 0 ]; then
+  if [ -f "$ROOT/.rosbagger-install" ]; then
+    m_mode=""; m_venv=""; m_flags=""
+    while IFS='=' read -r k v; do
+      case "$k" in mode) m_mode=$v ;; venv) m_venv=$v ;; flags) m_flags=$v ;; esac
+    done < "$ROOT/.rosbagger-install"
+    if [ "$m_mode" = user ]; then
+      passthrough=(--user $m_flags)              # word-split $m_flags into --plot/--desktop/...
+    elif [ "$m_mode" = venv ] && [ -n "$m_venv" ]; then
+      passthrough=(--venv "$m_venv" $m_flags)
+    else
+      passthrough=(--desktop --user)
+    fi
+    echo ">> reusing recorded install flags: ${passthrough[*]}"
+  else
+    passthrough=(--desktop --user)
+    echo ">> no recorded install (.rosbagger-install) — defaulting to: ${passthrough[*]}"
+    echo "   if you installed differently, re-run:  ./update.sh <the flags you installed with>"
+  fi
+fi
 
 cd "$ROOT"
+
+# B1: if --force stashes the user's work, remind them on EVERY exit path (success OR a
+# mid-update failure) — the single inline hint scrolled away under build output and any
+# later failure stranded the stash silently. DEFAULT_BRANCH may be unset if we die early.
+STASHED=0
+DEFAULT_BRANCH=""
+_remind_stash() {
+  if [ "$STASHED" = 1 ]; then
+    echo >&2
+    echo "Reminder: --force stashed your uncommitted changes before updating — they are NOT lost." >&2
+    echo "  Restore with:  git stash pop   (you are on '${DEFAULT_BRANCH:-the default branch}';" >&2
+    echo "  switch back to your branch first if needed)." >&2
+  fi
+}
+trap _remind_stash EXIT
 
 # --- 1. Don't clobber uncommitted work ---
 if [ -n "$(git status --porcelain)" ]; then
   if [ "$force" = 1 ]; then
     echo ">> local changes present — stashing them (--force). Restore later with: git stash pop"
     git stash push -u -m "rosbagger update.sh autostash" >/dev/null
+    STASHED=1  # B1: the EXIT trap now reminds the user to restore, on success or failure
   else
     echo "error: you have uncommitted changes in $ROOT." >&2
     echo "       commit or stash them first, or re-run with --force to stash them." >&2
@@ -66,8 +121,21 @@ DEFAULT_BRANCH="${DEFAULT_BRANCH#origin/}"
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
 
 before="$(git rev-parse HEAD)"
-git checkout --quiet "$DEFAULT_BRANCH" 2>/dev/null \
-  || git checkout --quiet -b "$DEFAULT_BRANCH" --track "origin/$DEFAULT_BRANCH"
+# B6: branch on whether the local default branch already EXISTS, so we never hit the
+# misleading "a branch named X already exists" (which happened when X was checked out in
+# another linked worktree and the real cause was swallowed by 2>/dev/null).
+if git show-ref --verify --quiet "refs/heads/$DEFAULT_BRANCH"; then
+  git checkout --quiet "$DEFAULT_BRANCH" || {
+    echo "error: could not switch to '$DEFAULT_BRANCH' — is it checked out in another git worktree?" >&2
+    echo "       switch this checkout to '$DEFAULT_BRANCH' manually, then re-run." >&2
+    exit 1
+  }
+else
+  git checkout --quiet -b "$DEFAULT_BRANCH" --track "origin/$DEFAULT_BRANCH" || {
+    echo "error: could not create local '$DEFAULT_BRANCH' tracking 'origin/$DEFAULT_BRANCH'." >&2
+    exit 1
+  }
+fi
 git merge --ff-only --quiet "origin/$DEFAULT_BRANCH" || {
   echo "error: could not fast-forward '$DEFAULT_BRANCH' to 'origin/$DEFAULT_BRANCH'." >&2
   echo "       your local branch may have diverged — resolve it manually, then re-run." >&2
@@ -89,11 +157,19 @@ echo ">> reinstalling: ./install.sh ${passthrough[*]} --reinstall"
 WS=""
 if [ "$(basename "$(dirname "$ROOT")")" = "src" ]; then
   WS="$(dirname "$(dirname "$ROOT")")"
+  # B5: "parent dir is named src" alone matched a personal ~/src/rosbagger, setting WS=$HOME
+  # and running `colcon build` from $HOME (crawling the whole home dir, dropping build/install/
+  # log/ there). Refuse $HOME and / as the "workspace"; a real colcon ws is a dedicated dir.
+  if [ "$WS" = "$HOME" ] || [ "$WS" = "/" ]; then
+    echo ">> note: $ROOT looks like a personal clone (workspace would be '$WS'); skipping colcon."
+    echo "   In a real colcon workspace ('<ws>/src/rosbagger'), update.sh rebuilds rosbagger_ros."
+    WS=""
+  fi
 fi
 
 if [ "$do_build" = 1 ] && [ -n "$WS" ]; then
   echo
-  if [ -n "${ROS_DISTRO:-}" ]; then
+  if [ -n "${ROS_DISTRO:-}" ] && command -v colcon >/dev/null 2>&1; then
     echo ">> colcon workspace detected at $WS — rebuilding rosbagger_ros"
     ( cd "$WS" && colcon build --symlink-install --packages-select rosbagger_ros )
     echo "   done — re-source it:  source \"$WS/install/setup.bash\""

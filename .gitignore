@@ -23,3 +23,6 @@ out/
 # colcon workspace artifacts (if someone runs colcon build in-tree; ros/rosbagger_ros)
 install/
 log/
+
+# install-face manifest written by install.sh, read by update.sh (B2)
+.rosbagger-install

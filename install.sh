@@ -49,7 +49,13 @@ USAGE
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --venv) VENV="${2:?--venv needs a directory}"; shift 2 ;;
+    --venv)
+      # B7: ${2:?} only rejects empty/unset — a following FLAG (`--venv --plot`) would be
+      # swallowed as the directory. Reject a missing or option-looking value explicitly.
+      case "${2:-}" in
+        ""|-*) echo "error: --venv needs a directory argument (got '${2:-}')" >&2; exit 2 ;;
+      esac
+      VENV="$2"; shift 2 ;;
     --venv=*) VENV="${1#*=}"; [ -n "$VENV" ] || { echo "error: --venv= needs a directory" >&2; exit 2; }; shift ;;
     --user) user=1; shift ;;
     --reinstall) reinstall=1; shift ;;
@@ -90,6 +96,42 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Reconstruct the FACE flags (for the install manifest update.sh reads, B2) — the user's
+# original face selection, minus mechanism flags like --user/--venv/--reinstall.
+face_flags=()
+[ "$plot" = 1 ] && face_flags+=(--plot)
+[ "$gui" = 1 ] && face_flags+=(--gui)
+[ "$desktop" = 1 ] && face_flags+=(--desktop)
+[ "$live" = 1 ] && face_flags+=(--live)
+[ "$all" = 1 ] && face_flags+=(--all)
+
+# Record what was installed so `update.sh` (run with no flags) reinstalls the SAME face into
+# the SAME target instead of guessing (B2/T5). Written only after a successful install below.
+write_manifest() {  # $1 = mode (user|venv)
+  {
+    echo "mode=$1"
+    [ "$1" = venv ] && echo "venv=$VENV"
+    echo "flags=${face_flags[*]-}"
+  } > "$ROOT/.rosbagger-install" 2>/dev/null || true
+}
+
+# PEP 668 (Debian 12+, Ubuntu 23.04+): the system Python ships an EXTERNALLY-MANAGED marker
+# and pip>=23 REFUSES `pip install --user` without --break-system-packages — so `--user`
+# (and bare `update.sh`) failed outright on a modern Ubuntu. Detect the marker and add the
+# flag only when it is actually present (older pip without the marker never sees it). B4.
+user_break=()  # extra pip flags for the --user path; empty unless externally-managed
+if [ "$user" = 1 ]; then
+  _em=$("$PYTHON" - <<'PY' 2>/dev/null || echo False
+import os, sysconfig
+print(os.path.exists(os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED")))
+PY
+)
+  if [ "$_em" = True ]; then
+    user_break=(--break-system-packages)
+    echo ">> note: this Python is PEP 668 'externally-managed'; adding --break-system-packages for the --user install."
+  fi
+fi
+
 # --- User-site (global) install: no venv. Commands land on ~/.local/bin and work
 # from ANY terminal with no activation. On a box with ROS, installing into the
 # ROS-capable interpreter also lets the live features import rclpy once ROS is
@@ -105,17 +147,18 @@ if [ "$user" = 1 ]; then
   # licensing (Metadata 2.4), which needs packaging>=24.2. A modern `packaging`
   # in the user site shadows the system one for the ambient build. (The default
   # venv path doesn't need this — a fresh venv isolates cleanly.)
-  "$PYTHON" -m pip install --user -q "hatchling>=1.18" "packaging>=24.2" || {
+  "$PYTHON" -m pip install --user ${user_break[@]+"${user_break[@]}"} -q "hatchling>=1.18" "packaging>=24.2" || {
     echo "error: could not install build prerequisites (hatchling, packaging>=24.2) into the user site." >&2
     exit 1
   }
-  "$PYTHON" -m pip install --user --no-build-isolation "${specs[@]}"
+  "$PYTHON" -m pip install --user ${user_break[@]+"${user_break[@]}"} --no-build-isolation "${specs[@]}"
   if [ "$reinstall" = 1 ]; then
     # Same-version code changes are skipped by a plain install ("already
     # satisfied"); force just our packages (deps already handled above).
     echo ">> --reinstall: force-reinstalling the rosbagger packages (no deps)"
-    "$PYTHON" -m pip install --user --no-build-isolation --no-deps --force-reinstall "${specs[@]}"
+    "$PYTHON" -m pip install --user ${user_break[@]+"${user_break[@]}"} --no-build-isolation --no-deps --force-reinstall "${specs[@]}"
   fi
+  write_manifest user
 
   USERBIN="$("$PYTHON" -c 'import os, site; print(os.path.join(site.getuserbase(), "bin"))' 2>/dev/null || echo "$HOME/.local/bin")"
   echo
@@ -156,6 +199,7 @@ if [ "$reinstall" = 1 ]; then
   echo ">> --reinstall: force-reinstalling the rosbagger packages (no deps)"
   "$VPY" -m pip install --no-deps --force-reinstall "${specs[@]}"
 fi
+write_manifest venv
 
 echo
 echo "Done. Activate the environment and try it:"
