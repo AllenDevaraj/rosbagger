@@ -302,6 +302,48 @@ def test_run_unbounded_stops_when_rclpy_not_ok(monkeypatch):
     assert fake_rclpy.spin_once.call_count == 2  # spun until ok() flipped False
 
 
+def test_run_stops_immediately_when_stop_event_preset(monkeypatch):
+    """C8: a stop_event already set breaks _run BEFORE the first spin (cooperative early-stop).
+
+    rclpy.ok() stays True (never SIGINT) and there is no bound, so ONLY the stop_event can end
+    the loop — it is checked before _should_stop and before spin_once, so a pre-set event stops
+    immediately (the close-path fix: the bag's finally still finalizes; the join returns at once).
+    """
+    import threading
+
+    fake_rclpy = MagicMock()
+    fake_rclpy.ok.return_value = True
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+
+    ev = threading.Event()
+    ev.set()
+    _run(MagicMock(), {"n": 0}, stop_event=ev)
+
+    fake_rclpy.spin_once.assert_not_called()  # broke before any spin (stop wins immediately)
+
+
+def test_run_stops_at_next_spin_when_stop_event_set_midloop(monkeypatch):
+    """C8: a stop_event set mid-loop ends _run at the NEXT iteration's check — no bound needed."""
+    import threading
+
+    fake_rclpy = MagicMock()
+    fake_rclpy.ok.return_value = True
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+
+    ev = threading.Event()
+    spins = {"n": 0}
+
+    def spin(_node, timeout_sec):  # noqa: ARG001 - rclpy.spin_once signature
+        spins["n"] += 1
+        if spins["n"] >= 3:
+            ev.set()  # a closeEvent on another thread would do this
+
+    fake_rclpy.spin_once.side_effect = spin
+    _run(MagicMock(), {"n": 0}, stop_event=ev)
+
+    assert spins["n"] == 3  # spun 3×, then the stop_event broke the loop before a 4th spin
+
+
 # --------------------------------------------------------------------------- #
 # WR-04 re-entrant rclpy lifecycle (C2/C5): record()/list_topics() must NOT init or
 # shut down a context they did NOT create — a shared GUI context (a live replay node)

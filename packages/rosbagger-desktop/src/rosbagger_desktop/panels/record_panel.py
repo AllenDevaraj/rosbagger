@@ -31,6 +31,8 @@ their message presented on the status line, never a traceback.
 
 from __future__ import annotations
 
+import threading
+
 from PySide6.QtCore import Qt, QThread
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -80,6 +82,10 @@ class RecordPanel(QWidget):
         self._discover_worker: BlockingWorker | None = None
         self._record_thread: QThread | None = None
         self._record_worker: BlockingWorker | None = None
+        # C8: a cooperative early-stop Event handed to record_topics for the in-flight record.
+        # closeEvent sets it BEFORE stop_thread so the recorder's spin loop exits promptly (and
+        # finalizes the bag) instead of blocking the UI thread up to the full bounded duration.
+        self._record_stop: threading.Event | None = None
 
         # Status line as an accessibly-named region (D-02 a11y parity); a stable objectName lets
         # the shared status helper restore it after an error toggle and the theme style it.
@@ -159,7 +165,16 @@ class RecordPanel(QWidget):
         self._scan_topics()
 
     def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
-        """Stop any running worker thread on close (Pitfall 2 — no destroyed-while-running)."""
+        """Stop any running worker thread on close (Pitfall 2 — no destroyed-while-running).
+
+        C8: signal the cooperative early-stop BEFORE joining the record worker. ``stop_thread``
+        does ``quit()`` + an unbounded ``wait()``, but ``quit()`` cannot break the recorder's
+        native ``rclpy.spin_once`` loop — so without this the close would block the UI thread for
+        the FULL bounded duration. Setting ``_record_stop`` makes ``_run`` exit at its next spin
+        (and the bag still finalizes in ``record()``'s ``finally``), so the join returns at once.
+        """
+        if self._record_stop is not None:
+            self._record_stop.set()
         stop_thread(self._discover_thread)
         stop_thread(self._record_thread)
         super().closeEvent(event)
@@ -329,13 +344,24 @@ class RecordPanel(QWidget):
             f"({storage}, up to {_DEFAULT_RECORD_SECONDS:.0f}s)…",
         )
 
+        # C8: a fresh early-stop Event for THIS record; closeEvent sets it to end the spin loop
+        # promptly (the bag still finalizes) so quitting mid-record does not freeze the UI.
+        self._record_stop = threading.Event()
+        stop_event = self._record_stop
+
         def work() -> object:
             # Lazy import (D-08): record_topics is the submodule-shadow-proof alias of the
             # record front door (the SINGLE discover→select→record orchestrator, D-13). The
-            # bounded duration makes the recorder self-terminate.
+            # bounded duration makes the recorder self-terminate; stop_event ends it sooner (C8).
             from rosbagger_record import record_topics
 
-            captured = record_topics(topics, out, storage=storage, duration=_DEFAULT_RECORD_SECONDS)
+            captured = record_topics(
+                topics,
+                out,
+                storage=storage,
+                duration=_DEFAULT_RECORD_SECONDS,
+                stop_event=stop_event,
+            )
             return (captured, out)
 
         from importlib import import_module

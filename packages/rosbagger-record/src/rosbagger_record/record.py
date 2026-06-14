@@ -39,6 +39,7 @@ rclpy 3.3.21 / rosbag2_py 0.15.16): see the per-function docstrings.
 
 from __future__ import annotations
 
+import threading
 import time
 
 from .discovery import discover_topics, select_topics
@@ -167,6 +168,7 @@ def _run(
     *,
     max_messages: int | None = None,
     duration: float | None = None,
+    stop_event: threading.Event | None = None,
 ) -> None:
     """Spin until a bound is hit OR SIGINT (Pattern 4 — VERIFIED primitives).
 
@@ -197,6 +199,14 @@ def _run(
     deadline = time.monotonic() + duration if duration is not None else None
     try:
         while rclpy.ok():
+            # C8: a COOPERATIVE early-stop hook. A bounded GUI record blocks the close path's
+            # stop_thread quit()+wait() for the FULL duration (quit() can't break this native
+            # spin loop); the panel's closeEvent sets this Event so the loop exits promptly, the
+            # caller's finally still runs writer.close() (the bag is finalized), and the join then
+            # returns at once. Opt-in (default None) — every existing caller is byte-for-byte the
+            # same. Checked BEFORE _should_stop so a stop request wins immediately.
+            if stop_event is not None and stop_event.is_set():
+                break
             if _should_stop(
                 counter["n"], time.monotonic(), max_messages=max_messages, deadline=deadline
             ):
@@ -216,6 +226,7 @@ def record(
     storage: str = "mcap",
     max_messages: int | None = None,
     duration: float | None = None,
+    stop_event: threading.Event | None = None,
 ) -> int:
     """Record the selected ``topics`` to a bag at ``out``; return the captured count.
 
@@ -254,6 +265,12 @@ def record(
 
     ``storage`` is the public flag name (the CLI's ``--storage``); the default string
     is literally ``"mcap"`` so D-08 is not weakened.
+
+    ``stop_event`` (optional, C8) is a cooperative early-stop: set it mid-record and ``_run``
+    exits at the next spin, the ``finally`` still finalizes the bag, and a blocking join returns
+    at once. The desktop close path uses it so quitting during a bounded record does not freeze
+    the UI for the full ``duration``. Default ``None`` = bounded only by ``duration`` /
+    ``max_messages`` / SIGINT (every existing caller is unchanged).
     """
     import rclpy
 
@@ -290,7 +307,13 @@ def record(
         try:
             for topic, type_str in selected.items():
                 _subscribe_and_record(node, writer, topic, type_str, counter)
-            _run(node, counter, max_messages=max_messages, duration=duration)
+            _run(
+                node,
+                counter,
+                max_messages=max_messages,
+                duration=duration,
+                stop_event=stop_event,  # C8: cooperative early-stop (the GUI close path sets it)
+            )
         finally:
             writer.close()  # ALWAYS finalize so the bag re-opens (SC3 / T-12-05)
         return counter["n"]
