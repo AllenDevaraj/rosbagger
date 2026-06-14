@@ -78,6 +78,52 @@ def test_pointcloud2_xyz_unpacks_float32_points():
     assert pts[1] == pytest.approx((4.0, 5.0, 6.0))
 
 
+def test_pointcloud2_xyz_big_endian_and_truncated_buffer():
+    """F5: big-endian unpack + a truncated trailing point stops cleanly (vectorized parity).
+
+    The buffer claims 3 points but only carries 2 complete ones plus a 3rd point's x/y (no z):
+    the vectorized reader must drop the incomplete point exactly as the old per-point loop did
+    (``base + off + 4 > len: break``), and honor ``is_bigendian``.
+    """
+    full = struct.pack(">ffffff", 1.0, 2.0, 3.0, 4.0, 5.0, 6.0)  # 2 complete points (24 bytes)
+    partial = struct.pack(">ff", 7.0, 8.0)  # a 3rd point's x,y only — no z (8 bytes)
+    fields = [
+        SimpleNamespace(name="x", offset=0),
+        SimpleNamespace(name="y", offset=4),
+        SimpleNamespace(name="z", offset=8),
+    ]
+    pc = SimpleNamespace(
+        fields=fields,
+        is_bigendian=True,
+        point_step=12,
+        width=3,  # claims 3 points; only 2 are complete
+        height=1,
+        data=full + partial,
+    )
+    pts = _pointcloud2_xyz(pc)
+    assert len(pts) == 2  # the incomplete 3rd point is dropped
+    assert pts[0] == pytest.approx((1.0, 2.0, 3.0))
+    assert pts[1] == pytest.approx((4.0, 5.0, 6.0))
+
+
+def test_pointcloud2_xyz_honors_point_step_padding():
+    """F5: point_step padding (step > field span) is strided correctly by the structured view."""
+    p0 = struct.pack("<fff", 1.5, 2.5, 3.5) + b"\x00\x00\x00\x00"  # 12 data + 4 pad = step 16
+    p1 = struct.pack("<fff", -1.0, 0.0, 9.0) + b"\x00\x00\x00\x00"
+    fields = [
+        SimpleNamespace(name="x", offset=0),
+        SimpleNamespace(name="y", offset=4),
+        SimpleNamespace(name="z", offset=8),
+    ]
+    pc = SimpleNamespace(
+        fields=fields, is_bigendian=False, point_step=16, width=2, height=1, data=p0 + p1
+    )
+    pts = _pointcloud2_xyz(pc)
+    assert len(pts) == 2
+    assert pts[0] == pytest.approx((1.5, 2.5, 3.5))
+    assert pts[1] == pytest.approx((-1.0, 0.0, 9.0))
+
+
 def test_image_array_bgr_reversed_and_depth_kind():
     """rgb8 as-is, bgr8 reversed to rgb, 16UC1 → depth kind."""
     rgb = SimpleNamespace(height=1, width=1, encoding="rgb8", data=bytes([10, 20, 30]))

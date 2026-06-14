@@ -10,8 +10,9 @@ Two layers, deliberately split for testability:
    msgtype → wrapper, falling back to a generic ``Scalars``/``TextLog`` view so EVERY message
    yields at least one ``(entity_path, archetype)`` (no topic is ever invisible).
 
-Module top imports only stdlib (``math`` / ``struct``); ``rerun`` and ``numpy`` are lazy, so
-``import rosbagger_rerun`` stays Rerun-free (offline invariant — tests/test_offline_guard.py).
+Module top imports only stdlib (``math``); ``rerun`` and ``numpy`` are lazy-imported inside the
+helpers, so ``import rosbagger_rerun`` stays Rerun-free (offline invariant —
+tests/test_offline_guard.py). ``_pointcloud2_xyz`` is NumPy-vectorized (F5).
 
 Archetype/timeline names verified against rerun-sdk 0.32.2: ``Image`` / ``DepthImage`` /
 ``EncodedImage(contents=, media_type=)`` / ``Points3D`` / ``Transform3D`` / ``Quaternion(xyzw=)`` /
@@ -22,7 +23,6 @@ from __future__ import annotations
 
 import contextlib
 import math
-import struct
 
 # --------------------------------------------------------------- pure helpers (no rerun/ROS)
 
@@ -52,29 +52,52 @@ def _laserscan_xyz(msg) -> list[tuple[float, float, float]]:
 
 
 def _pointcloud2_xyz(msg) -> list[tuple[float, float, float]]:
-    """PointCloud2 → list of (x, y, z) by unpacking float32 x/y/z at their field offsets.
+    """PointCloud2 → list of (x, y, z) reading float32 x/y/z at their field offsets.
 
     Assumes float32 x/y/z (the standard layout). Honors ``is_bigendian`` and ``point_step``;
     bounded by ``width*height`` and a data-length guard (a truncated buffer stops cleanly).
+
+    NumPy-vectorized (F5): the former per-point ``struct.unpack_from`` loop did 3 Python calls
+    per point — O(n) interpreter overhead that took *minutes* on a multi-hundred-thousand-point
+    cloud. A structured-dtype view over the buffer reads every point in one C-level pass. NumPy
+    is lazy-imported here (the rerun/offline invariant — see the module docstring).
     """
+    import numpy as np
+
     offsets = {f.name: f.offset for f in msg.fields if f.name in ("x", "y", "z")}
     if not all(k in offsets for k in ("x", "y", "z")):
         return []
     endian = ">" if getattr(msg, "is_bigendian", False) else "<"
-    data = bytes(msg.data)
+    buf = bytes(msg.data)
     step = msg.point_step
     n = msg.width * msg.height
     ox, oy, oz = offsets["x"], offsets["y"], offsets["z"]
-    out: list[tuple[float, float, float]] = []
-    for i in range(n):
-        base = i * step
-        if base + oz + 4 > len(data):
-            break
-        x = struct.unpack_from(endian + "f", data, base + ox)[0]
-        y = struct.unpack_from(endian + "f", data, base + oy)[0]
-        z = struct.unpack_from(endian + "f", data, base + oz)[0]
-        out.append((x, y, z))
-    return out
+    # Number of COMPLETE points the buffer holds: the last point is included iff its x/y/z
+    # fields fit (matching the old loop's `base + off + 4 > len: break`). max() over all three
+    # offsets — not just z — so a non-standard field order cannot over-read.
+    max_off = max(ox, oy, oz)
+    if step <= 0 or n <= 0 or len(buf) < max_off + 4:
+        return []
+    count = min(n, (len(buf) - max_off - 4) // step + 1)
+    if count <= 0:
+        return []
+    # frombuffer needs count*step bytes; a final point whose trailing padding is truncated
+    # leaves the buffer short of that even though its x/y/z bytes are present — pad the unread
+    # tail so the view still reads those fields (faithful to the old per-point loop).
+    need = count * step
+    if len(buf) < need:
+        buf = buf + b"\x00" * (need - len(buf))
+    point_dt = np.dtype(
+        {
+            "names": ["x", "y", "z"],
+            "formats": [endian + "f4"] * 3,
+            "offsets": [ox, oy, oz],
+            "itemsize": step,
+        }
+    )
+    pts = np.frombuffer(buf, dtype=point_dt, count=count)
+    xyz = np.column_stack((pts["x"], pts["y"], pts["z"])).astype(float)
+    return [tuple(row) for row in xyz.tolist()]
 
 
 def _image_array(msg):
