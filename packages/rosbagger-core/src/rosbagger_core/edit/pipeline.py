@@ -45,9 +45,39 @@ a function body, so ``import rosbagger_core.edit`` (which re-exports this module
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 from .operations import EditOps
+
+
+def _resolve_ops_topics(ops: EditOps, available: list[str]) -> EditOps:
+    """Resolve ``ops``' keep/drop/downsample topic names against the bag's topics (T3).
+
+    Normalizes a missing leading ``/`` (so ``--keep cmd_vel`` matches ``/cmd_vel``) and raises
+    :class:`~rosbagger_core.errors.UnknownTopicError` (with a did-you-mean) for a genuine typo
+    — instead of silently matching nothing and writing an EMPTY bag while reporting success
+    (the data-loss this fixes). Returns a NEW ``EditOps`` whose keep/drop/downsample carry the
+    CANONICAL topic names, so the existing ``keeps_topic`` / ``downsample_factor`` predicates
+    (which compare against ``connection.topic``) match correctly.
+    """
+    from rosbagger_core.topics import resolve_topics
+
+    changes: dict[str, object] = {}
+    if ops.keep:
+        changes["keep"] = frozenset(resolve_topics(ops.keep, available))
+    if ops.drop:
+        changes["drop"] = frozenset(resolve_topics(ops.drop, available))
+    if ops.downsample:
+        keys = list(ops.downsample)
+        resolved_keys = resolve_topics(keys, available)
+        changes["downsample"] = {
+            canonical: ops.downsample[original]
+            for original, canonical in zip(keys, resolved_keys)
+        }
+    if not changes:
+        return ops
+    return dataclasses.replace(ops, **changes)
 
 
 def _validate_fmt(fmt: str | None) -> None:
@@ -237,6 +267,12 @@ def edit_bag(
 
     written = 0
     try:
+        # T3: resolve keep/drop/downsample topic names against the bag's ACTUAL topics —
+        # normalizing a missing leading '/' and raising UnknownTopicError (did-you-mean) on a
+        # typo, BEFORE any output is written. Without this, `--keep cmd_vel` (no slash) matched
+        # no connection and edit_bag wrote an empty bag yet returned success (data loss).
+        ops = _resolve_ops_topics(ops, sorted({c.topic for c in reader.connections}))
+
         trim_window = ops.trim_window_ns(reader.start_time)
 
         # D-04 split: when the SOURCE and DESTINATION wireformats differ (ROS 1 <->

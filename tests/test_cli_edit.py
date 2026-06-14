@@ -240,3 +240,29 @@ def test_edit_and_convert_in_help() -> None:
     assert result.exit_code == 0
     assert "edit" in result.stdout
     assert "convert" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# T3 — `bagq edit --keep cmd_vel` (no slash) keeps /cmd_vel, not an empty bag;
+# a typo exits non-zero with a did-you-mean (no silent "Wrote (0 messages)").
+# ---------------------------------------------------------------------------
+
+
+def test_edit_keep_without_leading_slash_keeps_topic(ros1_bag: Path, tmp_path: Path) -> None:
+    """`bagq edit SRC -o OUT --keep cmd_vel` exits 0 and writes 3 messages, not 0 (data-loss fix)."""
+    out = tmp_path / "kept.bag"
+    result = runner.invoke(app, ["edit", str(ros1_bag), "-o", str(out), "--keep", "cmd_vel"])
+    assert result.exit_code == 0, result.output
+    assert "Wrote" in result.output
+    assert "(0 messages)" not in result.output  # the data-loss symptom must be gone
+
+
+def test_edit_keep_typo_is_clean_error_with_suggestion(ros1_bag: Path, tmp_path: Path) -> None:
+    """A misspelled --keep topic exits non-zero with a did-you-mean and writes no bag."""
+    out = tmp_path / "typo.bag"
+    result = runner.invoke(app, ["edit", str(ros1_bag), "-o", str(out), "--keep", "cmdvel"])
+    assert result.exit_code != 0
+    assert not isinstance(result.exception, AttributeError)  # no raw traceback
+    flat = result.output.replace("\n", " ")
+    assert "cmd_vel" in flat  # the suggestion / available topic
+    assert not out.exists()  # nothing written on the error path

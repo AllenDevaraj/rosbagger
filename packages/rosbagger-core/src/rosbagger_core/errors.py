@@ -185,6 +185,41 @@ class MixedTypeTopicError(ValueError):
         )
 
 
+class UnknownTopicError(ValueError):
+    """A requested topic name matches no topic in the bag (T3).
+
+    The topic-name sibling of :class:`UnknownTableError`. Every topic-accepting surface
+    (``bagq edit --keep/--drop``, ``--downsample /topic:N``, replay ``--topics/--remap``)
+    used to exact-string-match user input with NO normalization and NO suggestions — so a
+    missing leading slash (``--keep cmd_vel``) silently matched nothing and ``bagq edit``
+    wrote an EMPTY bag while reporting success (data loss). The shared
+    :func:`rosbagger_core.topics.resolve_topics` chokepoint normalizes the leading ``/`` and,
+    when a name still matches nothing, raises this — carrying a ``difflib`` "Did you mean: …?"
+    over the available topics, exactly like the SQL errors.
+
+    Subclasses ``ValueError`` (so existing ``except ValueError`` handlers keep working) and
+    stays stdlib-only (``difflib``; no new import). Carries ``.name`` / ``.available`` /
+    ``.suggestions``.
+    """
+
+    def __init__(self, name: str, available: list[str]) -> None:
+        self.name = name
+        self.available = available
+        # Suggest against the raw name first, then the slash-normalized form (so a bare
+        # `cmdvel` still surfaces `/cmd_vel` as a near miss). cutoff 0.6 mirrors the SQL errors.
+        self.suggestions = difflib.get_close_matches(name, available, n=3, cutoff=0.6)
+        if not self.suggestions:
+            normalized = "/" + name.lstrip("/")
+            self.suggestions = difflib.get_close_matches(normalized, available, n=3, cutoff=0.6)
+        if self.suggestions:
+            hint = f" Did you mean: {', '.join(self.suggestions)}?"
+        elif available:
+            hint = f" Available topics: {', '.join(sorted(available))}."
+        else:
+            hint = " The bag has no topics."
+        super().__init__(f"Unknown topic {name!r}.{hint}")
+
+
 class MultiBagEventsError(ValueError):
     """The reserved ``events`` table was referenced against a MULTI-bag reader (newE23).
 

@@ -97,6 +97,7 @@ def teaching_errors(fn):
             NoTransformsError,
             UnknownColumnError,
             UnknownTableError,
+            UnknownTopicError,
             UnresolvedTypeError,
         )
 
@@ -110,6 +111,7 @@ def teaching_errors(fn):
             NonTfMessageError,
             MixedTypeTopicError,
             MultiBagEventsError,
+            UnknownTopicError,
         ) as e:
             # Each carries its own teaching message: did-you-mean / available tables
             # (CLI-02), the referenced tables' columns (CLI-03), or .msg/.idl

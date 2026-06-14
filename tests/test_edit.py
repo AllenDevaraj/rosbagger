@@ -585,3 +585,59 @@ def test_raw_copy_ros1_to_ros1_is_byte_identical(fixture_bags, tmp_path):
     per_topic = _roundtrip(out)
     assert set(per_topic) == EXPECTED_TOPICS
     assert _first_raw(out, "/imu") == _first_raw(src, "/imu")
+
+
+# ---------------------------------------------------------------------------
+# T3 — topic-name resolution: a missing leading slash normalizes (no data loss);
+# a genuine typo raises UnknownTopicError instead of writing an empty bag.
+# ---------------------------------------------------------------------------
+
+
+def test_keep_normalizes_missing_leading_slash(fixture_bags, tmp_path):
+    """`keep={'cmd_vel'}` (no slash) keeps /cmd_vel, NOT an empty bag (the data-loss fix)."""
+    src = fixture_bags["ros1"]
+    out = _dst_for("ros1", tmp_path)
+    n = edit_bag([src], out, EditOps(keep=frozenset({"cmd_vel"})))
+    assert n == _N_PER_TOPIC  # 3 messages kept, not 0
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == {"/cmd_vel"}
+
+
+def test_drop_normalizes_missing_leading_slash(fixture_bags, tmp_path):
+    """`drop={'image'}` (no slash) drops /image (the other topics survive)."""
+    src = fixture_bags["ros1"]
+    out = _dst_for("ros1", tmp_path)
+    edit_bag([src], out, EditOps(drop=frozenset({"image"})))
+    per_topic = _roundtrip(out)
+    assert set(per_topic) == {"/cmd_vel", "/imu"}
+
+
+def test_downsample_normalizes_missing_leading_slash(fixture_bags, tmp_path):
+    """`downsample={'imu': 2}` (no slash) downsamples /imu (2 of 3 kept)."""
+    src = fixture_bags["ros1"]
+    out = _dst_for("ros1", tmp_path)
+    edit_bag([src], out, EditOps(downsample={"imu": 2}))
+    per_topic = _roundtrip(out)
+    assert len(per_topic["/imu"]) == 2  # every-Nth on the normalized topic
+    assert len(per_topic["/cmd_vel"]) == _N_PER_TOPIC  # untouched
+
+
+def test_keep_typo_raises_unknown_topic_not_empty_bag(fixture_bags, tmp_path):
+    """A real typo (`cmdvel`) raises UnknownTopicError with a did-you-mean — never silent empty."""
+    from rosbagger_core.errors import UnknownTopicError
+
+    src = fixture_bags["ros1"]
+    out = _dst_for("ros1", tmp_path)
+    with pytest.raises(UnknownTopicError) as excinfo:
+        edit_bag([src], out, EditOps(keep=frozenset({"cmdvel"})))
+    assert "/cmd_vel" in excinfo.value.suggestions
+
+
+def test_downsample_typo_raises_unknown_topic(fixture_bags, tmp_path):
+    """A downsample key that matches no topic raises UnknownTopicError (no silent no-op)."""
+    from rosbagger_core.errors import UnknownTopicError
+
+    src = fixture_bags["ros1"]
+    out = _dst_for("ros1", tmp_path)
+    with pytest.raises(UnknownTopicError):
+        edit_bag([src], out, EditOps(downsample={"nope": 2}))
