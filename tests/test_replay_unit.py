@@ -741,6 +741,78 @@ def test_scheduler_region_in_bound_past_end_done():
     assert r.state is State.DONE
 
 
+def test_scheduler_region_bounds_are_bag_relative_on_nonzero_t0():
+    """newD9: set_loop_region takes BAG-RELATIVE offsets (added to items[0].t_ns), like seek.
+
+    A real bag carries huge absolute ROS timestamps; the desktop/CLI pass bag-relative offsets.
+    Before the fix the scheduler stored those offsets as ABSOLUTE and compared them against the
+    absolute ``items[*].t_ns`` — so ``items[cursor].t_ns > out`` was always true and the cursor
+    wrapped after EVERY publish, the region collapsing to "republish item 0". Fixture streams
+    started at t0==0, masking it. Here t0 = 1e9: a region offset [200, 500] must repeat ONLY the
+    items whose ABSOLUTE t_ns is in [t0+200, t0+500], proving the offsets are t0-relative.
+    """
+    t0 = 1_000_000_000
+    items = _items([t0 + i * 100 for i in range(10)])  # absolute t_ns t0 .. t0+900
+    recorded = []
+    r = Replayer(items, recorded.append, sleep=lambda s: None, max_messages=10)
+    r.set_loop_region(200, 500)  # bag-relative offsets
+    assert r.loop_region == (t0 + 200, t0 + 500)  # stored/read back as absolute t_ns
+    r.seek(200)  # enter the region (seek is also bag-relative — shared basis)
+    r.play()
+    r.run()
+
+    published_t = [it.t_ns for it in recorded]
+    assert all(t0 + 200 <= t <= t0 + 500 for t in published_t), published_t
+    assert t0 not in published_t  # NOT collapsed to republishing the first item (the old bug)
+    assert published_t[:4] == [t0 + 200, t0 + 300, t0 + 400, t0 + 500]
+    assert published_t[4] == t0 + 200  # wrapped to the in-bound, the snippet repeats
+
+
+def test_scheduler_single_item_loop_paces_not_busy_spins():
+    """newD13: a one-message looping bag floors the republish cadence instead of busy-spinning.
+
+    ``do_pace = cursor > 0`` is False at index 0, and a loop wrap rewinds to 0 — so a single-item
+    bag never paced and republished at 100% CPU. The fix floors a zero-span loop wrap to
+    ``_DEGENERATE_LOOP_PERIOD_S / rate``. A recording sleep proves the floor lands between
+    republishes (the busy-spin would record NO sleeps at all).
+    """
+    from rosbagger_replay.scheduler import _DEGENERATE_LOOP_PERIOD_S
+
+    items = _items([42])  # one message -> zero span
+    recorded = []
+    slept = []
+    r = Replayer(items, recorded.append, sleep=slept.append, loop=True, rate=2.0, max_messages=3)
+    r.play()
+    r.run()
+
+    assert len(recorded) == 3  # republished the single item thrice, then the bound -> DONE
+    assert r.state is State.DONE
+    # First publish: no pre-sleep. Each subsequent wrap republish: the floor, scaled by rate.
+    assert slept == [pytest.approx(_DEGENERATE_LOOP_PERIOD_S / 2.0)] * 2
+
+
+def test_scheduler_zero_span_multi_item_loop_floors_only_the_wrap():
+    """newD13: an all-equal-timestamp multi-item loop floors ONLY the wrap (Δt==0 within the bag).
+
+    Within the bag the equal timestamps give Δt 0 (sleep 0, paced but instant); only the loop
+    wrap back to index 0 — which has no Δt and would busy-spin — is floored. Normal positive-span
+    pacing is never floored (see the other rate tests).
+    """
+    from rosbagger_replay.scheduler import _DEGENERATE_LOOP_PERIOD_S
+
+    items = _items([7, 7, 7])  # three messages, one instant -> zero span
+    recorded = []
+    slept = []
+    r = Replayer(items, recorded.append, sleep=slept.append, loop=True, max_messages=5)
+    r.play()
+    r.run()
+
+    assert len(recorded) == 5
+    assert r.state is State.DONE
+    assert any(s == pytest.approx(_DEGENERATE_LOOP_PERIOD_S) for s in slept)  # the wrap is floored
+    assert all(s in (0.0, pytest.approx(_DEGENERATE_LOOP_PERIOD_S)) for s in slept)
+
+
 # --------------------------------------------------------------------------- #
 # Phase 21 (REP-05) library plumbing: the --start-paused mapping is "do not play()"
 # -> run() publishes 0 and returns PAUSED; the build_publish_sink remap kwarg keeps

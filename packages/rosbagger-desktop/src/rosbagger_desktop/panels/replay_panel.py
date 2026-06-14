@@ -1053,16 +1053,15 @@ class ReplayPanel(QWidget):
         self._advanced_body.setVisible(checked)
         self._advanced_toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
 
-    def _region_abs_ns(self, in_frac: float, out_frac: float) -> tuple[int, int]:
-        """Map region fractions to ABSOLUTE bag-relative t_ns the SAME way ``seek`` maps a fraction.
+    def _region_offset_ns(self, in_frac: float, out_frac: float) -> tuple[int, int]:
+        """Map region fractions to BAG-RELATIVE t_ns offsets — the SAME basis ``seek`` uses.
 
-        ``seek`` treats ``int(fraction * bag_span_ns)`` as a bag-relative offset (t0-relative),
-        and ``Replayer.seek`` adds ``items[0].t_ns`` internally; ``set_loop_region`` takes
-        absolute t_ns, so the scheduler's ``seek`` scan and the region bounds share one basis.
-        We pass the offset form (``int(frac * bag_span_ns)``) as the absolute bound because the
-        scheduler compares against ``items[cursor].t_ns`` — see the note in 19-03 RESEARCH; the
-        panel always seeks to the in-bound when enabling region-loop so the cursor enters the
-        region. Both bounds use the identical mapping for consistency.
+        ``seek`` and ``set_loop_region`` BOTH take bag-relative offsets now (``Replayer`` adds
+        ``items[0].t_ns`` internally — newD9 made the region setter relative for consistency with
+        seek). So a fraction maps to ``int(frac * bag_span_ns)`` for both the region bounds and
+        the enter-the-region seek, keeping them on one basis. (Before newD9 the region setter
+        expected ABSOLUTE t_ns; passing the offset form silently broke region-loop on any real bag
+        whose t0 ≠ 0 — the scheduler wrapped after every publish.)
         """
         return int(in_frac * self._bag_span_ns), int(out_frac * self._bag_span_ns)
 
@@ -1078,9 +1077,9 @@ class ReplayPanel(QWidget):
             return
         if self._loop_in_frac is None or self._loop_out_frac is None:
             return
-        in_ns, out_ns = self._region_abs_ns(self._loop_in_frac, self._loop_out_frac)
+        in_ns, out_ns = self._region_offset_ns(self._loop_in_frac, self._loop_out_frac)
         self._replayer.set_loop_region(in_ns, out_ns)  # type: ignore[union-attr]
-        self._replayer.seek(in_ns)  # type: ignore[union-attr]  # enter the region
+        self._replayer.seek(in_ns)  # type: ignore[union-attr]  # enter the region (same basis)
         self._update_position()
 
     def _set_region_bound(self, which: str) -> None:

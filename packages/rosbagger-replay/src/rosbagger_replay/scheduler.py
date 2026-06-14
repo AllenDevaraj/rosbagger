@@ -37,10 +37,18 @@ final item wins over ``loop``'s wraparound (DONE wins over loop-reset, the W4 bo
 
 from __future__ import annotations
 
+import bisect
 import threading
 import time
 from collections.abc import Callable
 from enum import Enum
+
+# A CPU-friendly republish cadence for a DEGENERATE zero-span loop (newD13): a one-message
+# bag, or a stream whose timestamps are all equal, has no inter-message Δt to pace by, so a
+# loop wrap would republish as fast as the CPU allows (100% busy-spin). When that case is
+# detected the wrap republish is floored to this many seconds (scaled by ``rate``) — a steady,
+# low cadence instead of a spin. Normal multi-item pacing never touches this.
+_DEGENERATE_LOOP_PERIOD_S = 0.1
 
 
 class State(Enum):
@@ -195,11 +203,13 @@ class Replayer:
 
     @property
     def loop_region(self) -> tuple[int, int] | None:
-        """The active loop region as ``(in_ns, out_ns)`` absolute t_ns, or ``None`` (Phase 19).
+        """The active loop region as ``(in_ns, out_ns)`` ABSOLUTE t_ns, or ``None`` (Phase 19).
 
-        Lock-free single read (the setters always set/clear both bounds together, so this is a
-        both-or-neither check). When a region is set, ``run()`` wraps a snippet on repeat
-        instead of reaching the whole-bag end; see :meth:`set_loop_region`.
+        Returns the stored absolute bounds (``set_loop_region`` takes bag-relative offsets and
+        adds ``items[0].t_ns`` — newD9). Lock-free single read (the setters always set/clear both
+        bounds together, so this is a both-or-neither check). When a region is set, ``run()``
+        wraps a snippet on repeat instead of reaching the whole-bag end; see
+        :meth:`set_loop_region`.
         """
         if self._loop_in_ns is not None and self._loop_out_ns is not None:
             return (self._loop_in_ns, self._loop_out_ns)
@@ -263,28 +273,33 @@ class Replayer:
         """
         with self._lock:
             t0 = self._items[0].t_ns if self._items else 0
-            target = t0 + t_offset_ns
-            self._cursor = next(
-                (i for i, it in enumerate(self._items) if it.t_ns >= target),
-                len(self._items),
-            )
+            self._cursor = self._first_index_at_or_after(t0 + t_offset_ns)
         self._wake.set()
 
     # --- region loop (Phase 19, REP-03); lock-guarded + wake, the Phase-18 contract ---
     def set_loop_region(self, in_ns: int, out_ns: int) -> None:
-        """Set the in/out loop region to ABSOLUTE t_ns bounds (a snippet to repeat, D-09 / REP-03).
+        """Set the in/out loop region to BAG-RELATIVE offsets (a snippet to repeat, D-09 / REP-03).
+
+        ``in_ns`` / ``out_ns`` are offsets from the bag start (``items[0].t_ns``), the SAME basis
+        :meth:`seek` uses — they are converted to absolute t_ns internally (``items[0].t_ns`` is
+        added). This consistency fixes newD9: both callers (the CLI's ``region_start*1e9`` and the
+        desktop's ``frac*bag_span_ns``) pass bag-relative offsets, but the region setter formerly
+        stored them as ABSOLUTE and ``run()`` compared them against the absolute ``items[*].t_ns``
+        — so on a real bag (t0 = a large ROS stamp) ``items[cursor].t_ns > out`` was always true
+        and the cursor wrapped after every publish. Fixture streams started at t0==0, masking it.
 
         Normalizes so the lower value is the in-bound (``set_loop_region(500, 200)`` ==
         ``set_loop_region(200, 500)``). When a region is set, ``run()`` wraps the cursor from the
-        item past ``out_ns`` back to the first item at/after ``in_ns`` — DISTINCT from the
+        item past the out-bound back to the first item at/after the in-bound — DISTINCT from the
         whole-bag :attr:`loop` (index-0 rewind), and taking PRECEDENCE over it when both are on.
         Lock-guarded + wakes the pacing wait so a region set WHILE ``run()`` executes on another
         thread is honored at the next advance with no data race (the Phase-18 contract).
         """
+        t0 = self._items[0].t_ns if self._items else 0
         lo, hi = (in_ns, out_ns) if in_ns <= out_ns else (out_ns, in_ns)
         with self._lock:
-            self._loop_in_ns = lo
-            self._loop_out_ns = hi
+            self._loop_in_ns = t0 + lo
+            self._loop_out_ns = t0 + hi
         self._wake.set()
 
     def clear_loop_region(self) -> None:
@@ -296,6 +311,32 @@ class Replayer:
             self._loop_in_ns = None
             self._loop_out_ns = None
         self._wake.set()
+
+    # --- internal helpers (cursor resolution + degenerate-loop detection) ---
+    def _first_index_at_or_after(self, t_ns: int) -> int:
+        """Index of the first item with ``t_ns >= target`` (``len(items)`` if none) — O(log n).
+
+        Items are non-decreasing in ``t_ns`` (``load_items`` time-orders them), so a binary
+        search replaces the former O(n) linear ``next(i for ...)`` scan that ran UNDER the lock
+        and stalled concurrent transport controls on a large bag (F4). ``bisect.bisect_left``
+        with ``key=`` needs Python ≥3.10 (a project floor). Semantics are identical to the old
+        scan, including the past-the-end ``len(items)`` landing (a clean DONE — Pitfall 6).
+        """
+        return bisect.bisect_left(self._items, t_ns, key=lambda it: it.t_ns)
+
+    def _is_zero_span_loop(self) -> bool:
+        """True when a loop is active over a stream with NO time span (newD13).
+
+        A one-message bag, or a stream whose first and last timestamps are equal, has no
+        inter-message Δt to pace by — so a loop wrap would republish with zero sleep and peg a
+        CPU. Detect it (looping on AND ``items[-1].t_ns == items[0].t_ns``) so ``run()`` can
+        floor the wrap cadence instead of busy-spinning. A non-looping or positive-span stream
+        returns ``False`` and the normal Δt pacing is untouched.
+        """
+        looping = self._loop or self._loop_in_ns is not None
+        if not looping or not self._items:
+            return False
+        return self._items[-1].t_ns == self._items[0].t_ns
 
     # --- the drive loop (D-08 pacing + D-09 step/loop/DONE + WR-01/WR-02 bound, W4 ordering) ---
     def run(self) -> None:
@@ -355,6 +396,15 @@ class Replayer:
                 if do_pace:
                     dt_ns = self._items[cursor].t_ns - self._items[cursor - 1].t_ns
                     sleep_s = max(0.0, dt_ns / 1e9 / self._rate)
+                elif state is State.PLAYING and published > 0 and self._is_zero_span_loop():
+                    # A loop wrap rewound the cursor to 0 on a ZERO-SPAN bag (one message, or all
+                    # timestamps equal): there is no Δt, so the cursor>0 branch above never paces
+                    # and the loop would republish at 100% CPU. Floor the wrap cadence (newD13).
+                    # ``published > 0`` excludes the very first publish of this run() (no startup
+                    # delay); the guard is False for any positive-span stream, so normal multi-
+                    # item pacing — including a multi-item loop's instant wrap — is unchanged.
+                    sleep_s = _DEGENERATE_LOOP_PERIOD_S / self._rate
+                    do_pace = True
 
             # --- unlocked: pace, then re-read state so a mid-gap control is honored ---
             if do_pace:
@@ -400,13 +450,10 @@ class Replayer:
                         self._cursor >= len(self._items)
                         or self._items[self._cursor].t_ns > self._loop_out_ns
                     ):
-                        # Jump back to the first item at/after the in-bound (the same scan seek
-                        # uses). An in-bound past the end lands cursor == len -> DONE, so a region
-                        # whose in-bound is past the stream never spins as a no-publish loop.
-                        self._cursor = next(
-                            (i for i, it in enumerate(self._items) if it.t_ns >= self._loop_in_ns),
-                            len(self._items),
-                        )
+                        # Jump back to the first item at/after the in-bound (the same bisect seek
+                        # uses, F4). An in-bound past the end lands cursor == len -> DONE, so a
+                        # region whose in-bound is past the stream never spins as a no-publish loop.
+                        self._cursor = self._first_index_at_or_after(self._loop_in_ns)
                         if self._cursor >= len(self._items):
                             self._state = State.DONE
                     # else: keep playing forward toward the out-bound.
