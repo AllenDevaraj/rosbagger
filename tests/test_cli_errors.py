@@ -37,6 +37,7 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.make_fixtures import (  # noqa: E402  (after sys.path setup)
     write_def_less_bag,
     write_ros1_bag,
+    write_ros2_sqlite_bag_defless,
 )
 
 import bagq.cli as cli  # noqa: E402
@@ -201,3 +202,86 @@ def test_missing_path_still_raises_file_not_found_at_reader() -> None:
     """
     with pytest.raises(FileNotFoundError):
         RosbagsReader("/no/such/bag").open()
+
+
+# ---------------------------------------------------------------------------
+# T1 — a STANDARD def-less bag (real .db3) now opens from every face via the
+# reader's env-resolved default-typestore fallback; CUSTOM types still teach.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def std_def_less_bag(tmp_path_factory) -> Path:
+    """A ROS 2 sqlite bag with STANDARD types but its definitions stripped (real .db3 shape).
+
+    Opening with no typestore raised the no-defs error before T1; the reader now falls back
+    to the env-resolved default typestore (ROS2_HUMBLE), whose standard types DO cover it.
+    """
+    return write_ros2_sqlite_bag_defless(tmp_path_factory.mktemp("std_def_less"))
+
+
+def test_reader_opens_standard_def_less_bag_without_explicit_typestore(
+    std_def_less_bag: Path,
+) -> None:
+    """RosbagsReader (no default_typestore) opens a standard def-less bag and reads it (T1)."""
+    with RosbagsReader(std_def_less_bag) as reader:
+        assert "/imu" in reader.topics
+        rows = [m.t_ns for m in reader.read(topics={"/imu"})]
+    assert rows == [1_000_000_000, 1_100_000_000, 1_200_000_000]
+
+
+@pytest.mark.parametrize(
+    ("command", "extra"),
+    [("info", []), ("tables", []), ("query", ["SELECT t_ns FROM imu"])],
+)
+def test_bagq_opens_standard_def_less_bag(
+    std_def_less_bag: Path, command: str, extra: list[str]
+) -> None:
+    """bagq info/tables/query now exit 0 on a standard real .db3 (the flagship T1 win)."""
+    result = runner.invoke(app, [command, *extra, str(std_def_less_bag)])
+    assert result.exit_code == 0, result.output
+
+
+def test_custom_def_less_bag_still_teaches_via_reader(def_less_bag: Path) -> None:
+    """A CUSTOM-type def-less bag still raises UnresolvedTypeError at the reader (CLI-04).
+
+    The fallback typestore does not cover my_pkg/msg/Widget, so the coverage verify trips and
+    the teaching error is preserved — even though no typestore was passed.
+    """
+    from rosbagger_core.errors import UnresolvedTypeError
+
+    with pytest.raises(UnresolvedTypeError):
+        RosbagsReader(def_less_bag).open()
+
+
+def test_failed_open_does_not_leak_fds_or_leave_dangling_reader(def_less_bag: Path) -> None:
+    """Repeated failed opens of a custom def-less bag don't accumulate fds (newE19).
+
+    rosbags opens all sub-readers before raising the post-loop no-defs error; the reader now
+    force-closes them on every discard path. We assert the Linux fd count is stable across
+    many failed opens and that a failed open leaves no dangling _reader (close() is safe).
+    """
+    from rosbagger_core.errors import UnresolvedTypeError
+
+    fd_dir = Path("/proc/self/fd")
+    if not fd_dir.exists():
+        pytest.skip("fd-count check needs /proc (Linux)")
+
+    def fd_count() -> int:
+        return len(list(fd_dir.iterdir()))
+
+    # Warm up once (first open may cache module/type state that opens its own fds).
+    r0 = RosbagsReader(def_less_bag)
+    with pytest.raises(UnresolvedTypeError):
+        r0.open()
+    r0.close()  # safe even though open() failed (idempotent, _reader is None)
+
+    before = fd_count()
+    for _ in range(25):
+        r = RosbagsReader(def_less_bag)
+        with pytest.raises(UnresolvedTypeError):
+            r.open()
+        r.close()
+    after = fd_count()
+    # Allow a tiny slack for unrelated runtime fds; a real leak would be ~25-50+.
+    assert after - before <= 2, f"fd leak: {before} -> {after}"
