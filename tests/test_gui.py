@@ -226,7 +226,11 @@ async def test_query_panel_runs_real_core(bag: Path) -> None:
         await pilot.pause()
         sql_input.value = "SELECT topic, t_ns FROM imu LIMIT 1"
         await pilot.press("enter")
-        await pilot.pause()  # flush the query run + result render before asserting
+        # F6: query() now runs on a thread worker; wait for it before asserting on the widget it
+        # updates via call_from_thread (pilot.pause() alone is a CPU-idle heuristic that can break
+        # EARLY while the worker blocks on I/O — see tests/test_gui_live.py's worker-wait note).
+        await app.workers.wait_for_complete()
+        await pilot.pause()  # flush the call_from_thread render before asserting
 
         results = app.query_one("#results", DataTable)
         assert results.row_count == 1, (
@@ -251,6 +255,7 @@ async def test_query_panel_select_star_renders_timestamp_columns(bag: Path) -> N
         await pilot.pause()
         sql_input.value = "SELECT * FROM imu"
         await pilot.press("enter")
+        await app.workers.wait_for_complete()  # F6: let the query worker finish (call_from_thread render)
         await pilot.pause()
         results = app.query_one("#results", DataTable)
         assert results.row_count == 3, (

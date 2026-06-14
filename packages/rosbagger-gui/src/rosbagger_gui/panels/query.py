@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from textual import work
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import (
@@ -48,6 +49,7 @@ from textual.widgets import (
     Static,
     Tree,
 )
+from textual.worker import get_current_worker
 
 # Default export destinations (CWD). The panel collects a PATH only; the FORMAT is
 # chosen by write_table from the extension — the panel never picks a format itself.
@@ -168,14 +170,15 @@ class QueryPanel(Vertical):
             self.query_one("#sql-input", Input).value = sql
 
     def _run_query(self) -> None:
-        """Forward the SQL string + shared reader to query() and render the result.
+        """Validate SQL + reader, then dispatch ``query()`` to a worker thread (F6 / Pitfall 1).
 
-        Reads the SQL from ``sql-input`` and the App's single shared open reader,
-        lazily imports the ONE query API INSIDE this handler (offline invariant), and
-        calls ``query(sql, reader)`` VERBATIM. Fills the ``results`` DataTable via the
-        Pattern-4 mapping and appends the SQL to ``history``. The Phase-7 teaching
-        errors are caught and rendered into ``query-status`` — never a traceback. The
-        result table is kept on ``_last_result`` for the export buttons.
+        Reads the SQL from ``sql-input`` and the App's single shared open reader. The blocking
+        ``query(sql, reader)`` formerly ran SYNCHRONOUSLY on the Textual event loop, freezing the
+        whole TUI for the duration on a big query (the ``_MAX_DISPLAY_ROWS`` cap only bounds
+        RENDERING, not the query's full pyarrow.Table materialization). It now runs on a thread
+        worker (mirroring the replay drive worker), with a re-entrancy guard so the App's ONE
+        shared reader (a single rosbags/apsw handle, unsafe for concurrent iteration) is never
+        read by two query workers at once.
         """
         status = self.query_one("#query-status", Static)
         sql = self.query_one("#sql-input", Input).value.strip()
@@ -187,10 +190,27 @@ class QueryPanel(Vertical):
         if not sql:
             status.update("Enter a SQL query, then press Enter or Run.")
             return
+        # WR-06 (mirrors replay.py _drive_running): the App owns ONE shared reader whose
+        # reader.read() iterates a single underlying rosbags/apsw handle that is NOT safe for
+        # concurrent iteration. query() runs on a thread worker; refuse a second submit while one
+        # is in flight so two workers never read the shared reader at once (exclusive=True alone
+        # can't do this — a cancelled thread worker keeps iterating until query() returns).
+        if any(w.group == "query-run" and w.is_running for w in self.workers):
+            status.update("A query is already running — wait for it to finish.")
+            return
 
-        # Lazy import (D-03): keep this module's top level textual-only. The teaching
-        # errors are ValueError subclasses whose messages are built in core; the panel
-        # only presents them (API-first / thin-face).
+        status.update("Running query…")
+        self._execute_query_worker(sql, reader)
+
+    @work(exclusive=True, thread=True, group="query-run")
+    def _execute_query_worker(self, sql: str, reader: object) -> None:
+        """THREAD worker: run ``query()`` off the event loop (Pitfall 1 / F6).
+
+        Lazily imports the ONE query API (offline invariant), runs ``query(sql, reader)`` VERBATIM
+        on the worker thread, and marshals the result/teaching-error back to the UI thread via
+        ``call_from_thread`` (mirrors ``replay.py``'s ``_drive_worker``). The Phase-7 teaching
+        errors emit as ``str(e)`` — never a traceback.
+        """
         from rosbagger_core.backend.query import query
         from rosbagger_core.errors import (
             UnknownColumnError,
@@ -198,13 +218,21 @@ class QueryPanel(Vertical):
             UnresolvedTypeError,
         )
 
+        worker = get_current_worker()
         try:
             result = query(sql, reader)
         except (UnknownTableError, UnknownColumnError, UnresolvedTypeError) as e:
             # The message CONTENT is built in core (thin-face): present str(e), no crash.
-            status.update(str(e))
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self._show_query_error, str(e))
             return
 
+        if worker.is_cancelled:
+            return
+        self.app.call_from_thread(self._render_query_result, result, sql)
+
+    def _render_query_result(self, result: pyarrow.Table, sql: str) -> None:
+        """UI-thread helper (via ``call_from_thread``): render result + export/history/status."""
         self._last_result = result
         self._fill_results(result)
         self._append_history(sql)
@@ -214,9 +242,13 @@ class QueryPanel(Vertical):
         # Note truncation when the on-screen table is capped (F6); export still writes all rows.
         shown = min(result.num_rows, _MAX_DISPLAY_ROWS)
         capped = f" · showing first {shown}" if result.num_rows > _MAX_DISPLAY_ROWS else ""
-        status.update(
+        self.query_one("#query-status", Static).update(
             f"{result.num_rows} row(s) · {len(result.column_names)} column(s){capped}"
         )
+
+    def _show_query_error(self, message: str) -> None:
+        """UI-thread helper (via ``call_from_thread``): render a teaching error to the status."""
+        self.query_one("#query-status", Static).update(message)
 
     def _fill_results(self, table: pyarrow.Table) -> None:
         """Map a ``pyarrow.Table`` into the ``results`` DataTable (14-RESEARCH Pattern 4).
