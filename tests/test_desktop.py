@@ -732,6 +732,37 @@ def test_open_reader_clears_bag_path_on_failed_open(qtbot, tmp_path: Path, monke
     )
 
 
+def test_open_reader_stops_offline_workers_before_closing_reader(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    """C3: File ▸ Open stops the in-flight query/inspect/tf workers BEFORE closing the reader.
+
+    The offline panels run query()/collect_* on a BlockingWorker thread that lazily iterates the
+    shared reader; closing the reader (sqlite cursor / mmap'd MCAP) while a worker still iterates
+    it is a use-after-free / SIGBUS. This locks the ORDERING contract: every worker-stop must
+    precede ``reader.close()`` (no real threads needed — we spy the call order).
+    """
+    import rosbagger_desktop.main_window as mw
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+
+    order: list[str] = []
+    monkeypatch.setattr(mw, "stop_thread", lambda thread: order.append("stop_worker"))
+    # Spy the OLD reader's close() so we capture WHEN it fires relative to the worker stops.
+    monkeypatch.setattr(window.reader, "close", lambda: order.append("close_reader"))
+
+    window._open_reader(bag)  # re-open closes the old reader, then opens a fresh one
+
+    assert "close_reader" in order, "reader was never closed on re-open"
+    assert order.count("stop_worker") == 3, "all three offline-panel workers must be stopped"
+    # Every worker-stop precedes the reader close (the C3 use-after-free guard).
+    assert order.index("close_reader") > max(
+        i for i, ev in enumerate(order) if ev == "stop_worker"
+    ), f"workers must stop BEFORE reader.close(); got order {order}"
+
+
 def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> None:
     """WR-03: export routes through ``QFileDialog.getSaveFileName`` to a user-chosen path.
 

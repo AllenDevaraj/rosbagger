@@ -41,6 +41,7 @@ from .panels.query_panel import QueryPanel
 from .panels.record_panel import RecordPanel
 from .panels.replay_panel import ReplayPanel
 from .panels.tf_panel import TfPanel
+from .workers import stop_thread
 
 # The default panel shown on launch (the first nav row).
 _INITIAL_PANEL = "inspect"
@@ -289,6 +290,17 @@ class MainWindow(QMainWindow):
         """
         from rosbagger_core.reader import RosbagsReader  # lazy (D-08): keep top level light
 
+        # C3: stop any in-flight offline-panel workers BEFORE closing the reader they iterate.
+        # query/inspect/tf each run query()/collect_*/collect_tf_report on a BlockingWorker thread
+        # that lazily iterates this shared reader; closing it mid-iteration is a use-after-free /
+        # SIGBUS (sqlite3 cursor / mmap'd MCAP). stop_thread quit()+wait()s each (a no-op for a
+        # None/finished thread), so the worker has stopped touching the reader before close(). This
+        # briefly blocks the UI thread until a heavy in-flight call returns — the same accepted
+        # trade-off the live panels' close-path stop_thread already makes.
+        stop_thread(self.query_panel._query_thread)  # noqa: SLF001 - panel exposes these to tests too
+        stop_thread(self.inspect_panel._refresh_thread)  # noqa: SLF001
+        stop_thread(self.tf_panel._refresh_thread)  # noqa: SLF001
+
         if self.reader is not None:
             self.reader.close()
             self.reader = None
@@ -393,6 +405,13 @@ class MainWindow(QMainWindow):
             self._overlay = None
         # Live panels own the spawned viewers + worker threads; close them so teardown runs now.
         for panel in (self.replay_panel, self.record_panel):
+            with contextlib.suppress(Exception):
+                panel.close()
+        # C3: the OFFLINE panels also run worker threads that iterate the shared reader; Qt does
+        # NOT auto-deliver closeEvent to child widgets, so close() each to run its stop_thread
+        # teardown BEFORE the reader closes below — otherwise a query/inspect/tf worker can outlive
+        # the reader and touch a freed handle during shutdown (the un-joined-QThread SIGBUS).
+        for panel in (self.inspect_panel, self.query_panel, self.tf_panel):
             with contextlib.suppress(Exception):
                 panel.close()
         if self.reader is not None:
