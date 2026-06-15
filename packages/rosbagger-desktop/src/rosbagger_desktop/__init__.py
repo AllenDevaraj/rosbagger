@@ -12,4 +12,9 @@ their method bodies. So this package top level stays Qt-free AND ROS-free.
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("rosbagger-desktop")
+except PackageNotFoundError:  # raw source tree (not pip-installed)
+    __version__ = "0.0.0+unknown"

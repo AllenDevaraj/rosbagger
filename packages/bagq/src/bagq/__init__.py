@@ -1,3 +1,8 @@
 """bagq: the universal "DuckDB-for-bags" SQL CLI."""
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("bagq")
+except PackageNotFoundError:  # raw source tree (not pip-installed)
+    __version__ = "0.0.0+unknown"

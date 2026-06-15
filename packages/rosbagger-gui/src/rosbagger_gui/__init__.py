@@ -9,7 +9,12 @@ their method bodies (a later wave). The shell + offline panels need no ROS at al
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("rosbagger-gui")
+except PackageNotFoundError:  # raw source tree (not pip-installed)
+    __version__ = "0.0.0+unknown"
 
 
 def _detect_ros() -> bool:

@@ -6,4 +6,9 @@ sqlglot, rosbags) at top level. Defer those into the functions that use them
 `bagq --help` does not pay the duckdb import cost.
 """
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("rosbagger-core")
+except PackageNotFoundError:  # raw source tree (not pip-installed)
+    __version__ = "0.0.0+unknown"

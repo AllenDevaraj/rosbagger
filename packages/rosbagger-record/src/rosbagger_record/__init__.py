@@ -22,6 +22,8 @@ interpreter that does ``import rosbagger_record`` leaks no ``rclpy`` / ``rosbag2
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .discovery import discover_topics, select_topics
 from .errors import (
     McapStorageUnavailableError,
@@ -29,7 +31,10 @@ from .errors import (
     RosNotAvailableError,
 )
 
-__version__ = "0.2.0"
+try:
+    __version__ = version("rosbagger-record")
+except PackageNotFoundError:  # raw source tree (not pip-installed)
+    __version__ = "0.0.0+unknown"
 
 # Public API: the teaching capability errors, the lazy ROS-bound entry points
 # (record / list_topics — impl in .record, Plan 02), and the pure-Python discovery

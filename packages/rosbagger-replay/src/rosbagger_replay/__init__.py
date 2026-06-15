@@ -24,12 +24,17 @@ asserts a fresh interpreter that does ``import rosbagger_replay`` leaks no ``rcl
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .errors import NoMessagesToReplayError, RosNotAvailableError
 from .fidelity import StaticTracker, clock_stamp_ns
 from .scheduler import Replayer
 from .source import ReplayItem, load_items
 
-__version__ = "0.2.0"
+try:
+    __version__ = version("rosbagger-replay")
+except PackageNotFoundError:  # raw source tree (not pip-installed)
+    __version__ = "0.0.0+unknown"
 
 # Public API: the teaching capability errors, the pure raw-CDR source seam
 # (ReplayItem + load_items), the pure transport scheduler (Replayer), the pure RViz-fidelity
