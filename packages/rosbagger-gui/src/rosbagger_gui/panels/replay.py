@@ -402,7 +402,6 @@ class ReplayPanel(Widget):
         if replayer is None:
             return
 
-        from rosbagger_replay import Replayer  # noqa: F401 - bind for the State import below
         from rosbagger_replay.scheduler import State
 
         worker = get_current_worker()
