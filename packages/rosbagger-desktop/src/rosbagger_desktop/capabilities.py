@@ -12,13 +12,11 @@ from __future__ import annotations
 def ros_available() -> bool:
     """Cheap tier-1 ROS-availability probe (D-09): is ``rclpy`` importable?
 
-    The import lives INSIDE this function body so the package top level stays
-    ROS-free. Returns ``True`` when a ROS 2 environment is sourced (``rclpy``
-    resolves), ``False`` otherwise. The main window computes this ONCE at startup
-    to gate the live record/replay panels.
+    Delegates to :func:`rosbagger_core.capabilities.module_importable` (shared with the TUI
+    ``_detect_ros`` gate, R6); the import lives INSIDE this body so the package top level stays
+    ROS-free. Returns ``True`` when a ROS 2 environment is sourced. The main window computes
+    this ONCE at startup to gate the live record/replay panels.
     """
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    from rosbagger_core.capabilities import module_importable
+
+    return module_importable("rclpy")

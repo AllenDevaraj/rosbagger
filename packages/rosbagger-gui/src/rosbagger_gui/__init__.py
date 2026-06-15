@@ -15,13 +15,11 @@ __version__ = "0.2.0"
 def _detect_ros() -> bool:
     """Cheap tier-1 ROS-availability probe (D-04): is ``rclpy`` importable?
 
-    The import lives INSIDE this function body so the package top level stays
-    ROS-free (the offline-import invariant). Returns ``True`` when a ROS 2
-    environment is sourced (``rclpy`` resolves), ``False`` otherwise. The App
-    computes this ONCE at startup to gate the live record/replay panels (D-03).
+    Delegates to :func:`rosbagger_core.capabilities.module_importable` (shared with the desktop
+    ``ros_available`` gate, R6); the import lives INSIDE this body so the package top level stays
+    ROS-free (the offline-import invariant). Returns ``True`` when a ROS 2 environment is sourced.
+    The App computes this ONCE at startup to gate the live record/replay panels (D-03).
     """
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    from rosbagger_core.capabilities import module_importable
+
+    return module_importable("rclpy")
