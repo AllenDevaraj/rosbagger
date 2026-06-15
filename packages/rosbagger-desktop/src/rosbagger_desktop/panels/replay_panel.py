@@ -803,12 +803,23 @@ class ReplayPanel(QWidget):
             self._close_rviz()
             self._rviz_button.setChecked(False)
 
-    def _reprime_rviz_static(self) -> None:
-        """One-shot re-publish of tracked static topics so a late-joining RViz re-primes (Ph 23)."""
+    def _republish_static_if_enabled(self) -> None:
+        """Re-publish the tracked latched/static topics through the sink when enabled (S5).
+
+        Shared by :meth:`_on_seeked`, :meth:`_skip`, and :meth:`_reprime_rviz_static`: when the
+        "Re-publish static on seek" toggle is on AND a sink exists, re-prime the tracked static
+        topics so a fresh scene re-primes in RViz/Rerun after a jump. A no-op when the sink has no
+        tracker. The lazy import keeps this module's top ROS-free; the scheduler is NOT involved
+        (a publish-path concern).
+        """
         if self._static_seek_checkbox.isChecked() and self._sink is not None:
             from rosbagger_replay import republish_static
 
             republish_static(self._sink)
+
+    def _reprime_rviz_static(self) -> None:
+        """One-shot re-publish of tracked static topics so a late-joining RViz re-primes (Ph 23)."""
+        self._republish_static_if_enabled()
 
     def _close_rviz(self) -> None:
         """SIGTERM the spawned rviz2 + remove its temp config (toggle-off / closeEvent)."""
@@ -979,10 +990,7 @@ class ReplayPanel(QWidget):
         # seek so a fresh scene re-primes in RViz (the concrete fix for the backward-scrub
         # limitation). republish_static is a no-op when the sink has no tracker. Lazy import keeps
         # the panel module top ROS-free; the scheduler is NOT involved (publish-path concern).
-        if self._static_seek_checkbox.isChecked() and self._sink is not None:
-            from rosbagger_replay import republish_static
-
-            republish_static(self._sink)
+        self._republish_static_if_enabled()
 
     def _update_position(self) -> None:
         """Reflect the Replayer cursor onto the scrubber playhead (UI-thread helper).
@@ -1014,10 +1022,7 @@ class ReplayPanel(QWidget):
         new_ns = min(max(cur + delta_s * 1e9, 0.0), float(self._bag_span_ns))
         self._replayer.seek(int(new_ns))  # type: ignore[union-attr]
         self._update_position()
-        if self._static_seek_checkbox.isChecked() and self._sink is not None:
-            from rosbagger_replay import republish_static
-
-            republish_static(self._sink)
+        self._republish_static_if_enabled()
         pct = self._replayer.position_fraction * 100  # type: ignore[union-attr]
         set_status(self._status, f"Skipped to {pct:.0f}%.")
 
