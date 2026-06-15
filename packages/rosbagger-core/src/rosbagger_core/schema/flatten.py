@@ -298,14 +298,19 @@ def build_arrow_table(
     # Pitfall 1 "Note for planner" — no code change needed here once names are
     # unique).
     values: dict[str, list] = {col.name: [] for col in kept}
+    # F3: the per-column sourcing (data-body vs standard-record) and the target list are
+    # loop-INVARIANT, so resolve them ONCE here instead of re-deriving _is_data_column(col) and
+    # re-doing the values[...] dict lookup for every cell. Each entry is (dotted name, is-data,
+    # the bound list.append); the lists in `values` are never rebound, so binding .append once is
+    # safe and the accumulated output is byte-identical to the per-cell form.
+    plan = [(col.name, _is_data_column(col), values[col.name].append) for col in kept]
 
     for msg in messages:
         body = flatten_message(msg.msg, schema, include=include, restrict=restrict)
-        for col in kept:
-            # Data columns come from the message body; the standard columns
-            # (empty ros_path) come off the Message record by the same name.
-            value = body[col.name] if _is_data_column(col) else getattr(msg, col.name)
-            values[col.name].append(value)
+        for name, is_data, append in plan:
+            # Data columns come from the message body; the standard columns (empty ros_path)
+            # come off the Message record by the same name.
+            append(body[name] if is_data else getattr(msg, name))
 
     arrays = [pa.array(values[field.name], type=field.type) for field in arrow_schema]
     return pa.table(arrays, schema=arrow_schema)
