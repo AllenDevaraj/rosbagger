@@ -629,6 +629,28 @@ def test_record_panel_close_after_finished_run_is_safe(qtbot) -> None:
     panel.close()
 
 
+def test_record_teaching_errors_resolves_without_a_param() -> None:
+    """S8: ``_record_teaching_errors()`` resolves the capability errors itself, no param.
+
+    The helper used to take a needless ``import_module`` argument that every caller fed the
+    stdlib ``importlib.import_module``; it now imports ``rosbagger_record`` directly (still a
+    lazy in-body import — the panel module top stays ROS-free). Proves the param removal did not
+    break resolution: the returned tuple is exactly the three teaching capability errors.
+    """
+    from rosbagger_desktop.panels.record_panel import _record_teaching_errors
+    from rosbagger_record import (
+        McapStorageUnavailableError,
+        NoTopicsMatchedError,
+        RosNotAvailableError,
+    )
+
+    assert _record_teaching_errors() == (
+        RosNotAvailableError,
+        NoTopicsMatchedError,
+        McapStorageUnavailableError,
+    )
+
+
 def test_replay_rate_contract_agrees_on_play_and_enter(qtbot) -> None:
     """WR-06: an invalid rate is REJECTED on both Play(-build) and Enter — never coerced to 1.0.
 

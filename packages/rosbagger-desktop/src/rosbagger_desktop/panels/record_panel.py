@@ -236,11 +236,9 @@ class RecordPanel(QWidget):
 
             return dict(list_record_topics())
 
-        from importlib import import_module
-
         worker = BlockingWorker(
             work,
-            teaching_errors=_record_teaching_errors(import_module),
+            teaching_errors=_record_teaching_errors(),
             label="Topic discovery failed",
         )
         self._discover_thread, self._discover_worker = run_on_thread(
@@ -364,11 +362,9 @@ class RecordPanel(QWidget):
             )
             return (captured, out)
 
-        from importlib import import_module
-
         worker = BlockingWorker(
             work,
-            teaching_errors=_record_teaching_errors(import_module),
+            teaching_errors=_record_teaching_errors(),
             label="Recording failed",
         )
         self._record_thread, self._record_worker = run_on_thread(
@@ -434,21 +430,22 @@ class RecordPanel(QWidget):
         self._dismiss_button.setEnabled(False)
 
 
-def _record_teaching_errors(import_module) -> tuple[type[BaseException], ...]:
+def _record_teaching_errors() -> tuple[type[BaseException], ...]:
     """Lazily resolve the ``rosbagger_record`` teaching-error classes (offline invariant).
 
-    Imported via ``import_module`` INSIDE this helper (called only from a control handler /
+    Imports ``rosbagger_record`` INSIDE this helper (called only from a control handler /
     worker setup, never at module top) so importing the panel pulls no ``rosbagger_record``.
     Returns the capability errors whose ``str(exc)`` the worker presents verbatim; on a
     failure to resolve them (e.g. the package missing) it returns an empty tuple so any
     error falls through to the generic teaching path.
     """
     try:
-        mod = import_module("rosbagger_record")
+        import rosbagger_record
+
         return (
-            mod.RosNotAvailableError,
-            mod.NoTopicsMatchedError,
-            mod.McapStorageUnavailableError,
+            rosbagger_record.RosNotAvailableError,
+            rosbagger_record.NoTopicsMatchedError,
+            rosbagger_record.McapStorageUnavailableError,
         )
     except Exception:  # noqa: BLE001 - resolution failure falls back to the generic path
         return ()
