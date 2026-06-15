@@ -147,6 +147,38 @@ class TfReport:
     end_ns: int | None
 
 
+def _edge_report(
+    parent: str,
+    child: str,
+    static: bool,
+    samples: int,
+    first_ns: int,
+    last_ns: int,
+    *,
+    expected_ns: int | None = None,
+    max_gap_ns: int | None = None,
+    gap_count: int = 0,
+) -> EdgeReport:
+    """Build an :class:`EdgeReport`, defaulting the rate/gap tail (S3 dedup).
+
+    The four EdgeReport constructions in :func:`collect_tf_report` share the same identity and
+    extent fields; the three degenerate branches (static / single-sample, all-duplicate stamps,
+    non-positive median) leave the rate/gap tail empty while the real branch passes it. This
+    factory removes that fourfold repetition without changing any emitted field value.
+    """
+    return EdgeReport(
+        parent=parent,
+        child=child,
+        static=static,
+        samples=samples,
+        first_ns=first_ns,
+        last_ns=last_ns,
+        expected_ns=expected_ns,
+        max_gap_ns=max_gap_ns,
+        gap_count=gap_count,
+    )
+
+
 def collect_tf_report(
     reader,
     *,
@@ -285,19 +317,7 @@ def collect_tf_report(
         # STATIC SKIP and ZERO/SINGLE-SAMPLE SKIP both short-circuit to an
         # informational EdgeReport with no gaps and no inferable rate.
         if not gap_checkable or samples < 2:
-            edges.append(
-                EdgeReport(
-                    parent=parent,
-                    child=child,
-                    static=is_static,
-                    samples=samples,
-                    first_ns=first_ns,
-                    last_ns=last_ns,
-                    expected_ns=None,
-                    max_gap_ns=None,
-                    gap_count=0,
-                )
-            )
+            edges.append(_edge_report(parent, child, is_static, samples, first_ns, last_ns))
             continue
 
         # Inter-arrival deltas; drop any <= 0 (duplicate/backwards stamps) BEFORE the
@@ -307,36 +327,12 @@ def collect_tf_report(
         diffs = [b - a for a, b in zip(ordered, ordered[1:], strict=False) if b - a > 0]
         if not diffs:
             # Every delta was <= 0 (all-duplicate timestamps) — no rate, no gap math.
-            edges.append(
-                EdgeReport(
-                    parent=parent,
-                    child=child,
-                    static=is_static,
-                    samples=samples,
-                    first_ns=first_ns,
-                    last_ns=last_ns,
-                    expected_ns=None,
-                    max_gap_ns=None,
-                    gap_count=0,
-                )
-            )
+            edges.append(_edge_report(parent, child, is_static, samples, first_ns, last_ns))
             continue
 
         expected = statistics.median(diffs)
         if expected <= 0:  # guard (no ZeroDivision / false gap) — defensive
-            edges.append(
-                EdgeReport(
-                    parent=parent,
-                    child=child,
-                    static=is_static,
-                    samples=samples,
-                    first_ns=first_ns,
-                    last_ns=last_ns,
-                    expected_ns=None,
-                    max_gap_ns=None,
-                    gap_count=0,
-                )
-            )
+            edges.append(_edge_report(parent, child, is_static, samples, first_ns, last_ns))
             continue
 
         expected_ns = int(expected)
@@ -369,13 +365,13 @@ def collect_tf_report(
 
         gaps.extend(edge_gaps)
         edges.append(
-            EdgeReport(
-                parent=parent,
-                child=child,
-                static=is_static,
-                samples=samples,
-                first_ns=first_ns,
-                last_ns=last_ns,
+            _edge_report(
+                parent,
+                child,
+                is_static,
+                samples,
+                first_ns,
+                last_ns,
                 expected_ns=expected_ns,
                 max_gap_ns=max((g.gap_ns for g in edge_gaps), default=None),
                 gap_count=len(edge_gaps),
