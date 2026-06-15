@@ -115,6 +115,17 @@ write_manifest() {  # $1 = mode (user|venv)
   } > "$ROOT/.rosbagger-install" 2>/dev/null || true
 }
 
+# The shared "try it" command list — bagq plus whichever optional faces were installed —
+# printed by both the --user and --venv success tails (S6; was pasted in both). The trailing
+# `return 0` keeps the function successful under `set -e` even when the last `[ ] && echo`
+# guard is false (a face not installed), so it never aborts the script before the tail finishes.
+print_try_commands() {
+  echo "    bagq --help"
+  [ "$gui_mode" != 0 ] && echo "    rosbagger-gui [BAG]"
+  [ "$desktop" = 1 ] && echo "    rosbagger [BAG]            # the desktop cockpit (= rosbagger-desktop)"
+  return 0
+}
+
 # PEP 668 (Debian 12+, Ubuntu 23.04+): the system Python ships an EXTERNALLY-MANAGED marker
 # and pip>=23 REFUSES `pip install --user` without --break-system-packages — so `--user`
 # (and bare `update.sh`) failed outright on a modern Ubuntu. Detect the marker and add the
@@ -170,9 +181,7 @@ if [ "$user" = 1 ]; then
   esac
   echo
   echo "Try it from any terminal:"
-  echo "    bagq --help"
-  [ "$gui_mode" != 0 ] && echo "    rosbagger-gui [BAG]"
-  [ "$desktop" = 1 ] && echo "    rosbagger [BAG]            # the desktop cockpit (= rosbagger-desktop)"
+  print_try_commands
   if [ "$live" = 1 ] || [ "$desktop" = 1 ]; then
     echo
     echo "Live record/replay/RViz/Rerun need a sourced ROS 2 environment, e.g.:"
@@ -204,9 +213,7 @@ write_manifest venv
 echo
 echo "Done. Activate the environment and try it:"
 echo "    source $VENV/bin/activate"
-echo "    bagq --help"
-[ "$gui_mode" != 0 ] && echo "    rosbagger-gui [BAG]"
-[ "$desktop" = 1 ] && echo "    rosbagger [BAG]            # the desktop cockpit (= rosbagger-desktop)"
+print_try_commands
 if [ "$live" = 1 ]; then
   echo
   echo "Live record/replay needs a sourced ROS 2 environment, e.g.:"
