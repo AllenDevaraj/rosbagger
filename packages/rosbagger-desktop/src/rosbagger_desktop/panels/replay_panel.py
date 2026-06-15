@@ -43,6 +43,7 @@ from __future__ import annotations
 import contextlib
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -59,6 +60,9 @@ from PySide6.QtWidgets import (
 
 from ..widgets import Scrubber, set_status
 from ..workers import BlockingWorker, run_on_thread, stop_thread
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 REPLAY_HINT = "Source your ROS 2 environment to enable live replay (rosbagger-replay)."
 
@@ -103,8 +107,9 @@ class ReplayPanel(QWidget):
         self._drive_worker: BlockingWorker | None = None
         # 260530-2iv: a transport action (play/step) pressed WHILE a post-pause worker is still
         # finishing is DEFERRED here (not rejected as "Already playing") and replayed by
-        # _on_drive_finished once the worker stops — closes the pause→play resume race.
-        self._pending_action: str | None = None
+        # _on_drive_finished once the worker stops — closes the pause→play resume race. S4: the
+        # deferred action is the bound method to replay, not a stringly "play"/"step" token.
+        self._pending_action: Callable[[], None] | None = None
         # Phase 22 — the live Rerun mirror. self._rerun_sink (set on toggle-on by _open_rerun) is
         # read LIVE by the drive tee in _ensure_transport, so toggling needs no transport rebuild;
         # self._rerun_rec is the RecordingStream/viewer handle. The mirror is transport-INDEPENDENT:
@@ -883,7 +888,7 @@ class ReplayPanel(QWidget):
                 return
             # 260530-2iv: a post-pause worker is still finishing — DEFER the resume (don't reject
             # it as a double-play). _on_drive_finished replays it once the worker stops.
-            self._pending_action = "play"
+            self._pending_action = self._play
             return
         if not self._ensure_transport():
             return
@@ -914,7 +919,7 @@ class ReplayPanel(QWidget):
                 )
                 return
             # 260530-2iv: defer the step until the finishing post-pause worker stops.
-            self._pending_action = "step"
+            self._pending_action = self._step
             return
         if not self._ensure_transport():
             return
@@ -1265,12 +1270,11 @@ class ReplayPanel(QWidget):
         self._drive_worker = None  # CR-02 + 260530-w4k: now safe — nothing references the worker
         # 260530-2iv: a play/step pressed while THIS worker was finishing (post-pause) was deferred;
         # replay it now the thread is cleared (so _drive_running() is False) and it resumes cleanly.
+        # S4: pending is the bound method to replay (or None) — no stringly play/step dispatch.
         pending = self._pending_action
         self._pending_action = None
-        if pending == "play":
-            self._play()
-        elif pending == "step":
-            self._step()
+        if pending is not None:
+            pending()
 
     def _on_drive_done(self, _result: object) -> None:
         """Push the final playhead + a terminal status after the drive worker returns (UI thread).
