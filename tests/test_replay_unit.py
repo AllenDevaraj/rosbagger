@@ -45,9 +45,9 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.make_fixtures import (  # noqa: E402  (after sys.path)
     write_ros1_bag,
-    write_ros2_sqlite_bag_defless,
     write_ros2_mcap_bag,
     write_ros2_sqlite_bag,
+    write_ros2_sqlite_bag_defless,
 )
 
 from rosbagger_replay.scheduler import Replayer, State  # noqa: E402

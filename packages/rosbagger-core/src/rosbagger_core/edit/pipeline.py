@@ -73,7 +73,7 @@ def _resolve_ops_topics(ops: EditOps, available: list[str]) -> EditOps:
         resolved_keys = resolve_topics(keys, available)
         changes["downsample"] = {
             canonical: ops.downsample[original]
-            for original, canonical in zip(keys, resolved_keys)
+            for original, canonical in zip(keys, resolved_keys, strict=False)
         }
     if not changes:
         return ops

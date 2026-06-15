@@ -124,7 +124,8 @@ def build_publish_sink(node, *, publish_clock: bool = False, static_topics=froze
         # drive worker's publish on the same node. The lock never nests with the scheduler lock.
         with publish_lock:
             # Phase 21: publish on the remapped name when a remap is set (a name lookup inside this
-            # single sink — the publisher dict is keyed on the remapped target). Default = item.topic.
+            # single sink — the publisher dict is keyed on the remapped target).
+            # Default = item.topic.
             pub_topic = remap.get(item.topic, item.topic) if remap else item.topic
             if pub_topic not in pubs:
                 cls = get_message(item.msgtype)  # type string -> message class (VERIFIED)

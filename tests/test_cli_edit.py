@@ -249,7 +249,10 @@ def test_edit_and_convert_in_help() -> None:
 
 
 def test_edit_keep_without_leading_slash_keeps_topic(ros1_bag: Path, tmp_path: Path) -> None:
-    """`bagq edit SRC -o OUT --keep cmd_vel` exits 0 and writes 3 messages, not 0 (data-loss fix)."""
+    """`bagq edit SRC -o OUT --keep cmd_vel` exits 0 and writes 3 messages, not 0.
+
+    Regression guard for the no-leading-slash data-loss fix.
+    """
     out = tmp_path / "kept.bag"
     result = runner.invoke(app, ["edit", str(ros1_bag), "-o", str(out), "--keep", "cmd_vel"])
     assert result.exit_code == 0, result.output

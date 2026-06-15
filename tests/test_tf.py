@@ -350,9 +350,8 @@ def test_collect_tf_report_rejects_non_tfmessage_topic(tmp_path: Path) -> None:
     from rosbagger_core.errors import NonTfMessageError
 
     bag = write_wrong_type_tf_bag(tmp_path)
-    with RosbagsReader(bag) as reader:
-        with pytest.raises(NonTfMessageError) as excinfo:
-            collect_tf_report(reader)
+    with RosbagsReader(bag) as reader, pytest.raises(NonTfMessageError) as excinfo:
+        collect_tf_report(reader)
     assert excinfo.value.topic == "/tf"
     assert "std_msgs/msg/String" in str(excinfo.value)
 

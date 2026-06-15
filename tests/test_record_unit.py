@@ -406,7 +406,8 @@ def test_record_reentrant_preserves_shared_context(monkeypatch):
     ri.record(["/a"], "out.bag", duration=1.0)
     fake_rclpy.init.assert_not_called()
     fake_rclpy.shutdown.assert_not_called()
-    writer.close.assert_called_once()  # the bag is STILL finalized (finally) — only init/shutdown skip
+    # the bag is STILL finalized (finally) — only init/shutdown skip
+    writer.close.assert_called_once()
 
 
 # --------------------------------------------------------------------------- #

@@ -22,6 +22,7 @@ no ROS modules.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 
@@ -64,10 +65,8 @@ def _force_close_subreaders(reader: AnyReader) -> None:
     except Exception:  # noqa: BLE001 - assert/close failure must not mask the real error
         pass
     for sub in getattr(reader, "readers", ()):
-        try:
+        with contextlib.suppress(Exception):  # best-effort fd release
             sub.close()
-        except Exception:  # noqa: BLE001 - best-effort fd release
-            pass
 
 
 def _unresolved_msgtypes(reader: AnyReader, typestore: object) -> set[str]:
@@ -78,7 +77,7 @@ def _unresolved_msgtypes(reader: AnyReader, typestore: object) -> set[str]:
     the fallback does not cover, so the reader must still teach (CLI-04) rather than open.
     """
     unresolved: set[str] = set()
-    get_msgdef = getattr(typestore, "get_msgdef")
+    get_msgdef = typestore.get_msgdef
     for conn in reader.connections:
         try:
             get_msgdef(conn.msgtype)

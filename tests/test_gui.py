@@ -255,7 +255,8 @@ async def test_query_panel_select_star_renders_timestamp_columns(bag: Path) -> N
         await pilot.pause()
         sql_input.value = "SELECT * FROM imu"
         await pilot.press("enter")
-        await app.workers.wait_for_complete()  # F6: let the query worker finish (call_from_thread render)
+        # F6: let the query worker finish (call_from_thread render).
+        await app.workers.wait_for_complete()
         await pilot.pause()
         results = app.query_one("#results", DataTable)
         assert results.row_count == 3, (

@@ -122,9 +122,8 @@ def test_query_mixed_type_error_is_value_error(tmp_path: Path) -> None:
     from tools.make_fixtures import write_mixed_type_topic_bags
 
     a, b = write_mixed_type_topic_bags(tmp_path)
-    with RosbagsReader([a, b]) as reader:
-        with pytest.raises(ValueError):
-            query("SELECT * FROM status", reader)
+    with RosbagsReader([a, b]) as reader, pytest.raises(ValueError):
+        query("SELECT * FROM status", reader)
 
 
 def test_query_events_multi_bag_raises_not_silently_wrong(tmp_path: Path) -> None:
@@ -138,9 +137,8 @@ def test_query_events_multi_bag_raises_not_silently_wrong(tmp_path: Path) -> Non
 
     a = write_ros1_bag(tmp_path / "a")
     b = write_ros1_bag(tmp_path / "b")
-    with RosbagsReader([a, b]) as reader:
-        with pytest.raises(MultiBagEventsError) as excinfo:
-            query("SELECT * FROM events", reader)
+    with RosbagsReader([a, b]) as reader, pytest.raises(MultiBagEventsError) as excinfo:
+        query("SELECT * FROM events", reader)
     assert excinfo.value.n_bags == 2
 
 

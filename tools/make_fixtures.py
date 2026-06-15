@@ -318,7 +318,8 @@ def write_capitalized_topic_bag(dest_dir: Path | str, *, topic: str = "/Imu") ->
     with Ros2Writer(path, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
         conn = writer.add_connection(topic, _MSGTYPE_IMU, typestore=ts)
         for i in range(_N_MSGS):
-            writer.write(conn, _timestamp_ns(i), ts.serialize_cdr(_imu(ts, i, ros1=False), _MSGTYPE_IMU))
+            raw = ts.serialize_cdr(_imu(ts, i, ros1=False), _MSGTYPE_IMU)
+            writer.write(conn, _timestamp_ns(i), raw)
     return path
 
 
@@ -362,10 +363,12 @@ def write_mixed_type_topic_bags(
     bool_t = ts.types["std_msgs/msg/Bool"]
     with Ros2Writer(a, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
         conn = writer.add_connection(topic, "std_msgs/msg/String", typestore=ts)
-        writer.write(conn, _timestamp_ns(0), ts.serialize_cdr(string_t(data="hi"), "std_msgs/msg/String"))
+        raw = ts.serialize_cdr(string_t(data="hi"), "std_msgs/msg/String")
+        writer.write(conn, _timestamp_ns(0), raw)
     with Ros2Writer(b, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
         conn = writer.add_connection(topic, "std_msgs/msg/Bool", typestore=ts)
-        writer.write(conn, _timestamp_ns(1), ts.serialize_cdr(bool_t(data=True), "std_msgs/msg/Bool"))
+        raw = ts.serialize_cdr(bool_t(data=True), "std_msgs/msg/Bool")
+        writer.write(conn, _timestamp_ns(1), raw)
     return a, b
 
 
@@ -382,7 +385,8 @@ def write_empty_tf_bag(dest_dir: Path | str) -> Path:
     path = dest_dir / "empty_tf"
     ts = get_typestore(Stores.ROS2_HUMBLE)
     with Ros2Writer(path, version=9, storage_plugin=StoragePlugin.SQLITE3) as writer:
-        writer.add_connection(_TOPIC_TF, _MSGTYPE_TFMESSAGE, typestore=ts)  # registered, never written
+        # the /tf connection is registered but never written (zero messages)
+        writer.add_connection(_TOPIC_TF, _MSGTYPE_TFMESSAGE, typestore=ts)
     return path
 
 
