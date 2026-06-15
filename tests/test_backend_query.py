@@ -58,8 +58,10 @@ from rosbagger_core.backend.duckdb_backend import DuckDBBackend  # noqa: E402  (
 from rosbagger_core.backend.query import (  # noqa: E402
     UnknownColumnError,
     UnknownTableError,
+    _safe_limit_head,
     query,
 )
+from rosbagger_core.backend.resolve import parse  # noqa: E402
 from rosbagger_core.reader import RosbagsReader  # noqa: E402
 
 FORMATS = ("ros1", "ros2_sqlite", "ros2_mcap")
@@ -771,3 +773,90 @@ def test_query_table_name_resolves_case_insensitively(tmp_path: Path) -> None:
         exact = query("SELECT t_ns FROM Imu", reader)
     assert lower.column("t_ns").to_pylist() == [1_000_000_000, 1_100_000_000, 1_200_000_000]
     assert exact.column("t_ns").to_pylist() == lower.column("t_ns").to_pylist()
+
+
+# ---------------------------------------------------------------------------
+# F2 — narrow, provably-safe LIMIT pushdown (decode only the first k+m messages).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sql,expected",
+    [
+        # SAFE — a bare single-table scan with a literal LIMIT (and optional OFFSET).
+        ("SELECT * FROM imu LIMIT 5", 5),
+        ("SELECT t_ns FROM imu LIMIT 5", 5),
+        ("SELECT a, b FROM imu LIMIT 5 OFFSET 3", 8),
+        ("SELECT * FROM imu AS i LIMIT 1", 1),
+        ('SELECT "linear.x" + 1 AS s FROM cmd_vel LIMIT 2', 2),  # row-wise expr is safe
+        ("SELECT * FROM imu LIMIT 0", 0),
+        # UNSAFE — early-stop would change the result, so NO pushdown (None).
+        ("SELECT * FROM imu", None),  # no LIMIT at all
+        ("SELECT * FROM imu WHERE a > 1 LIMIT 5", None),  # filter
+        ("SELECT * FROM imu ORDER BY t_ns LIMIT 5", None),  # reorder
+        ("SELECT a FROM imu GROUP BY a LIMIT 5", None),  # grouping
+        ("SELECT count(*) FROM imu LIMIT 5", None),  # aggregate
+        ("SELECT DISTINCT a FROM imu LIMIT 5", None),  # dedup
+        ("SELECT a, count(*) FROM imu GROUP BY a HAVING count(*) > 1 LIMIT 5", None),
+        ("SELECT * FROM a JOIN b ON a.x = b.x LIMIT 5", None),  # join
+        ("SELECT * FROM imu, other LIMIT 5", None),  # comma-join
+        ("SELECT * FROM (SELECT * FROM imu) LIMIT 5", None),  # derived table
+        ("WITH c AS (SELECT * FROM imu) SELECT * FROM c LIMIT 5", None),  # CTE
+        ("SELECT * FROM imu UNION SELECT * FROM other LIMIT 5", None),  # set op
+        ("SELECT row_number() OVER () AS r FROM imu LIMIT 5", None),  # window
+    ],
+)
+def test_safe_limit_head_detection(sql: str, expected: int | None) -> None:
+    """The LIMIT-pushdown gate fires for a bare scan+LIMIT and bails on every other shape (F2)."""
+    assert _safe_limit_head(parse(sql)) == expected
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_limit_pushdown_matches_full_scan(fixture_bags: dict[str, Path], fmt: str) -> None:
+    """LIMIT / OFFSET pushdown returns the SAME rows as a full scan; ORDER BY stays correct (F2).
+
+    cmd_vel has three messages (t_ns 1.0/1.1/1.2e9). A bare LIMIT/OFFSET must match the full-scan
+    prefix, and an ORDER BY ... LIMIT must still return the globally-sorted top — proving pushdown
+    is NOT applied when a reorder is present (else it would slice the wrong rows then sort them).
+    """
+    desc_sql = "SELECT t_ns FROM cmd_vel ORDER BY t_ns DESC LIMIT 2"
+    with RosbagsReader(fixture_bags[fmt]) as reader:
+        full = query("SELECT t_ns FROM cmd_vel", reader).column("t_ns").to_pylist()
+        lim = query("SELECT t_ns FROM cmd_vel LIMIT 2", reader).column("t_ns").to_pylist()
+        off = query("SELECT t_ns FROM cmd_vel LIMIT 2 OFFSET 1", reader).column("t_ns").to_pylist()
+        desc = query(desc_sql, reader).column("t_ns").to_pylist()
+    assert len(full) >= 3
+    assert lim == full[:2]
+    assert off == full[1:3]
+    assert desc == sorted(full, reverse=True)[:2]
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_limit_pushdown_stops_decoding_early(fixture_bags: dict[str, Path], fmt: str) -> None:
+    """A bare LIMIT decodes only k messages; an ORDER BY ... LIMIT still decodes them all (F2).
+
+    Wraps the reader to count messages actually pulled from ``reader.read``. The bare-LIMIT query
+    slices the lazy stream to k (so exactly k are deserialized); the ORDER BY query gets no
+    pushdown and pulls the whole cmd_vel stream.
+    """
+
+    class _CountingReader:
+        def __init__(self, inner: object) -> None:
+            self._inner = inner
+            self.pulled = 0
+
+        def read(self, **kwargs: object):
+            for msg in self._inner.read(**kwargs):
+                self.pulled += 1
+                yield msg
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._inner, name)
+
+    with RosbagsReader(fixture_bags[fmt]) as reader:
+        bare = _CountingReader(reader)
+        query("SELECT t_ns FROM cmd_vel LIMIT 2", bare)
+        ordered = _CountingReader(reader)
+        query("SELECT t_ns FROM cmd_vel ORDER BY t_ns DESC LIMIT 2", ordered)
+    assert bare.pulled == 2, f"bare LIMIT should decode exactly 2 messages, decoded {bare.pulled}"
+    assert ordered.pulled == 3, f"ORDER BY LIMIT must decode all 3, got {ordered.pulled}"

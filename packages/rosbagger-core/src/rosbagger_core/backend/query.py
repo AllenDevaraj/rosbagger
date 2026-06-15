@@ -40,6 +40,7 @@ stdlib-only) are imported at module scope.
 from __future__ import annotations
 
 import re
+from itertools import islice
 from typing import TYPE_CHECKING
 
 from rosbagger_core.errors import (
@@ -368,6 +369,13 @@ def query(
     # (07-RESEARCH §2 / Open Q2 — all referenced tables' columns, grouped; the
     # single-FROM case collapses to one entry).
     columns_by_table: dict[str, list[str]] = {}
+    # F2 — LIMIT pushdown: for a bare single-table `SELECT ... LIMIT k [OFFSET m]` (no
+    # filter/sort/aggregate/join/etc.) only the first k+m messages can reach the result, so we
+    # decode just those. Gated to exactly one referenced topic and no `events` sidecar — the only
+    # shape where slicing one topic's lazily-read message stream is valid. _safe_limit_head returns
+    # None for every shape where early-stop could change the result (then nothing changes below).
+    limit_head = _safe_limit_head(tree)
+    push_limit = limit_head is not None and len(referenced_topics) == 1 and not events_referenced
     try:
         for topic in referenced_topics:
             # Build (or reuse the cached) schema for this referenced topic (Step 3) —
@@ -395,6 +403,10 @@ def query(
                 include = heavy & columns
                 restrict = (columns & schema_names) | _STANDARD_COLUMNS
             msgs = reader.read(topics={topic})  # the Task 1 connection-filtered seam
+            if push_limit:
+                # F2: reader.read is a lazy generator, so islice truly stops deserializing the
+                # tail once k+m messages are in hand (the win on a peek query over a huge topic).
+                msgs = islice(msgs, limit_head)
             arrow = build_arrow_table(msgs, schema, include=include, restrict=restrict)
             # Register under the SANITIZED table name — the name the SQL references.
             backend.register_table(topic_to_table[topic], arrow)
@@ -463,6 +475,54 @@ def query(
         # finally still runs on the BinderException -> UnknownColumnError path.
         if own_backend:
             backend.close()
+
+
+def _safe_limit_head(tree) -> int | None:
+    """Rows to decode for a bare ``SELECT ... FROM <one table> LIMIT k [OFFSET m]`` (F2), else None.
+
+    LIMIT pushdown is sound ONLY when the result is the first rows in scan order: a single real
+    table and a literal LIMIT (plus an optional literal OFFSET), with NOTHING that filters,
+    reorders, aggregates, or dedups across the full set. Detection is conservative — the Select's
+    truthy args must be a subset of ``{expressions, from_, limit, offset}`` (so WHERE / ORDER BY /
+    GROUP BY / HAVING / DISTINCT / QUALIFY / JOIN / CTE all bail), AND there must be no
+    derived-table subquery in FROM, no aggregate or window function, and exactly one table. A
+    UNION / INTERSECT parses as a non-Select and bails. Returns ``k + m`` (decode this many leading
+    messages) or ``None`` when early-stop could change the result. ``sqlglot`` is imported lazily
+    (the offline invariant — this module's top stays free of the heavy stack).
+    """
+    from sqlglot import expressions as exp
+
+    if not isinstance(tree, exp.Select):
+        return None
+    allowed = {"expressions", "from_", "limit", "offset"}
+    if any(value and key not in allowed for key, value in tree.args.items()):
+        return None
+    # A derived-table subquery in FROM, or a cross-row function, hides inside an allowed arg.
+    if tree.find(exp.Subquery) is not None:
+        return None
+    if tree.find(exp.AggFunc) is not None or tree.find(exp.Window) is not None:
+        return None
+    if len(list(tree.find_all(exp.Table))) != 1:
+        return None
+    limit = tree.args.get("limit")
+    if limit is None:
+        return None
+    count = limit.expression
+    if not isinstance(count, exp.Literal) or count.is_string:
+        return None
+    head = int(count.name)
+    if head < 0:
+        return None
+    offset = tree.args.get("offset")
+    if offset is not None:
+        off = offset.expression
+        if not isinstance(off, exp.Literal) or off.is_string:
+            return None
+        off_n = int(off.name)
+        if off_n < 0:
+            return None
+        head += off_n
+    return head
 
 
 def _default_backend() -> QueryBackend:
