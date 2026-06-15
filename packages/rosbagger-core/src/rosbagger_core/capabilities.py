@@ -25,3 +25,16 @@ def module_importable(name: str) -> bool:
     except ImportError:
         return False
     return True
+
+
+def ros_distro() -> str:
+    """The active ROS 2 distro name for teaching remedies (T7).
+
+    Reads ``$ROS_DISTRO`` (exported by ``source /opt/ros/<distro>/setup.bash``) so a remedy
+    points at the user's ACTUAL distro (jazzy, iron, rolling, …) instead of a hard-coded one.
+    Falls back to ``"humble"`` (the project's documented baseline) when the variable is unset or
+    empty, so an offline / unsourced environment still shows a concrete, copy-pasteable command.
+    """
+    import os
+
+    return os.environ.get("ROS_DISTRO") or "humble"

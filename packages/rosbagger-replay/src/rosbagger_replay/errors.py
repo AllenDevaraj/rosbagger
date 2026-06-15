@@ -37,9 +37,11 @@ class RosNotAvailableError(RuntimeError):
     """
 
     def __init__(self) -> None:
+        from rosbagger_core.capabilities import ros_distro
+
         super().__init__(
             "rclpy is not importable — source your ROS 2 environment "
-            "before replaying (e.g. `source /opt/ros/humble/setup.bash`). "
+            f"before replaying (e.g. `source /opt/ros/{ros_distro()}/setup.bash`). "
             "The offline bagq / inspect / query tools need no ROS."
         )
 

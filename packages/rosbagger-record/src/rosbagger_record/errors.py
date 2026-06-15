@@ -36,9 +36,11 @@ class RosNotAvailableError(RuntimeError):
     """
 
     def __init__(self) -> None:
+        from rosbagger_core.capabilities import ros_distro
+
         super().__init__(
             "rclpy / rosbag2_py are not importable — source your ROS 2 environment "
-            "before recording (e.g. `source /opt/ros/humble/setup.bash`). "
+            f"before recording (e.g. `source /opt/ros/{ros_distro()}/setup.bash`). "
             "The offline bagq / inspect / query tools need no ROS."
         )
 
@@ -98,6 +100,8 @@ class McapStorageUnavailableError(RuntimeError):
     """
 
     def __init__(self, requested: str, available: list[str]) -> None:
+        from rosbagger_core.capabilities import ros_distro
+
         self.requested = requested
         self.available = available
         avail = ", ".join(available) if available else "(none)"
@@ -105,6 +109,6 @@ class McapStorageUnavailableError(RuntimeError):
             f"Storage plugin {requested!r} is not registered. "
             f"Registered writers: {avail}. "
             "Install the storage plugin (e.g. "
-            "`sudo apt install ros-humble-rosbag2-storage-mcap`) "
+            f"`sudo apt install ros-{ros_distro()}-rosbag2-storage-mcap`) "
             "or pass --storage sqlite3."
         )
