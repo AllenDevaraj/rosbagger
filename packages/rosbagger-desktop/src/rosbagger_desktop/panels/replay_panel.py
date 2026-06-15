@@ -1170,7 +1170,7 @@ class ReplayPanel(QWidget):
         if bag is None:
             return
         try:
-            from rosbagger_core.events import list_events
+            from rosbagger_core.events import event_marker_fractions, list_events
 
             table = list_events(bag)
             if table.num_rows == 0:
@@ -1182,15 +1182,12 @@ class ReplayPanel(QWidget):
             if reader is None or reader.message_count == 0:
                 self._scrubber.set_markers([])  # no reader / empty bag → no usable time bounds
                 return
-            bag_start_ns = reader.start_time
-            span = max(1, reader.end_time - bag_start_ns)
-
-            starts = table.column("t_start_ns").to_pylist()
-            labels = table.column("label").to_pylist()
-            marks = [
-                ((start - bag_start_ns) / span, str(label))
-                for start, label in zip(starts, labels, strict=False)
-            ]
+            marks = event_marker_fractions(
+                table.column("t_start_ns").to_pylist(),
+                table.column("label").to_pylist(),
+                reader.start_time,
+                reader.end_time,
+            )
             self._scrubber.set_markers(marks)
         except Exception:  # noqa: BLE001 - markers are an aid; a sidecar read failure never crashes
             return

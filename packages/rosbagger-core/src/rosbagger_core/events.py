@@ -10,6 +10,11 @@ sidecar primitives:
 * :func:`list_events` — read the sidecar back as a ``pyarrow.Table`` (SC2), or an empty
   fixed-schema table when no sidecar exists.
 
+It also hosts one PURE presentation helper, :func:`event_marker_fractions` (R8), shared by the
+replay panels to map event start timestamps onto 0..1 scrubber positions — kept here, next to
+``list_events`` that both panels already import, so the mapping (and its zero-span guard) lives
+in one offline-testable place instead of hand-mirrored across the Qt and TUI panels.
+
 The ``events``-table query hook (the reserved-name registration + interval join, SC3) is
 Plan 11-04 and builds on :func:`sidecar_path` from here.
 
@@ -174,3 +179,26 @@ def list_events(bag: str | Path) -> pyarrow.Table:
     if path.exists():
         return pq.read_table(path)
     return _event_schema().empty_table()
+
+
+def event_marker_fractions(
+    starts_ns: list[int],
+    labels: list[object],
+    bag_start_ns: int,
+    bag_end_ns: int,
+) -> list[tuple[float, str]]:
+    """Map event start timestamps to ``(fraction, label)`` scrubber marks (R8 — pure, offline).
+
+    Both replay panels (the Qt desktop and the Textual TUI) overlay jump-to-event markers on
+    their timeline scrubber, mapping each event's ``t_start_ns`` to a 0..1 position via
+    ``(t_start_ns - bag_start_ns) / span``. This is the one shared home for that arithmetic and
+    for the three correctness details that used to be hand-mirrored across both packages: the
+    ``max(1, ...)`` zero-span div-by-zero guard, the ``str(label)`` coercion, and ``strict=False``
+    (the two columns differ in length only on a malformed sidecar). ``bag_start_ns`` /
+    ``bag_end_ns`` are the reader's O(1) bounds (F1); the caller owns the empty-bag short-circuit.
+    """
+    span = max(1, bag_end_ns - bag_start_ns)
+    return [
+        ((start - bag_start_ns) / span, str(label))
+        for start, label in zip(starts_ns, labels, strict=False)
+    ]

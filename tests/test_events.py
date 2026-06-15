@@ -30,7 +30,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rosbagger_core.events import add_event, list_events, sidecar_path
+from rosbagger_core.events import (
+    add_event,
+    event_marker_fractions,
+    list_events,
+    sidecar_path,
+)
 
 _EVENT_COLUMNS = ["t_start_ns", "t_end_ns", "label", "note"]
 
@@ -153,3 +158,17 @@ def _int64():
     import pyarrow as pa
 
     return pa.int64()
+
+
+# --- event_marker_fractions (R8 — the shared scrubber-marker math) --------------------
+
+
+def test_event_marker_fractions_maps_endpoints_and_midpoint():
+    """R8: start timestamps map to (fraction, label) — 0.0/0.5/1.0 at the bounds + midpoint."""
+    marks = event_marker_fractions([100, 150, 200], ["a", "b", "c"], 100, 200)
+    assert marks == [(0.0, "a"), (0.5, "b"), (1.0, "c")]
+
+
+def test_event_marker_fractions_guards_zero_span_and_coerces_label():
+    """R8: a zero-span bag clamps span to 1 (no ZeroDivisionError) and str()-coerces the label."""
+    assert event_marker_fractions([100], [None], 100, 100) == [(0.0, "None")]
