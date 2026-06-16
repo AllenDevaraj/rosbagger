@@ -48,6 +48,7 @@ from rosbags.interfaces import Nodetype
 ROS_BASE_TO_ARROW: dict[str, pa.DataType] = {
     "bool": pa.bool_(),
     "byte": pa.uint8(),  # ROS 'byte' == octet
+    "octet": pa.uint8(),  # ROS2 IDL spelling of 'byte' (a def parsed from .idl uses this)
     "char": pa.uint8(),  # ROS 'char' == uint8 (single octet)
     "int8": pa.int8(),
     "int16": pa.int16(),
@@ -64,7 +65,7 @@ ROS_BASE_TO_ARROW: dict[str, pa.DataType] = {
 }
 
 # The byte-blob element basenames: a SEQUENCE of one of these is a heavy blob.
-_BLOB_BASENAMES = ("uint8", "byte", "char")
+_BLOB_BASENAMES = ("uint8", "byte", "octet", "char")
 
 
 def _name_payload(payload: object) -> str:
@@ -109,11 +110,19 @@ def arrow_type_of(ftype, typestore) -> tuple[pa.DataType, bool]:
 
     Raises:
         ValueError: on an unknown ``Nodetype`` (defensive — the enum has exactly
-            four members).
+            four members), or on a ``BASE`` whose basename has no Arrow mapping.
     """
     nt, payload = ftype
     if nt == Nodetype.BASE:
-        return ROS_BASE_TO_ARROW[payload[0]], False
+        basename = payload[0]
+        try:
+            return ROS_BASE_TO_ARROW[basename], False
+        except KeyError:
+            # A clear error (mirrors the unknown-Nodetype guard below) instead of a bare
+            # KeyError bubbling out on a valid bag with an unmapped base type.
+            raise ValueError(
+                f"unsupported ROS base type {basename!r} (no Arrow mapping)"
+            ) from None
     if nt == Nodetype.NAME:  # sub-message in a LIST context -> struct (short names)
         submsgtype = _name_payload(payload)
         fields = [

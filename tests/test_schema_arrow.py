@@ -388,6 +388,27 @@ def test_build_arrow_table_tf_list_of_struct_materializes(tmp_path) -> None:
     assert isinstance(elem["transform"]["translation"]["x"], float)
 
 
+def test_arrow_type_of_maps_octet_to_uint8() -> None:
+    """The ROS 2 IDL 'octet' base type maps to uint8 (was a bare KeyError before the fix)."""
+    from rosbags.interfaces import Nodetype
+
+    from rosbagger_core.schema.types import arrow_type_of
+
+    arrow_type, heavy = arrow_type_of((Nodetype.BASE, ("octet", 0)), None)
+    assert arrow_type == pa.uint8()
+    assert heavy is False
+
+
+def test_arrow_type_of_unknown_base_raises_clear_valueerror() -> None:
+    """An unmapped base type raises a clear ValueError naming it, not a bare KeyError."""
+    from rosbags.interfaces import Nodetype
+
+    from rosbagger_core.schema.types import arrow_type_of
+
+    with pytest.raises(ValueError, match="madeup"):
+        arrow_type_of((Nodetype.BASE, ("madeup", 0)), None)
+
+
 def test_top_level_import_does_not_leak_pyarrow_or_rosbags() -> None:
     """`import rosbagger_core` (top level) pulls in NO pyarrow/rosbags (offline graph).
 
