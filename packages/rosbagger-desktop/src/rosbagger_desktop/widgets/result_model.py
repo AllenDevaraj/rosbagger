@@ -27,7 +27,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
 
 
 def _temporal_column_indices(table: pyarrow.Table | None) -> frozenset[int]:
-    """Indices of ``table``'s temporal (``timestamp[ns]``) columns — computed once per table.
+    """Indices of ``table``'s NANOSECOND-timestamp (``timestamp[ns]``) columns — once per table.
+
+    Only ``timestamp[ns]`` needs the raw-ns ``numpy.datetime64`` render path in :meth:`data`:
+    its sub-µs precision overflows ``datetime``'s µs floor, so ``.as_py()`` RAISES without pandas
+    (not a desktop dep). Every OTHER temporal type renders correctly via ``.as_py()`` — and the
+    old broad ``is_temporal`` gate sent them down the hard-coded ``"ns"`` path, MIS-SCALING a
+    ``timestamp[us]`` / ``date32`` (from CAST / now() / date_trunc) by orders of magnitude and
+    CRASHING on an ``interval`` (which has no ``.value``). So gate strictly on timestamp + ns.
 
     ``pyarrow`` is imported lazily here (the module top stays PySide6 + stdlib only); this is
     metadata-only (column TYPES, no row materialization), so it is cheap to do on set_table.
@@ -37,7 +44,9 @@ def _temporal_column_indices(table: pyarrow.Table | None) -> frozenset[int]:
     import pyarrow as pa
 
     return frozenset(
-        i for i, field in enumerate(table.schema) if pa.types.is_temporal(field.type)
+        i
+        for i, field in enumerate(table.schema)
+        if pa.types.is_timestamp(field.type) and field.type.unit == "ns"
     )
 
 

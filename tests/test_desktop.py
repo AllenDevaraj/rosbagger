@@ -725,6 +725,55 @@ def test_finish_record_guards_non_tuple_result(qtbot) -> None:
     assert "out.mcap" in panel.status_label.text()
 
 
+def test_result_model_temporal_gating_only_ns_timestamps() -> None:
+    """Only timestamp[ns] columns take the raw-ns render path; us/date/interval do not.
+
+    Regression for the audit bug: the broad is_temporal gate sent timestamp[us]/date32 (from
+    CAST / now() / date_trunc) down the hard-coded "ns" path (mis-scaling ~1000x) and crashed on
+    interval (no .value). The gate is now strictly timestamp + unit=='ns'. (Pure — no Qt.)
+    """
+    import pyarrow as pa
+
+    from rosbagger_desktop.widgets.result_model import _temporal_column_indices
+
+    table = pa.table(
+        {
+            "t_ns": pa.array([1_700_000_000_000_000_000], pa.timestamp("ns")),
+            "t_us": pa.array([1_700_000_000_000_000], pa.timestamp("us")),
+            "d": pa.array([19000], pa.date32()),  # days since epoch
+            "n": pa.array([42], pa.int64()),
+        }
+    )
+    assert _temporal_column_indices(table) == frozenset({0})  # ONLY the ns-timestamp column
+    assert _temporal_column_indices(None) == frozenset()
+
+
+def test_result_model_renders_non_ns_temporal_via_as_py(qtbot) -> None:
+    """A timestamp[us] / date32 cell renders via as_py at the correct scale, not the raw-ns path.
+
+    The ns column still renders via numpy.datetime64; the us column must NOT be read as ns (which
+    would mis-scale ~1000x to ~1970), and a date32 cell renders as a real date (no crash).
+    """
+    import datetime
+
+    import pyarrow as pa
+    from PySide6.QtCore import Qt
+
+    from rosbagger_desktop.widgets.result_model import _ResultTableModel
+
+    table = pa.table(
+        {
+            "t_us": pa.array([1_700_000_000_000_000], pa.timestamp("us")),  # ~2023-11-14
+            "d": pa.array([19000], pa.date32()),
+        }
+    )
+    model = _ResultTableModel(table)
+    us_cell = model.data(model.index(0, 0), int(Qt.DisplayRole))
+    assert "2023" in us_cell, us_cell  # correct scale, not the ~1970 ns misread
+    date_cell = model.data(model.index(0, 1), int(Qt.DisplayRole))
+    assert date_cell == str(datetime.date(1970, 1, 1) + datetime.timedelta(days=19000))
+
+
 def test_open_reader_clears_bag_path_on_failed_open(qtbot, tmp_path: Path, monkeypatch) -> None:
     """WR-04: a failed re-open leaves ``reader`` None AND ``_bag_path`` consistent (cleared).
 
