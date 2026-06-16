@@ -229,6 +229,50 @@ def flatten_message(
     }
 
 
+def _contains_struct(arrow_type: pa.DataType) -> bool:
+    """True iff ``arrow_type`` is a STRUCT or a (possibly nested) LIST of STRUCTs.
+
+    Only these columns hold deserialized ``rosbags`` sub-message objects that
+    :func:`pyarrow.array` cannot ingest as-is (a sub-message array such as
+    ``TFMessage.transforms`` -> ``LIST``-of-``STRUCT``). Scalar and list-of-scalar
+    leaves — including the fixed ``float64[9]`` covariance ``ARRAY`` and every
+    ndarray array-value (Pitfall 2) — return False and stay zero-copy.
+    """
+    if pa.types.is_struct(arrow_type):
+        return True
+    if pa.types.is_list(arrow_type):
+        return _contains_struct(arrow_type.value_type)
+    return False
+
+
+def _struct_to_builtin(value, arrow_type: pa.DataType):
+    """Materialize a ``rosbags`` sub-message object tree into dict/list builtins.
+
+    Mirrors the STRUCT/LIST type that
+    :func:`~rosbagger_core.schema.types.arrow_type_of` built: a STRUCT pulls each
+    declared field off the object by its (short) name — the struct field names ARE
+    the sub-message's attribute names — and a LIST recurses per element only when
+    its element type still contains a STRUCT (otherwise the scalar list/ndarray
+    passes through untouched). Scalar leaves are returned unchanged. Called only
+    for columns where :func:`_contains_struct` is True; without it,
+    ``pa.array([<TransformStamped object>, ...], type=list_(struct(...)))`` raises
+    ``ArrowTypeError`` (e.g. ``SELECT * FROM /tf``).
+    """
+    if value is None:
+        return None
+    if pa.types.is_struct(arrow_type):
+        return {
+            field.name: _struct_to_builtin(getattr(value, field.name), field.type)
+            for field in arrow_type
+        }
+    if pa.types.is_list(arrow_type):
+        value_type = arrow_type.value_type
+        if _contains_struct(value_type):
+            return [_struct_to_builtin(elem, value_type) for elem in value]
+        return value
+    return value
+
+
 def build_arrow_table(
     messages: Iterable,
     schema: TableSchema,
@@ -312,5 +356,15 @@ def build_arrow_table(
             # come off the Message record by the same name.
             append(body[name] if is_data else getattr(msg, name))
 
-    arrays = [pa.array(values[field.name], type=field.type) for field in arrow_schema]
+    # A LIST-of-STRUCT column (a sub-message array such as TFMessage.transforms)
+    # accumulates rosbags sub-message *objects*, which pyarrow cannot ingest
+    # directly — materialize those (and only those) into plain dict/list trees
+    # keyed by the struct's declared field names. Scalar and list-of-scalar
+    # columns (incl. ndarray array-values, Pitfall 2) pass straight through.
+    arrays = []
+    for field in arrow_schema:
+        column = values[field.name]
+        if _contains_struct(field.type):
+            column = [_struct_to_builtin(value, field.type) for value in column]
+        arrays.append(pa.array(column, type=field.type))
     return pa.table(arrays, schema=arrow_schema)

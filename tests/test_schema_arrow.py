@@ -41,7 +41,10 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.make_fixtures import make_all_fixtures  # noqa: E402  (after sys.path setup)
+from tools.make_fixtures import (  # noqa: E402  (after sys.path setup)
+    make_all_fixtures,
+    write_tf_bag,
+)
 
 from rosbagger_core.inspect import collect_table_schemas  # noqa: E402  (3rd-party stack)
 from rosbagger_core.reader import RosbagsReader  # noqa: E402  (3rd-party stack)
@@ -349,6 +352,40 @@ def test_list_of_struct_arrow_schema_builds(typestore) -> None:
     arrow = schema.arrow_schema()
     assert pa.types.is_list(arrow.field("transforms").type)
     assert pa.types.is_struct(arrow.field("transforms").type.value_type)
+
+
+def test_build_arrow_table_tf_list_of_struct_materializes(tmp_path) -> None:
+    """A non-empty LIST<STRUCT> column (TFMessage.transforms) builds without ArrowTypeError.
+
+    Regression for the audit HIGH bug: ``build_arrow_table`` passed deserialized
+    ``rosbags`` sub-message *objects* straight into
+    ``pa.array(..., type=list_(struct(...)))``, which raised ``ArrowTypeError`` —
+    so ``SELECT * FROM /tf`` (and Path / PoseArray / MarkerArray / DiagnosticArray,
+    all common topics) crashed. The schema build was tested; the data
+    materialization of a non-empty sub-message array was not. The fix recursively
+    converts the object tree to dict/list builtins keyed by the struct's declared
+    field names. (Format-independent — it operates on already-deserialized objects.)
+    """
+    bag = write_tf_bag(tmp_path, ros1=False, storage="sqlite3")
+    msgs, ts = _read_topic(bag, "/tf")
+    assert msgs, "fixture must publish /tf messages"
+    schema = build_table_schema("tf2_msgs/msg/TFMessage", ts, topic="/tf")
+
+    table = build_arrow_table(msgs, schema)  # must NOT raise ArrowTypeError
+
+    assert table.num_rows == len(msgs)
+    transforms = table.column("transforms").to_pylist()
+    # Each row is a list of struct dicts with SHORT inner field names.
+    first = transforms[0]
+    assert isinstance(first, list) and len(first) >= 1
+    elem = first[0]
+    assert isinstance(elem, dict)
+    assert {"header", "child_frame_id", "transform"} <= set(elem)
+    # The seeded child frames round-trip through the struct materialization.
+    child_frames = {tf["child_frame_id"] for row in transforms for tf in row}
+    assert {"base_link", "laser"} <= child_frames
+    # Nested struct-in-struct (transform.translation.x) survived as a builtin float.
+    assert isinstance(elem["transform"]["translation"]["x"], float)
 
 
 def test_top_level_import_does_not_leak_pyarrow_or_rosbags() -> None:
