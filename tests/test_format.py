@@ -24,6 +24,9 @@ from rosbagger_core.format import human_dur, human_size
         (2 * 1024**3, "2.0 GB"),
         (2 * 1024**4, "2.0 TB"),  # the drift fix: bagq used to print "2048.0 GB" here
         (3 * 1024**5, "3.0 PB"),
+        # Boundary: a value that rounds UP to 1024.0 KB (1048570 B -> 1023.99 KB) rolls to
+        # the next unit ("1.0 MB"), not the self-contradictory "1024.0 KB".
+        (1024**2 - 6, "1.0 MB"),
     ],
 )
 def test_human_size(num_bytes: int, expected: str) -> None:
@@ -44,6 +47,10 @@ def test_human_size_no_longer_caps_at_gb() -> None:
         (1_500_000, "1.5ms"),
         (1_000_000_000, "1.00s"),
         (12_400_000_000, "12.40s"),
+        # Boundary: ~[999.95, 1000) ms must roll to "1.00s", not the self-contradictory
+        # "1000.0ms" (round(ms, 1) == 1000.0).
+        (999_960_000, "1.00s"),
+        (999_940_000, "999.9ms"),  # just below the round-up boundary — still ms
     ],
 )
 def test_human_dur(ns: int, expected: str) -> None:

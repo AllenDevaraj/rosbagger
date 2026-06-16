@@ -29,7 +29,10 @@ def human_size(num_bytes: int) -> str:
     """
     size = float(num_bytes)
     for unit in _SIZE_UNITS:
-        if size < 1024.0 or unit == _SIZE_UNITS[-1]:
+        # round(size, 1) (the displayed precision), NOT size, so a value that rounds UP to
+        # 1024.0 (e.g. 1048570 B -> 1023.99 KB) rolls to the next unit ("1.0 MB") instead
+        # of the self-contradictory "1024.0 KB".
+        if round(size, 1) < 1024.0 or unit == _SIZE_UNITS[-1]:
             return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024.0
     return f"{size:.1f} {_SIZE_UNITS[-1]}"  # pragma: no cover - loop always returns
@@ -43,6 +46,8 @@ def human_dur(ns: int) -> str:
     two decimals (``12.40s``). The seeded ``800_000_000`` ns dropout renders as ``800ms``.
     """
     ms = ns / 1e6
-    if ms < 1000.0:
+    # round(ms, 1) (the displayed precision), NOT ms, so a value in ~[999.95, 1000) ms that
+    # would render as the self-contradictory "1000.0ms" rolls over to "1.00s" instead.
+    if round(ms, 1) < 1000.0:
         return f"{int(ms)}ms" if ms == int(ms) else f"{ms:.1f}ms"
     return f"{ns / 1e9:.2f}s"
