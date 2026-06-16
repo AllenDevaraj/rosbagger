@@ -164,15 +164,37 @@ def close_viewer() -> None:
 
 
 def _terminate_pid(pid: int) -> None:
-    """Best-effort ``SIGTERM`` + non-blocking reap of a viewer child (260530-c3p)."""
+    """``SIGTERM`` + bounded reap of a viewer child, escalating to ``SIGKILL`` (260530-c3p).
+
+    A single non-blocking ``waitpid`` right after ``SIGTERM`` reaps NOTHING — the child has not
+    exited yet — leaving a zombie that, on the long-lived GUI process, accumulates one per
+    open/close cycle. Poll ``waitpid(WNOHANG)`` for a short grace period; if the viewer is still
+    alive at the deadline, ``SIGKILL`` it and blocking-reap, so no zombie lingers. Returns early
+    (clean) if the pid is already gone or was never our child.
+    """
     import os
     import signal
+    import time
 
     try:
         os.kill(pid, signal.SIGTERM)
-        os.waitpid(pid, os.WNOHANG)  # reap if it died instantly (else a harmless transient zombie)
     except OSError:
         return  # already gone / not our child
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        try:
+            reaped, _ = os.waitpid(pid, os.WNOHANG)
+        except OSError:
+            return  # already reaped / not our child
+        if reaped:
+            return  # exited and reaped — no zombie left behind
+        time.sleep(0.02)
+    # Still alive after the grace period — force it and reap (blocking, but bounded to one child).
+    try:
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+    except OSError:
+        return
 
 
 # Standard NVIDIA Vulkan ICD locations (presence ⇒ an NVIDIA GPU + driver are installed).

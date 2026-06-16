@@ -430,3 +430,26 @@ def test_wait_viewer_ready_flush_failure_is_suppressed():
     rec = SimpleNamespace(flush=_boom)
     # Returns cleanly despite flush blowing up (suppressed); bounded by the tiny timeout.
     assert session._wait_viewer_ready(rec, port=1, timeout=0.1) is False
+
+
+def test_terminate_pid_reaps_child_leaving_no_zombie():
+    """_terminate_pid reaps the viewer child (no lingering zombie) — bounded SIGTERM + reap.
+
+    Regression for the audit qol bug: a single non-blocking waitpid right after SIGTERM reaped
+    NOTHING (the child had not exited yet), leaking a zombie per GUI open/close cycle. Spawn a
+    raw child (no Popen wrapper, so _terminate_pid owns the reaping), terminate it, and assert it
+    is gone: a follow-up waitpid raises ECHILD (no zombie left to wait on).
+    """
+    import os
+    import shutil
+
+    from rosbagger_rerun.session import _terminate_pid
+
+    sleep_bin = shutil.which("sleep")
+    if sleep_bin is None or not hasattr(os, "posix_spawn"):
+        pytest.skip("needs a POSIX sleep binary + os.posix_spawn (Linux)")
+
+    pid = os.posix_spawn(sleep_bin, [sleep_bin, "30"], os.environ)
+    _terminate_pid(pid)
+    with pytest.raises(ChildProcessError):
+        os.waitpid(pid, os.WNOHANG)  # already reaped -> ECHILD, not a (pid, status) zombie reap
