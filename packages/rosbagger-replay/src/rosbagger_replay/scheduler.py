@@ -325,17 +325,24 @@ class Replayer:
         return bisect.bisect_left(self._items, t_ns, key=lambda it: it.t_ns)
 
     def _is_zero_span_loop(self) -> bool:
-        """True when a loop is active over a stream with NO time span (newD13).
+        """True when the ACTIVE loop (whole-bag OR region) has NO time span to pace by (newD13).
 
-        A one-message bag, or a stream whose first and last timestamps are equal, has no
-        inter-message Δt to pace by — so a loop wrap would republish with zero sleep and peg a
-        CPU. Detect it (looping on AND ``items[-1].t_ns == items[0].t_ns``) so ``run()`` can
-        floor the wrap cadence instead of busy-spinning. A non-looping or positive-span stream
-        returns ``False`` and the normal Δt pacing is untouched.
+        A one-message bag, an all-equal-timestamp stream, or a REGION containing a single item
+        (or all-equal items) has no inter-message Δt — so a wrap that rewinds to a zero-pre-sleep
+        cursor would republish at 100% CPU. The region is checked over ITS in/out bounds, NOT the
+        whole bag: a single-item region whose in-bound resolves to index 0 busy-spun before this
+        fix because the whole-bag span looked positive while the in-region span was zero. A
+        non-looping or positive-span loop returns ``False`` and normal Δt pacing is untouched.
         """
         looping = self._loop or self._loop_in_ns is not None
         if not looping or not self._items:
             return False
+        if self._loop_in_ns is not None and self._loop_out_ns is not None:
+            lo = self._first_index_at_or_after(self._loop_in_ns)
+            hi = bisect.bisect_right(self._items, self._loop_out_ns, key=lambda it: it.t_ns) - 1
+            if lo > hi:  # region empty / past the stream — a wrap lands DONE, not here
+                return False
+            return self._items[lo].t_ns == self._items[hi].t_ns
         return self._items[-1].t_ns == self._items[0].t_ns
 
     # --- the drive loop (D-08 pacing + D-09 step/loop/DONE + WR-01/WR-02 bound, W4 ordering) ---
@@ -408,6 +415,18 @@ class Replayer:
 
             # --- unlocked: pace, then re-read state so a mid-gap control is honored ---
             if do_pace:
+                if self._duration is not None:
+                    # WR-02: cap the pre-publish sleep at the REMAINING duration. The bound is
+                    # otherwise only checked AFTER a publish, so a single large inter-message gap
+                    # (e.g. a 1h Δt with duration=2) would sleep the whole gap and overshoot the
+                    # deadline by ~a full Δt. A non-positive remaining is a clean DONE before the
+                    # next publish/sleep.
+                    remaining = self._duration - (self._clock() - start_clock)
+                    if remaining <= 0:
+                        with self._lock:
+                            self._state = State.DONE
+                        break
+                    sleep_s = min(sleep_s, remaining)
                 self._sleep(sleep_s)
                 with self._lock:
                     state = self._state

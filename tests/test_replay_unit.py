@@ -791,6 +791,54 @@ def test_scheduler_single_item_loop_paces_not_busy_spins():
     assert slept == [pytest.approx(_DEGENERATE_LOOP_PERIOD_S / 2.0)] * 2
 
 
+def test_scheduler_single_item_region_loop_floors_not_busy_spins():
+    """A region loop covering a SINGLE item at index 0 floors the wrap (no 100% CPU busy-spin).
+
+    Regression for the audit bug: the degenerate-loop floor only checked the WHOLE-bag span, so
+    a region whose in-bound resolves to index 0 and whose out-bound excludes item 1 wrapped to
+    cursor 0 on a positive-span bag — do_pace is False at index 0 and the whole-bag zero-span
+    check was False — so it republished item 0 with zero sleep forever. The floor now uses the
+    REGION's span, which here is a single item.
+    """
+    from rosbagger_replay.scheduler import _DEGENERATE_LOOP_PERIOD_S
+
+    items = _items([0, 600_000_000])  # item 1 is 0.6s after item 0
+    recorded = []
+    slept = []
+    # region [0, 0.5s]: only item 0 is inside, and its in-bound resolves to index 0.
+    r = Replayer(items, recorded.append, sleep=slept.append, max_messages=3)
+    r.set_loop_region(0, 500_000_000)
+    r.seek(0)
+    r.play()
+    r.run()
+
+    assert [it.t_ns for it in recorded] == [0, 0, 0]  # the single region item, thrice
+    assert r.state is State.DONE
+    # The wrap republishes are floored (a busy-spin would record zero/instant sleeps).
+    assert slept == [pytest.approx(_DEGENERATE_LOOP_PERIOD_S)] * 2
+
+
+def test_scheduler_duration_caps_pre_publish_sleep_no_overshoot():
+    """WR-02: the pre-publish sleep is capped at the remaining duration (no full-Δt overshoot).
+
+    Regression for the audit bug: the duration bound was only checked AFTER a publish, so a
+    single large inter-message gap could sleep far past the deadline (e.g. duration=2 on a
+    3600s gap blocks ~1h). The pre-publish sleep is now capped at the remaining budget — the
+    recorded sleep proves the 1h Δt is never slept whole.
+    """
+    items = _items([0, 3600 * 1_000_000_000])  # a 1-hour gap between item 0 and item 1
+    recorded = []
+    slept = []
+    clock = _FakeClock(step=1.0)  # 0, 1, 2, ... per call
+    r = Replayer(items, recorded.append, sleep=slept.append, clock=clock, duration=3.0)
+    r.play()
+    r.run()
+
+    assert slept, "expected at least one paced sleep"
+    assert max(slept) <= 3.0, slept  # the 3600s Δt was capped to the remaining budget
+    assert r.state is State.DONE
+
+
 def test_scheduler_zero_span_multi_item_loop_floors_only_the_wrap():
     """newD13: an all-equal-timestamp multi-item loop floors ONLY the wrap (Δt==0 within the bag).
 
