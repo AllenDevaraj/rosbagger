@@ -105,6 +105,27 @@ def test_select_empty_base_when_no_topics_and_not_all():
     assert select_topics(discovered) == {}
 
 
+def test_select_invalid_regex_raises_typed_pattern_error():
+    """A malformed --regex raises InvalidPatternError (clean teaching), not a raw re.error.
+
+    Regression for the audit bug: select_topics passed the pattern straight to re.search, so a
+    user typo got the programming-bug (traceback) treatment. It is now compiled and re.error is
+    converted to a typed InvalidPatternError the CLI's _capability_errors presents cleanly.
+    """
+    from rosbagger_record import InvalidPatternError
+
+    discovered = {"/a": "T", "/b": "U"}
+    with pytest.raises(InvalidPatternError) as excinfo:
+        select_topics(discovered, regex="[unclosed")
+    err = excinfo.value
+    assert err.kind == "regex"
+    assert err.pattern == "[unclosed"
+    assert "[unclosed" in str(err)
+    # The same applies to a malformed --exclude.
+    with pytest.raises(InvalidPatternError):
+        select_topics(discovered, all_topics=True, exclude="(")
+
+
 def test_select_is_deterministic_and_preserves_discovered_order():
     """Output iterates ``discovered`` insertion order (stable) and keeps the type strings."""
     discovered = {"/z": "Z", "/a": "A", "/m": "M"}

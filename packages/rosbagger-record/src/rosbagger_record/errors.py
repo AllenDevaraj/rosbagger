@@ -88,6 +88,25 @@ class NoTopicsMatchedError(RuntimeError):
         )
 
 
+class InvalidPatternError(ValueError):
+    """A user-supplied ``--regex`` / ``--exclude`` is not a valid regular expression.
+
+    Raised by :func:`rosbagger_record.discovery.select_topics` when ``re.compile`` rejects the
+    pattern, turning a raw ``re.error`` traceback (a programming-bug signal) into a clean
+    teaching line for what is really a user-input mistake. Subclasses ``ValueError`` — a
+    bad-argument condition, unlike the ``RuntimeError`` capability errors above — and is added
+    to the CLI's :func:`~rosbagger_record.cli._capability_errors` catch set so it presents as
+    one stderr line + ``Exit(1)``. Carries the offending ``kind`` (``"regex"``/``"exclude"``),
+    ``pattern``, and the underlying ``detail``.
+    """
+
+    def __init__(self, kind: str, pattern: str, detail: str) -> None:
+        self.kind = kind
+        self.pattern = pattern
+        self.detail = detail
+        super().__init__(f"Invalid --{kind} pattern {pattern!r}: {detail}")
+
+
 class McapStorageUnavailableError(RuntimeError):
     """The requested rosbag2 storage plugin is not registered (e.g. ``mcap``).
 

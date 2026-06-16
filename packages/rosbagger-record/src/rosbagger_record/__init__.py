@@ -26,6 +26,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .discovery import discover_topics, select_topics
 from .errors import (
+    InvalidPatternError,
     McapStorageUnavailableError,
     NoTopicsMatchedError,
     RosNotAvailableError,
@@ -42,6 +43,7 @@ except PackageNotFoundError:  # raw source tree (not pip-installed)
 # helpers binds NO ROS — discovery.py imports rclpy only inside discover_topics'
 # body, and select_topics is pure.
 __all__ = [
+    "InvalidPatternError",
     "McapStorageUnavailableError",
     "NoTopicsMatchedError",
     "RosNotAvailableError",

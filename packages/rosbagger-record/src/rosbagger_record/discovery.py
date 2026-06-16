@@ -91,9 +91,27 @@ def select_topics(
         base = {name: t for name, t in discovered.items() if name in wanted}
 
     if regex is not None:
-        base = {name: t for name, t in base.items() if re.search(regex, name)}
+        pattern = _compile_pattern(regex, "regex")
+        base = {name: t for name, t in base.items() if pattern.search(name)}
 
     if exclude is not None:
-        base = {name: t for name, t in base.items() if not re.search(exclude, name)}
+        pattern = _compile_pattern(exclude, "exclude")
+        base = {name: t for name, t in base.items() if not pattern.search(name)}
 
     return base
+
+
+def _compile_pattern(pattern: str, kind: str) -> re.Pattern[str]:
+    """Compile a user ``--regex`` / ``--exclude`` pattern, mapping ``re.error`` to a teaching error.
+
+    A malformed pattern is a user-INPUT mistake, not a programming bug, so a raw ``re.error``
+    traceback is the wrong treatment: convert it to a typed :class:`InvalidPatternError` that the
+    CLI's ``_capability_errors`` wrapper (and the GUI face) present as one clean line. Compiling
+    once here also avoids ``re``'s per-call cache lookups in the comprehension above.
+    """
+    from .errors import InvalidPatternError
+
+    try:
+        return re.compile(pattern)
+    except re.error as e:
+        raise InvalidPatternError(kind, pattern, str(e)) from e

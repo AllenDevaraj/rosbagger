@@ -88,6 +88,7 @@ def _capability_errors(fn):
         # Lazy import — keeps cli.py top level ROS-free (offline invariant). errors.py is
         # stdlib-only, so importing it binds no rclpy/rosbag2_py.
         from rosbagger_record.errors import (
+            InvalidPatternError,
             McapStorageUnavailableError,
             NoTopicsMatchedError,
             RosNotAvailableError,
@@ -99,6 +100,7 @@ def _capability_errors(fn):
             RosNotAvailableError,
             McapStorageUnavailableError,
             NoTopicsMatchedError,
+            InvalidPatternError,
         ) as e:
             # Each carries its own teaching message (source ROS / install the storage
             # plugin or use --storage sqlite3 / `rosbagger-record list` or --all for an
