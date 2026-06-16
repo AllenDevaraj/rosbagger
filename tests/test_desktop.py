@@ -1152,6 +1152,9 @@ def test_qss_targets_the_non_inheriting_selectors() -> None:
     assert "QHeaderView::section" in qss
     assert "QSplitter::handle" in qss
     assert "#status_error" in qss
+    # A checkable button (Open in RViz/Rerun) must have a distinct checked/pressed state — the
+    # accent fill — else it reads identical to unchecked (audit qol).
+    assert "QPushButton:checked" in qss
 
 
 def test_qss_tokens_module_imports_no_pyside6() -> None:

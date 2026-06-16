@@ -88,6 +88,15 @@ def build_qss(t: Tokens) -> str:
     QPushButton:hover {{
         border-color: {t.accent};
     }}
+    /* A checkable button (Open in RViz / Open in Rerun) reads as ON/OFF: an accent fill when
+       checked or pressed, matching the accent-selection idiom used for table/menu items —
+       previously a checked toggle looked identical to an unchecked one (only the status text
+       differed). All from theme tokens (no inline hex, D-03). */
+    QPushButton:checked, QPushButton:pressed {{
+        background-color: {t.accent};
+        color: {t.bg};
+        border-color: {t.accent};
+    }}
     QPushButton:disabled {{
         color: {t.text_muted};
     }}
