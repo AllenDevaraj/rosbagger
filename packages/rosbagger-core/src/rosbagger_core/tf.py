@@ -209,9 +209,11 @@ def collect_tf_report(
       (threat T-09-03).
     * EXPECTED — ``statistics.median(diffs)``; an ``expected <= 0`` (all-duplicate
       timestamps) short-circuits the gap math (no ZeroDivision, no false gap).
-    * THRESHOLD — a delta ``d`` is a gap when ``d > gap_multiplier * expected`` OR,
-      when ``gap_ms`` is given, ``d > gap_ms * 1e6`` (an absolute-ns override). The
-      default uses the multiplier.
+    * THRESHOLD — a delta ``d`` is a gap when ``d > gap_multiplier * expected`` by
+      default; when ``gap_ms`` is given it OVERRIDES the multiplier entirely — a gap is
+      then exactly ``d > gap_ms * 1e6`` and the median multiplier is NOT applied (so
+      raising ``gap_ms`` above the multiplier suppresses sub-threshold noise, matching
+      the ``--gap-ms`` CLI contract).
     * BOUNDARY — gaps are between OBSERVED samples only (A4); no synthetic gap from
       the bag start to the first sample or from the last sample to the bag end.
 
@@ -220,9 +222,9 @@ def collect_tf_report(
             reader is the seam; mirrors ``query()`` / ``inspect`` taking a reader).
         gap_multiplier: Gaps fire above this multiple of the edge's median interval
             (default ``5.0``).
-        gap_ms: Optional absolute gap threshold in MILLISECONDS; when set, a delta
-            above ``gap_ms`` ms is a gap regardless of the multiplier (the CLI exposes
-            this as ``--gap-ms`` in Plan 03).
+        gap_ms: Optional absolute gap threshold in MILLISECONDS; when set, it REPLACES
+            the multiplier — a delta is a gap iff it exceeds ``gap_ms`` ms (the median
+            multiplier is not applied). The CLI exposes this as ``--gap-ms`` (Plan 03).
 
     Returns:
         A frozen :class:`TfReport` (frames, per-edge summary, gap timeline, bounds).
@@ -345,8 +347,9 @@ def collect_tf_report(
             d = b - a
             if d <= 0:  # already excluded from the median; never a gap
                 continue
-            is_gap = d > multiplier_threshold or (
-                abs_threshold_ns is not None and d > abs_threshold_ns
+            # gap_ms (when set) OVERRIDES the multiplier — the --gap-ms CLI contract.
+            is_gap = (
+                d > abs_threshold_ns if abs_threshold_ns is not None else d > multiplier_threshold
             )
             if not is_gap:
                 continue

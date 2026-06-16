@@ -171,6 +171,27 @@ def test_gap_ms_override_flags_dropout(tf_bags: dict[str, Path]) -> None:
     assert any((g.parent, g.child) == ("odom", "base_link") for g in report.gaps)
 
 
+def test_gap_ms_overrides_multiplier_suppresses_subthreshold_dropout(
+    tf_bags: dict[str, Path],
+) -> None:
+    """--gap-ms OVERRIDES the multiplier: a gap_ms ABOVE the seeded dropout suppresses it.
+
+    Regression for the audit bug: the threshold ORed gap_ms with the median multiplier
+    instead of overriding it, so raising --gap-ms above the 800ms dropout still reported it
+    (the 8x-median delta tripped the multiplier branch) — contradicting the CLI help that
+    --gap-ms "overrides the multiplier". With true override, gap_ms=1000ms (> the 800ms
+    dropout) reports NO odom->base_link gap. This is the regime where OR and override
+    DIVERGE; the shipped override test uses gap_ms BELOW the multiplier, where they coincide.
+    """
+    gap_ms = 1000.0  # 1s — above the 800ms dropout AND above the 500ms (5x100ms) multiplier
+    with RosbagsReader(tf_bags["ros2_sqlite"]) as reader:
+        report = collect_tf_report(reader, gap_ms=gap_ms)
+    odom_gaps = [g for g in report.gaps if (g.parent, g.child) == ("odom", "base_link")]
+    assert odom_gaps == [], f"gap_ms=1000ms must override the multiplier; got {odom_gaps}"
+    by_key = {(e.parent, e.child): e for e in report.edges}
+    assert by_key[("odom", "base_link")].gap_count == 0
+
+
 def test_large_gap_multiplier_suppresses_dropout(tf_bags: dict[str, Path]) -> None:
     """A very large --gap-multiplier (100x) does NOT flag the seeded dropout."""
     with RosbagsReader(tf_bags["ros2_sqlite"]) as reader:
