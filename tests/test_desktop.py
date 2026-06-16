@@ -834,6 +834,50 @@ def test_open_reader_stops_offline_workers_before_closing_reader(
     ), f"workers must stop BEFORE reader.close(); got order {order}"
 
 
+def test_open_reader_resets_replay_transport(qtbot, tmp_path: Path) -> None:
+    """File ▸ Open tears down the replay transport so the next Play rebuilds against the new bag.
+
+    Regression for the audit bug: a transport built from bag A survived a reader swap, so Replay
+    kept publishing A's data to live topics and scrubbed against A's span after opening bag B. We
+    stand in a held transport + a deferred action (no ROS needed) and assert the swap clears them.
+    """
+    bag_a = write_ros2_sqlite_bag(tmp_path / "a")
+    bag_b = write_ros2_sqlite_bag(tmp_path / "b")
+    window = MainWindow(bag_path=str(bag_a))
+    qtbot.addWidget(window)
+    panel = window.replay_panel
+    panel._replayer = object()  # noqa: SLF001 - stand in a built transport (no ROS)
+    panel._pending_action = lambda: None  # noqa: SLF001 - and a deferred resume
+    window._open_reader(bag_b)  # noqa: SLF001
+    assert panel._replayer is None, "replay transport survived the bag swap"  # noqa: SLF001
+    assert panel._pending_action is None  # noqa: SLF001
+
+
+def test_rerun_open_bails_if_toggled_off_during_spawn(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """Toggling the Rerun mirror OFF during the off-thread spawn closes the viewer, arms nothing.
+
+    Regression for the audit bug: _on_rerun_opened unconditionally armed _rerun_rec/_rerun_sink
+    and showed "Mirroring" even when the user had toggled OFF during the ~1s spawn — leaving a
+    cancelled mirror against a leaked viewer. It now closes the just-spawned viewer and bails.
+    """
+    import rosbagger_rerun
+
+    closed: list[int] = []
+    monkeypatch.setattr(rosbagger_rerun, "close_viewer", lambda: closed.append(1))
+
+    bag = write_ros2_sqlite_bag(tmp_path)
+    window = MainWindow(bag_path=str(bag))
+    qtbot.addWidget(window)
+    panel = window.replay_panel
+    panel._rerun_button.setChecked(False)  # noqa: SLF001 - user toggled OFF during the spawn
+
+    panel._on_rerun_opened(object())  # noqa: SLF001 - the late spawn-result callback
+
+    assert panel._rerun_rec is None, "armed a cancelled mirror"  # noqa: SLF001
+    assert panel._rerun_sink is None  # noqa: SLF001
+    assert closed, "the just-spawned viewer was not closed on the cancelled-mirror bail"
+
+
 def test_query_result_discarded_when_reader_swapped(qtbot, tmp_path: Path) -> None:
     """newE21: a query result arriving AFTER a File ▸ Open swap is discarded, not shown.
 

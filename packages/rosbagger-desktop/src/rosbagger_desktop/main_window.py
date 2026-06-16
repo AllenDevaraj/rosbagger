@@ -300,6 +300,12 @@ class MainWindow(QMainWindow):
         stop_thread(self.query_panel._query_thread)  # noqa: SLF001 - panel exposes these to tests too
         stop_thread(self.inspect_panel._refresh_thread)  # noqa: SLF001
         stop_thread(self.tf_panel._refresh_thread)  # noqa: SLF001
+        # The Replay panel runs a LIVE transport built from the OLD bag's items (its own rclpy
+        # context, independent of this shared reader). Tear it down on a bag swap so the next Play
+        # rebuilds against the NEW bag — otherwise Replay keeps publishing bag A's data to live
+        # topics and scrubs against A's span after opening bag B. Markers reload via
+        # _refresh_active_panel() (the panel now exposes refresh_view).
+        self.replay_panel.reset_for_new_reader()
 
         if self.reader is not None:
             self.reader.close()

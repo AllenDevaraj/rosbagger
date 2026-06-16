@@ -338,6 +338,17 @@ class ReplayPanel(QWidget):
     def showEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
         """Source the event markers when the panel becomes the active stacked view (D-14)."""
         super().showEvent(event)
+        self.refresh_view()
+
+    def refresh_view(self) -> None:
+        """Re-source the event markers for the current bag + show a positive ready status.
+
+        Called from ``showEvent`` AND by MainWindow's ``_refresh_active_panel`` after File ▸ Open
+        (so a bag switch reloads the markers when Replay is the active view). The happy path now
+        sets a neutral "Ready to replay" status — it previously only set a status on the not-ready
+        branches, so a sourced-ROS + bag-loaded panel kept showing a stale hint. It does NOT
+        clobber a live "Playing…"/"Paused" status (guarded on no transport being built yet).
+        """
         if not self._ros_available():
             set_status(self._status, REPLAY_HINT, is_error=True)
             return
@@ -345,16 +356,35 @@ class ReplayPanel(QWidget):
             set_status(self._status, "Open a bag to replay (no bag loaded).", is_error=True)
             return
         self._load_markers()
+        if self._replayer is None:
+            set_status(self._status, "Ready to replay (press Play).")
 
     def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt override name
-        """Stop the playhead timer + drive thread + tear down the rclpy context (WR-05)."""
+        """Tear down the transport + mirrors (WR-05), then accept the close."""
+        self._stop_transport_and_mirrors()
+        super().closeEvent(event)
+
+    def reset_for_new_reader(self) -> None:
+        """Tear down the live transport + mirrors so the NEXT Play rebuilds against the new bag.
+
+        Called by MainWindow when File ▸ Open swaps the shared reader: WITHOUT this, after
+        replaying bag A then opening bag B the panel still holds A's transport and would publish
+        A's data to live topics and scrub against A's span. Same teardown as ``closeEvent`` but
+        leaves the panel reusable (no widget destroy). Idempotent.
+        """
+        self._stop_transport_and_mirrors()
+
+    def _stop_transport_and_mirrors(self) -> None:
+        """Shared teardown for closeEvent / reset_for_new_reader (260530-5cg).
+
+        PAUSE the Replayer FIRST so the blocking ``Replayer.run()`` loop returns: ``stop_thread``
+        does QThread.quit()+wait(), but run() never reads the thread's event loop, so wait() would
+        hang until the bag finishes playing; pause() sets state=PAUSED + wakes the pacing wait so
+        run() returns promptly. Clear ``_pending_action`` first so the 260530-2iv deferred-resume
+        path can't rebuild a transport mid-teardown. Then stop the drive / pip-install /
+        rerun-open workers, drop the Rerun mirror + rviz, and free the rclpy node.
+        """
         self._position_timer.stop()  # Phase 18: never fire the poll after teardown
-        # 260530-5cg: PAUSE the Replayer before stopping the thread. stop_thread does
-        # QThread.quit()+wait(), but the worker is blocked in the BLOCKING Replayer.run() loop
-        # (quit() only signals the thread's event loop, which run() never reads) — so wait() would
-        # hang until the bag finishes playing. pause() sets state=PAUSED + wakes the pacing wait, so
-        # run() returns promptly and wait() unblocks. Clear _pending_action first so the 260530-2iv
-        # deferred-resume path can't rebuild a transport while we tear down.
         self._pending_action = None
         if self._replayer is not None:
             with contextlib.suppress(Exception):
@@ -365,7 +395,6 @@ class ReplayPanel(QWidget):
         self._close_rerun()  # Phase 22: drop the mirror + flush (transport-independent)
         self._close_rviz()  # Phase 23: SIGTERM the spawned rviz2 + remove its temp config
         self._teardown_transport()
-        super().closeEvent(event)
 
     def _ros_available(self) -> bool:
         """Whether the window reports a sourced ROS 2 environment (D-09 gate input)."""
@@ -602,6 +631,14 @@ class ReplayPanel(QWidget):
         """
         import rosbagger_rerun
 
+        # The user may have toggled the mirror OFF during the ~1s off-thread spawn (the button is
+        # now unchecked and _close_rerun already ran). Don't arm a mirror they cancelled: close
+        # the just-spawned viewer and bail, rather than leaving _rerun_rec/_rerun_sink armed
+        # against an unwanted (and otherwise leaked) viewer with a false "Mirroring" status.
+        if not self._rerun_button.isChecked():
+            with contextlib.suppress(Exception):
+                rosbagger_rerun.close_viewer()
+            return
         self._rerun_rec = rec
         try:
             self._rerun_sink, self._rerun_logged = rosbagger_rerun.build_rerun_sink(
@@ -681,6 +718,10 @@ class ReplayPanel(QWidget):
         import rosbagger_rerun
 
         importlib.invalidate_caches()
+        # The user may have toggled the mirror OFF during the pip install — don't spawn an
+        # unwanted viewer (the button is unchecked, so _open_rerun would arm a cancelled mirror).
+        if not self._rerun_button.isChecked():
+            return
         if rosbagger_rerun.rerun_available():
             self._open_rerun()
         else:
