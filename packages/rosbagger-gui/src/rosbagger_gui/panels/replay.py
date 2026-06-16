@@ -83,6 +83,11 @@ class ReplayPanel(Widget):
         self._published: dict[str, int] | None = None
         self._bag_span_ns: int = 0
         self._item_count: int = 0
+        # The reader the transport was built for — used to drop a stale transport on a bag
+        # switch (latent until a bag picker lands; other bag-dependent panels honor this seam).
+        self._transport_reader: object | None = None
+        # UI-thread playhead-animation timer (a Textual Timer or None) — see _start_playhead.
+        self._playhead_timer: object | None = None
 
     # ----------------------------------------------------------------- lifecycle
 
@@ -94,6 +99,12 @@ class ReplayPanel(Widget):
         if self._bag_path() is None:
             self._show_status("Open a bag to replay (no bag loaded).")
             return
+        # Drop a transport built for a DIFFERENT (now-replaced) reader before it can drive the
+        # wrong bag — it would publish bag A's data and scrub against A's span after the reader
+        # swapped to B. Latent until a bag picker lands, but cheap and forward-safe.
+        reader = getattr(self.app, "reader", None)
+        if self._replayer is not None and reader is not self._transport_reader:
+            self._teardown_transport()
         self._load_markers()
 
     def on_unmount(self) -> None:
@@ -174,6 +185,7 @@ class ReplayPanel(Widget):
             self._replayer = Replayer(items, sink, rate=rate, loop=loop_on)
             self._item_count = len(items)
             self._bag_span_ns = items[-1].t_ns - items[0].t_ns
+            self._transport_reader = getattr(self.app, "reader", None)  # for the bag-switch drop
         except RosNotAvailableError as exc:
             self._show_status(str(exc))
             self._teardown_transport()
@@ -189,8 +201,31 @@ class ReplayPanel(Widget):
         return True
 
     def _teardown_transport(self) -> None:
-        """Best-effort destroy the node + shut down only our own context (WR-04/WR-05)."""
+        """Stop the drive worker, THEN destroy the node + shut down only our own context (WR-04/05).
+
+        Order matters: ``Replayer.run()`` polls its own state, not the Textual worker's cancel
+        flag, so before freeing the node we (1) ``pause()`` so run() returns at its next boundary,
+        (2) ``cancel_group`` so the worker skips its post-run ``call_from_thread`` (it cannot then
+        deadlock against this UI thread), and (3) wait — bounded — for the worker to finish so an
+        in-flight publish completes on the still-valid node. Otherwise ``destroy_node()`` /
+        ``rclpy.shutdown()`` would free handles run() is still publishing on — a caught RCLError at
+        best, a native segfault under ``loop=True`` at worst (the desktop closeEvent does the
+        equivalent). Also stops the playhead timer.
+        """
         import contextlib
+        import time
+
+        self._stop_playhead()
+        if self._replayer is not None:
+            with contextlib.suppress(Exception):
+                self._replayer.pause()  # type: ignore[union-attr]
+        with contextlib.suppress(Exception):
+            self.workers.cancel_group(self, "replay-run")
+        # Bounded wait: a cancelled worker returns WITHOUT call_from_thread (see _drive_worker's
+        # is_cancelled gates), so this completes as soon as run() returns — it cannot hang.
+        deadline = time.monotonic() + 2.0
+        while self._drive_running() and time.monotonic() < deadline:
+            time.sleep(0.01)
 
         node = self._node
         created = self._created_ctx
@@ -198,6 +233,7 @@ class ReplayPanel(Widget):
         self._node = None
         self._published = None
         self._created_ctx = False
+        self._transport_reader = None
         if node is not None:
             with contextlib.suppress(Exception):
                 node.destroy_node()
@@ -245,6 +281,7 @@ class ReplayPanel(Widget):
         rate = self._replayer.rate  # type: ignore[union-attr]
         self._show_status(f"Playing… ({self._item_count} msg, rate {rate:g})")
         self._drive_worker()
+        self._start_playhead()  # animate the scrubber while the worker is blocked in run()
 
     def _pause(self) -> None:
         """Pause publishing but HOLD the cursor (-> PAUSED). The worker returns on its own."""
@@ -336,6 +373,36 @@ class ReplayPanel(Widget):
             return
         fraction = self._replayer.position_fraction  # type: ignore[union-attr]
         self.query_one("#replay-scrubber", Scrubber).position = fraction
+
+    def _start_playhead(self) -> None:
+        """Animate the scrubber playhead from the UI thread while the drive worker runs.
+
+        The worker is BLOCKED inside ``Replayer.run()`` and cannot push position mid-run, so the
+        playhead would otherwise freeze until run() returns — and NEVER under ``loop=True``. A
+        UI-thread interval polls the lock-free ``position_fraction`` (a torn read is at worst a
+        one-frame-stale playhead) and self-stops when the worker ends. The desktop panel uses the
+        equivalent QTimer.
+        """
+        if self._playhead_timer is None:
+            self._playhead_timer = self.set_interval(1 / 30, self._tick_playhead)
+
+    def _tick_playhead(self) -> None:
+        """Per-frame playhead update; stops the timer once the drive worker has ended."""
+        if self._drive_running():
+            self._update_position()
+        else:
+            self._stop_playhead()
+            self._update_position()  # settle on the exact final position
+
+    def _stop_playhead(self) -> None:
+        """Stop + clear the playhead-animation timer (idempotent)."""
+        import contextlib
+
+        timer = self._playhead_timer
+        self._playhead_timer = None
+        if timer is not None:
+            with contextlib.suppress(Exception):
+                timer.stop()
 
     # --------------------------------------------------------------- event markers
 
