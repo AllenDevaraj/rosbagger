@@ -226,6 +226,10 @@ class QueryPanel(Vertical):
             if not worker.is_cancelled:
                 self.app.call_from_thread(self._show_query_error, str(e))
             return
+        except Exception as e:  # noqa: BLE001 - a SQL typo (sqlglot ParseError / DuckDB binder error) is the most common interactive error; surface it as teaching text, never an exit_on_error app crash
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self._show_query_error, f"Query failed: {e}")
+            return
 
         if worker.is_cancelled:
             return

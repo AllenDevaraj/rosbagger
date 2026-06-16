@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from textual.widgets import ContentSwitcher, DataTable, Input, ListItem, Static
+from textual.widgets import Button, ContentSwitcher, DataTable, Input, ListItem, Static
 
 # Self-contained src/repo-root resolution (mirrors tests/test_tf.py / test_reader.py):
 # put the repo root + the gui/core src trees on the path so ``tools.make_fixtures`` and
@@ -263,6 +263,38 @@ async def test_query_panel_select_star_renders_timestamp_columns(bag: Path) -> N
             f"SELECT * rendered {results.row_count} rows; expected 3 (timestamp columns "
             "must not crash _fill_results)"
         )
+
+
+async def test_query_panel_malformed_sql_teaches_instead_of_crashing(bag: Path) -> None:
+    """A SQL typo (sqlglot ParseError / DuckDB catalog error) teaches, never crashes the TUI.
+
+    Regression for the audit HIGH bug: ``_execute_query_worker`` caught only the three
+    semantic teaching errors, so a parse/binder/catalog error escaped the thread worker
+    and — with the app's default ``exit_on_error=True`` — panicked the whole cockpit. A
+    SQL typo is the most common interactive-SQL mistake. The broad fallback surfaces it as
+    a ``Query failed: …`` status line instead. Reaching the assertion at all proves the
+    app did not panic.
+    """
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#nav-query")
+        await pilot.pause()
+        sql_input = app.query_one("#sql-input", Input)
+        sql_input.focus()
+        await pilot.pause()
+        # An unknown scalar function -> DuckDB Catalog Error, which is NOT one of the three
+        # teaching errors and (unlike a missing column) does not match the binder-column regex,
+        # so it is re-raised out of query() — the exact escape path that used to crash the app.
+        sql_input.value = "SELECT made_up_fn(t_ns) FROM imu"
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()  # flush the call_from_thread status update
+
+        status = str(app.query_one("#query-status", Static).render())
+        assert "Query failed" in status, f"expected a teaching status, got {status!r}"
+        # No result was produced, so export stays disabled (no half-rendered state).
+        assert app.query_one("#export-csv", Button).disabled is True
 
 
 async def test_replay_panel_rejects_bad_rate_on_play(
