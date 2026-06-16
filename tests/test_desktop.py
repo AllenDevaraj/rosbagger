@@ -1059,40 +1059,37 @@ def test_query_export_surfaces_arrow_error_as_status(qtbot, tmp_path: Path, monk
     )
 
 
-def test_record_releases_replay_context_before_scan(qtbot, monkeypatch) -> None:
-    """WR-01: a record scan/start tears down a replay-owned rclpy context first.
+def test_record_does_not_tear_down_shared_replay_context(qtbot, monkeypatch) -> None:
+    """A record scan does NOT tear down a live replay-owned rclpy context (sharing is safe).
 
-    ``rosbagger_record``'s ``list_topics``/``record`` call ``rclpy.init()`` unconditionally
-    (no re-entrant guard, outside this phase's editable scope), so a live replay-owned context
-    would make the record worker's ``init()`` clash. The record panel mitigates by releasing
-    the replay panel's OWN context (``_created_ctx``) before launching a worker. This isolates
-    that mitigation: a stub replay panel reporting ``_created_ctx=True`` must have its
-    ``_teardown_transport`` called; one reporting ``False`` must be left alone.
+    Regression for the audit bug: record_panel._release_replay_context destroyed the replay
+    panel's rclpy context+node before a scan/start — built on the FALSE premise that
+    rosbagger_record calls rclpy.init() unconditionally. record() / list_topics() DO guard init
+    with ``created_ctx = not rclpy.ok()``, so the shared context is reused safely; the teardown
+    only risked a use-after-shutdown of a still-publishing replay drive worker. The method and
+    both call sites are removed.
     """
     from rosbagger_desktop.panels.record_panel import RecordPanel
 
+    panel = RecordPanel()
+    qtbot.addWidget(panel)
+    # The harmful method is gone (and with it both call sites — a leftover would AttributeError).
+    assert not hasattr(panel, "_release_replay_context")
+
     class _StubReplay:
-        def __init__(self, created: bool) -> None:
-            self._created_ctx = created
+        def __init__(self) -> None:
+            self._created_ctx = True  # owns a live context (would have been torn down before)
             self.torn_down = False
 
         def _teardown_transport(self) -> None:
             self.torn_down = True
 
-    panel = RecordPanel()
-    qtbot.addWidget(panel)
-
-    # Replay owns a live context → record must release it before its own init().
-    owned = _StubReplay(created=True)
-    monkeypatch.setattr(panel, "window", lambda: type("W", (), {"replay_panel": owned})())
-    panel._release_replay_context()
-    assert owned.torn_down, "record did not release the replay-owned rclpy context (WR-01)"
-
-    # Replay did NOT create the context → record must NOT touch it.
-    foreign = _StubReplay(created=False)
-    monkeypatch.setattr(panel, "window", lambda: type("W", (), {"replay_panel": foreign})())
-    panel._release_replay_context()
-    assert not foreign.torn_down, "record tore down a context the replay panel did not own"
+    replay = _StubReplay()
+    monkeypatch.setattr(
+        panel, "window", lambda: type("W", (), {"replay_panel": replay, "ros_available": False})()
+    )
+    panel._scan_topics()  # must NOT reach into / tear down the shared replay context
+    assert not replay.torn_down, "a record scan tore down the shared replay context"
 
 
 # --------------------------------------------------------------------------------------

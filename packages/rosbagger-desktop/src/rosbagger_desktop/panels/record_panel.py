@@ -183,33 +183,6 @@ class RecordPanel(QWidget):
         """Whether the window reports a sourced ROS 2 environment (D-09 gate input)."""
         return bool(getattr(self.window(), "ros_available", False))
 
-    def _release_replay_context(self) -> None:
-        """Tear down the replay panel's OWN rclpy context before a record scan/start (WR-01).
-
-        The two live panels share one process-wide ``rclpy`` context. The replay panel guards
-        its ``rclpy.init()`` with the re-entrant ``rclpy.ok()`` check (WR-04) and keeps its
-        context alive until teardown; but ``rosbagger_record.record``'s ``list_topics`` /
-        ``record`` call ``rclpy.init()`` UNCONDITIONALLY (no re-entrant guard, and that module is
-        outside this phase's editable scope). So if the user visited Replay and pressed
-        Play/Step/seek (building the replay context) and then switches to Record, the
-        discovery/record worker's ``rclpy.init()`` raises "context already initialized" and the
-        worker surfaces it as a teaching error — recording is silently non-functional for the
-        rest of the session.
-
-        Mitigate in-panel: if the replay panel created (and still owns) the only live context,
-        tear it down here so the record worker can ``init()`` cleanly. We only tear down a
-        context the replay panel itself created (``_created_ctx``) — never one we did not build.
-        Best-effort and defensive: a missing/incompatible replay panel is a no-op.
-        """
-        replay = getattr(self.window(), "replay_panel", None)
-        if replay is None:
-            return
-        # Only release a context the replay panel itself created (mirrors its WR-04 ownership).
-        if getattr(replay, "_created_ctx", False):
-            teardown = getattr(replay, "_teardown_transport", None)
-            if callable(teardown):
-                teardown()
-
     # ------------------------------------------------------------------ discovery
 
     def _scan_topics(self) -> None:
@@ -224,9 +197,6 @@ class RecordPanel(QWidget):
             return
         if self._discover_thread is not None and self._discover_thread.isRunning():
             return  # a scan is already running; let it finish
-        # WR-01: release the replay panel's own rclpy context so the unconditional
-        # rclpy.init() inside list_record_topics does not clash with a live replay context.
-        self._release_replay_context()
         set_status(self._status, "Discovering live topics…")
 
         def work() -> dict:
@@ -331,9 +301,6 @@ class RecordPanel(QWidget):
             return
         out = self._out_input.text().strip() or _DEFAULT_OUT
         storage = self._selected_storage()
-        # WR-01: release the replay panel's own rclpy context so record_topics'
-        # unconditional rclpy.init() does not clash with a live replay context.
-        self._release_replay_context()
         self._start_button.setEnabled(False)
         self._dismiss_button.setEnabled(True)
         set_status(
