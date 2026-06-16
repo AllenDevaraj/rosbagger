@@ -912,6 +912,29 @@ def test_query_schema_tree_cached_across_revisits(qtbot, tmp_path: Path, monkeyp
     assert len(calls) == 2, "a new reader (new bag) must rebuild the schema tree"
 
 
+def test_tf_panel_report_cached_across_revisits(qtbot, tmp_path: Path) -> None:
+    """F7 (desktop TF): a TF-tab revisit does NOT recompute collect_tf_report (reader cache).
+
+    showEvent calls refresh_view on every visit; the reader-identity cache skips the expensive
+    full /tf stream when the bag is unchanged. After the first analysis caches the reader, a
+    revisit must NOT dispatch a worker (so _refresh_thread stays None).
+    """
+    tf_bag = write_tf_bag(tmp_path / "with_tf", ros1=False, storage="sqlite3")
+    window = MainWindow(bag_path=str(tf_bag))
+    qtbot.addWidget(window)
+    panel = window.tf_panel
+    qtbot.waitUntil(lambda: panel._refresh_thread is None, timeout=5000)  # noqa: SLF001 - drain startup
+    panel._analyzed_reader = None  # noqa: SLF001 - clean slate
+
+    panel.refresh_view()  # first visit: dispatch + analyze
+    qtbot.waitUntil(lambda: panel.edges_table.model().rowCount() > 0, timeout=5000)
+    qtbot.waitUntil(lambda: panel._refresh_thread is None, timeout=5000)  # noqa: SLF001 - worker done
+    assert panel._analyzed_reader is not None  # noqa: SLF001 - cached after the first analysis
+
+    panel.refresh_view()  # revisit, same reader: cache hit -> NO worker dispatched
+    assert panel._refresh_thread is None, "revisit dispatched a worker; expected the reader cache"  # noqa: SLF001
+
+
 def test_query_export_uses_save_dialog(qtbot, tmp_path: Path, monkeypatch) -> None:
     """WR-03: export routes through ``QFileDialog.getSaveFileName`` to a user-chosen path.
 

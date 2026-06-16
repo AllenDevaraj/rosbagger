@@ -64,6 +64,11 @@ class TfPanel(QWidget):
         # The in-flight refresh worker thread (Pitfall 2) + worker. Both None between runs.
         self._refresh_thread: QThread | None = None
         self._refresh_worker: BlockingWorker | None = None
+        # Bumped per refresh; a superseded worker's late signal (older gen) is ignored so it
+        # can neither clobber the current worker's refs nor render a stale report (refresh_view).
+        self._refresh_gen = 0
+        # F7-style reader-identity cache: the reader the last report was computed from.
+        self._analyzed_reader: object | None = None
 
         # Status line as an accessibly-named region (D-02); a stable objectName lets the
         # shared status helper restore it after an error toggle.
@@ -136,8 +141,15 @@ class TfPanel(QWidget):
             set_status(self._status, "Open a bag with /tf to analyze")
             self._edges_model.set_rows([])
             self._gaps_model.set_rows([])
+            self._analyzed_reader = None
             return
 
+        # Reader-identity cache: showEvent fires on EVERY TF-tab visit, and collect_tf_report is
+        # a FULL O(n) stream of /tf+/tf_static (the most expensive offline op). Skip the recompute
+        # when the bag is unchanged — the views already reflect this reader's report. Held ref +
+        # `is` (NOT id(), which a freed reader could reuse). Mirrors the query panel's F7 cache.
+        if reader is self._analyzed_reader:
+            return
         if self._refresh_thread is not None and self._refresh_thread.isRunning():
             return
 
@@ -154,12 +166,31 @@ class TfPanel(QWidget):
         worker = BlockingWorker(
             work, teaching_errors=(NoTransformsError,), label="TF analysis failed"
         )
+        # Generation guard: bump per refresh; a SUPERSEDED worker's late signal (older gen) is
+        # ignored, so its finished slot can't null the CURRENT worker's refs (the
+        # File-Open-mid-refresh race) and a stale report can't render. (self.sender() is
+        # unreliable for cross-thread bound-method slots in PySide6 — use an explicit gen.)
+        self._refresh_gen += 1
+        gen = self._refresh_gen
+        analyzed = reader
+
+        def _live(fn):
+            return lambda *a, g=gen: fn(*a) if g == self._refresh_gen else None
+
+        def _result(result: object) -> None:
+            self._analyzed_reader = analyzed  # cache the reader this report was computed from
+            self._on_refresh_result(result)
+
+        def _failed(message: str) -> None:
+            self._analyzed_reader = analyzed  # cache the no-/tf outcome too (don't re-stream it)
+            self._on_refresh_failed(message)
+
         self._refresh_thread, self._refresh_worker = run_on_thread(
             self,
             worker,
-            on_result=self._on_refresh_result,
-            on_failed=self._on_refresh_failed,
-            on_finished=self._on_refresh_finished,
+            on_result=_live(_result),
+            on_failed=_live(_failed),
+            on_finished=_live(self._on_refresh_finished),
         )
 
     def _on_refresh_result(self, result: object) -> None:
@@ -232,7 +263,13 @@ class TfPanel(QWidget):
         self._gaps_model.set_rows([])
 
     def _on_refresh_finished(self) -> None:
-        """Clear the thread/worker refs on every outcome (CR-01, UI thread)."""
+        """Clear the thread/worker refs (CR-01, UI thread) — only for the CURRENT generation.
+
+        A SUPERSEDED worker's late ``finished`` (an older generation — see ``refresh_view``'s
+        ``_live`` guard) never reaches here, so it cannot null the CURRENT worker's refs in a
+        File-Open-mid-refresh race (which would leave the new worker unparented + un-joined,
+        re-opening the C3 reader use-after-free on close).
+        """
         self._refresh_thread = None
         self._refresh_worker = None
 

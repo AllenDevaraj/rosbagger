@@ -426,3 +426,38 @@ async def test_query_schema_tree_cached_across_revisits(
             f"revisiting the Query tab rebuilt the schema Tree ({len(calls) - before} extra "
             "collect_table_schemas calls); the reader-identity cache should make it a no-op"
         )
+
+
+async def test_tf_panel_report_cached_across_revisits(
+    bag: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F7 (TUI TF): re-visiting the TF tab does NOT recompute collect_tf_report (reader cache).
+
+    on_show calls refresh_view on every TF-tab visit, and collect_tf_report is a FULL O(n)
+    /tf+/tf_static stream run SYNCHRONOUSLY on the UI thread (freezing the TUI). We measure the
+    DELTA in collect_tf_report calls across a tf → query → tf revisit; a working cache => zero
+    delta on the revisit. (The fixture has no /tf, so each computed visit raises
+    NoTransformsError, which is cached too — so a revisit is still a no-op.)
+    """
+    import rosbagger_core.tf as tfmod
+
+    calls: list[int] = []
+    real = tfmod.collect_tf_report
+    monkeypatch.setattr(
+        tfmod, "collect_tf_report", lambda reader: (calls.append(1), real(reader))[1]
+    )
+
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#nav-tf")
+        await pilot.pause()
+        before = len(calls)  # the TF report was computed (at most) once by now
+        await pilot.click("#nav-query")
+        await pilot.pause()
+        await pilot.click("#nav-tf")  # revisit — must hit the cache, not re-stream
+        await pilot.pause()
+        assert len(calls) == before, (
+            f"revisiting the TF tab recomputed the report ({len(calls) - before} extra "
+            "collect_tf_report calls); the reader-identity cache should make it a no-op"
+        )

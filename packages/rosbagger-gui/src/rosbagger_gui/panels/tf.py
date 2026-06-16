@@ -40,6 +40,14 @@ def _human_dur(ns: int) -> str:
 class TfPanel(Widget):
     """TF view — parent→child edge summary + per-edge gap timeline (offline)."""
 
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        # F7-style cache: the reader the report was last computed from. on_show calls
+        # refresh_view on every TF-tab visit, and collect_tf_report is a FULL O(n) /tf+/tf_static
+        # stream run SYNCHRONOUSLY here — freezing the TUI. Skip the recompute when the reader is
+        # unchanged (held ref + `is`, NOT id(), which a freed reader could reuse).
+        self._analyzed_reader: object | None = None
+
     def compose(self) -> ComposeResult:
         """A status line + the per-edge summary and gap-timeline DataTables."""
         yield Static("Open a bag with /tf to analyze", id="tf-status")
@@ -72,6 +80,13 @@ class TfPanel(Widget):
             status.update("Open a bag with /tf to analyze")
             edges_table.clear(columns=True)
             gaps_table.clear(columns=True)
+            self._analyzed_reader = None
+            return
+
+        # F7 cache: skip the recompute when the bag is unchanged — the tables already reflect this
+        # reader's report, and collect_tf_report is the expensive full-stream op run on the UI
+        # thread here. A new bag is a new reader object, so it recomputes.
+        if reader is self._analyzed_reader:
             return
 
         # Lazy import (D-03): keep this module's top level textual-only.
@@ -85,6 +100,7 @@ class TfPanel(Widget):
             status.update(str(exc))
             edges_table.clear(columns=True)
             gaps_table.clear(columns=True)
+            self._analyzed_reader = reader  # cache the no-/tf outcome too (don't re-stream it)
             return
 
         # Whole-bag span for the header + per-edge rate (presentation only).
@@ -126,3 +142,4 @@ class TfPanel(Widget):
                     f"t={g.at_rel_ns / 1e9:.2f}s",
                     str(g.at_ns),
                 )
+        self._analyzed_reader = reader  # remember the bag this report was computed from (F7)

@@ -65,6 +65,9 @@ class InspectPanel(QWidget):
         # live thread mid-run) and its worker. Both None between refreshes.
         self._refresh_thread: QThread | None = None
         self._refresh_worker: BlockingWorker | None = None
+        # Bumped per refresh; a superseded worker's late signal (older gen) is ignored so it
+        # cannot null the current worker's refs in a File-Open-mid-refresh race (see refresh_view).
+        self._refresh_gen = 0
 
         # Status/header line as an accessibly-named region (D-02); a stable objectName lets
         # the shared status helper restore it after an error toggle.
@@ -152,12 +155,21 @@ class InspectPanel(QWidget):
             return (collect_bag_info(reader), collect_table_schemas(reader))
 
         worker = BlockingWorker(work, label="Inspect failed")
+        # Generation guard (mirrors TfPanel): a SUPERSEDED worker's late signal (older gen) is
+        # ignored so its finished slot can't null the CURRENT worker's refs (File-Open-mid-refresh
+        # race). self.sender() is unreliable for cross-thread bound-method slots in PySide6.
+        self._refresh_gen += 1
+        gen = self._refresh_gen
+
+        def _live(fn):
+            return lambda *a, g=gen: fn(*a) if g == self._refresh_gen else None
+
         self._refresh_thread, self._refresh_worker = run_on_thread(
             self,
             worker,
-            on_result=self._on_refresh_result,
-            on_failed=self._on_refresh_failed,
-            on_finished=self._on_refresh_finished,
+            on_result=_live(self._on_refresh_result),
+            on_failed=_live(self._on_refresh_failed),
+            on_finished=_live(self._on_refresh_finished),
         )
 
     def _on_refresh_result(self, result: object) -> None:
@@ -207,7 +219,13 @@ class InspectPanel(QWidget):
         self._schemas_model.set_rows([])
 
     def _on_refresh_finished(self) -> None:
-        """Clear the thread/worker refs on every outcome (CR-01, UI thread)."""
+        """Clear the thread/worker refs (CR-01, UI thread) — only for the CURRENT generation.
+
+        A SUPERSEDED worker's late ``finished`` (an older generation — see ``refresh_view``'s
+        ``_live`` guard) never reaches here, so it cannot null the CURRENT worker's refs in a
+        File-Open-mid-refresh race (which would leave the new worker unparented + un-joined).
+        Mirrors TfPanel.
+        """
         self._refresh_thread = None
         self._refresh_worker = None
 
