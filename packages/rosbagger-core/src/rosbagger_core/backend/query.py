@@ -69,9 +69,11 @@ __all__ = ["UnknownColumnError", "UnknownTableError", "query"]
 # DuckDB's unknown-column BinderException message embeds the offending column as
 # 'Referenced column "X" not found in FROM clause! ...'. We catch the exception by
 # TYPE (robust across locales/versions); this stdlib regex parses the message ONLY
-# to recover the column NAME for the teaching error (07-RESEARCH §2; a miss degrades
-# the name to "?" while still listing the table's columns). ``re`` is stdlib — safe
-# at module top, no offline-invariant impact.
+# to recover the column NAME for the teaching error (07-RESEARCH §2). A regex MISS
+# (e.g. a GROUP BY/HAVING binder error, not an unknown column) re-raises the original
+# DuckDB BinderException verbatim — only a match is remapped to UnknownColumnError
+# (see the binder handler below). ``re`` is stdlib — safe at module top, no
+# offline-invariant impact.
 _BINDER_COL = re.compile(r'Referenced column "([^"]+)" not found')
 
 # The four always-present standard columns (QURY-04). D-07: projection MUST always
@@ -328,9 +330,16 @@ def query(
     # with no error. `table_to_topic` is already built (Step 2), so we only reserve
     # `events` for the sidecar when NO real topic owns that table name; when a topic
     # does, `events` stays in `data_tables` and resolves+loads as an ordinary topic.
-    events_is_real_topic = _EVENTS_TABLE in table_to_topic
-    events_referenced = _EVENTS_TABLE in tables and not events_is_real_topic
-    data_tables = tables - ({_EVENTS_TABLE} if events_referenced else set())
+    # newA5: resolve the reserved `events` name case-INSENSITIVELY, like the rest of
+    # query() (DuckDB folds identifier case). A real topic that sanitizes to ANY case
+    # variant of `events` (e.g. `/Events`) takes precedence over the sidecar — using the
+    # exact-case `table_to_topic` here would miss `/Events` and silently shadow it with
+    # the empty sidecar. And the reference itself is matched in any case, so `FROM Events`
+    # reaches the sidecar exactly as `FROM events` does.
+    events_is_real_topic = _EVENTS_TABLE in table_to_topic_ci
+    events_ref = next((t for t in tables if t.lower() == _EVENTS_TABLE), None)
+    events_referenced = events_ref is not None and not events_is_real_topic
+    data_tables = tables - ({events_ref} if events_referenced else set())
 
     # Step 6 — resolve each referenced (non-`events`) table name to a topic; an unmapped
     # name raises a clear error listing the available tables, BEFORE any load
@@ -510,7 +519,13 @@ def _safe_limit_head(tree) -> int | None:
     count = limit.expression
     if not isinstance(count, exp.Literal) or count.is_string:
         return None
-    head = int(count.name)
+    # A numeric-but-non-integer literal (e.g. LIMIT 1.5, valid SQL DuckDB accepts) is NOT
+    # a safe islice count; bail the pushdown and let DuckDB run the query rather than
+    # crashing the whole query() with int('1.5') -> ValueError.
+    try:
+        head = int(count.name)
+    except ValueError:
+        return None
     if head < 0:
         return None
     offset = tree.args.get("offset")
@@ -518,7 +533,10 @@ def _safe_limit_head(tree) -> int | None:
         off = offset.expression
         if not isinstance(off, exp.Literal) or off.is_string:
             return None
-        off_n = int(off.name)
+        try:
+            off_n = int(off.name)
+        except ValueError:
+            return None
         if off_n < 0:
             return None
         head += off_n

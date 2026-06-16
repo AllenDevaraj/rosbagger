@@ -615,11 +615,11 @@ def test_query_events_absent_sidecar_yields_zero_rows(tmp_path: Path) -> None:
     assert set(result.column_names) == {"t_start_ns", "t_end_ns", "label", "note"}
 
 
-def _write_bag_with_events_topic(dest_dir: Path) -> Path:
-    """Write a ROS 1 bag whose ONLY topic is a real ``/events`` (CR-01 fixture).
+def _write_bag_with_events_topic(dest_dir: Path, *, topic: str = "/events") -> Path:
+    """Write a ROS 1 bag whose ONLY topic is a real ``events``-named topic (CR-01 fixture).
 
-    ``/events`` sanitizes to the table name ``events`` — the same name the reserved
-    event sidecar claims — so this bag is the exact CR-01 collision case. The topic
+    ``topic`` (default ``/events``) sanitizes to a table name that collides with the
+    reserved event sidecar — pass ``/Events`` for the case-variant collision. The topic
     carries 3 ``geometry_msgs/msg/Twist`` messages (headerless, no covariance) at
     t = 1.0 / 1.1 / 1.2 s with ``linear.x`` = 0.0 / 1.0 / 2.0, mirroring the corpus's
     ``/cmd_vel`` content so the rows are easy to assert.
@@ -634,7 +634,7 @@ def _write_bag_with_events_topic(dest_dir: Path) -> Path:
     vector3_t = ts.types["geometry_msgs/msg/Vector3"]
     twist_t = ts.types["geometry_msgs/msg/Twist"]
     with Ros1Writer(path) as writer:
-        conn = writer.add_connection("/events", "geometry_msgs/msg/Twist", typestore=ts)
+        conn = writer.add_connection(topic, "geometry_msgs/msg/Twist", typestore=ts)
         for i in range(3):
             msg = twist_t(
                 linear=vector3_t(x=float(i), y=0.0, z=0.0),
@@ -664,6 +664,25 @@ def test_query_real_events_topic_not_shadowed_by_sidecar(tmp_path: Path) -> None
     assert result.num_rows == 3  # the topic's rows, not the sidecar's 0 rows
     # The Twist topic flattens to dotted columns — the sidecar's schema is
     # {t_start_ns, t_end_ns, label, note}, which must NOT be what we got back.
+    assert "linear.x" in result.column_names
+    assert set(result.column_names) != {"t_start_ns", "t_end_ns", "label", "note"}
+    assert result.column("linear.x").to_pylist() == [0.0, 1.0, 2.0]
+
+
+def test_query_capitalized_events_topic_not_shadowed_by_sidecar(tmp_path: Path) -> None:
+    """CR-01 (case-insensitive): a real `/Events` topic queried as `events` returns ITS rows.
+
+    Regression for the audit bug: `/Events` sanitizes to table name `Events`, but the
+    CR-01 precedence guard compared against the EXACT-case table map, so it missed the
+    case-variant and `events_referenced` reserved the name for the (empty) sidecar —
+    silently shadowing the real topic with 0 rows. Everything else in query() folds
+    identifier case (newA5), so the guard must too. `SELECT * FROM events` must return
+    the 3 Twist rows, not the empty sidecar relation.
+    """
+    bag = _write_bag_with_events_topic(tmp_path / "cap_events", topic="/Events")
+    with RosbagsReader(bag) as reader:
+        result = query("SELECT * FROM events", reader)
+    assert result.num_rows == 3  # the /Events topic's rows, not the empty sidecar's 0
     assert "linear.x" in result.column_names
     assert set(result.column_names) != {"t_start_ns", "t_end_ns", "label", "note"}
     assert result.column("linear.x").to_pylist() == [0.0, 1.0, 2.0]
@@ -804,11 +823,28 @@ def test_query_table_name_resolves_case_insensitively(tmp_path: Path) -> None:
         ("WITH c AS (SELECT * FROM imu) SELECT * FROM c LIMIT 5", None),  # CTE
         ("SELECT * FROM imu UNION SELECT * FROM other LIMIT 5", None),  # set op
         ("SELECT row_number() OVER () AS r FROM imu LIMIT 5", None),  # window
+        # A numeric-but-non-integer LIMIT/OFFSET is valid SQL (DuckDB ceils it) but is NOT
+        # a safe islice count — bail to None instead of crashing with int('1.5') ValueError.
+        ("SELECT * FROM imu LIMIT 1.5", None),
+        ("SELECT * FROM imu LIMIT 5 OFFSET 1.5", None),
     ],
 )
 def test_safe_limit_head_detection(sql: str, expected: int | None) -> None:
     """The LIMIT-pushdown gate fires for a bare scan+LIMIT and bails on every other shape (F2)."""
     assert _safe_limit_head(parse(sql)) == expected
+
+
+def test_non_integer_limit_does_not_crash_query(fixture_bags: dict[str, Path]) -> None:
+    """A valid non-integer LIMIT (1.5) bails the pushdown and runs via DuckDB — no ValueError.
+
+    Regression for the audit bug: `_safe_limit_head` did `int(count.name)` on a non-string
+    Literal, so `LIMIT 1.5` (which DuckDB accepts) crashed the whole query() with a
+    ValueError before DuckDB ran. The pushdown now returns None for a non-integer literal
+    and the query executes normally.
+    """
+    with RosbagsReader(fixture_bags["ros2_sqlite"]) as reader:
+        result = query("SELECT t_ns FROM imu LIMIT 1.5", reader)
+    assert result.num_rows >= 1  # ran without crashing (DuckDB ceils 1.5 -> 2 rows)
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
