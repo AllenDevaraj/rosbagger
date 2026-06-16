@@ -29,9 +29,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QRect, Qt, Signal
+from PySide6.QtCore import QEvent, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent
-from PySide6.QtWidgets import QSlider
+from PySide6.QtWidgets import QProxyStyle, QSlider, QStyle, QToolTip
 
 from ..theme.qss import region_colors
 
@@ -64,6 +64,27 @@ class EventMark:
     label: str
 
 
+class _AbsoluteSeekStyle(QProxyStyle):
+    """Make a LEFT groove-click jump to the clicked position (absolute), not a page-step.
+
+    Qt's slider defaults ``SH_Slider_AbsoluteSetButtons`` to the MIDDLE button, so a left
+    groove-click did a PageStep — click-to-seek landed ~one page (~1%) off the cursor and a
+    click on a marker never snapped; only a handle DRAG worked. Returning ``Qt.LeftButton``
+    makes a left-click set the value absolutely at the cursor — what a timeline scrubber needs.
+    """
+
+    def styleHint(  # noqa: N802 - Qt override name
+        self,
+        hint: QStyle.StyleHint,
+        option: object = None,
+        widget: object = None,
+        return_data: object = None,
+    ) -> int:
+        if hint == QStyle.StyleHint.SH_Slider_AbsoluteSetButtons:
+            return Qt.MouseButton.LeftButton.value  # .value: PySide6 flag enum -> int
+        return super().styleHint(hint, option, widget, return_data)
+
+
 class Scrubber(QSlider):
     """A horizontal timeline slider: a playhead + event markers; user input -> fraction.
 
@@ -89,6 +110,10 @@ class Scrubber(QSlider):
         super().__init__(Qt.Horizontal, *args, **kwargs)  # type: ignore[arg-type]
         self.setRange(0, _RESOLUTION)
         self.setValue(0)
+        # Left-click jumps to the clicked position (absolute seek), not a page-step (see
+        # _AbsoluteSeekStyle). setStyle does NOT take ownership, so keep a reference alive.
+        self._seek_style = _AbsoluteSeekStyle()
+        self.setStyle(self._seek_style)
         # Event markers (fraction, label) the panel sets from list_events(bag); never holds
         # any transport/position state.
         self._markers: list[EventMark] = []
@@ -256,6 +281,26 @@ class Scrubber(QSlider):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def event(self, event: QEvent) -> bool:  # noqa: N802 - QEvent dispatch override
+        """Show the nearest event marker's label as a tooltip on hover.
+
+        Markers otherwise render as identical ticks, so a user cannot tell which event a tick is
+        (jump-to-event still works via the click->snap path). On a ToolTip event, map the cursor
+        x to a fraction and, when it is within ``_MARKER_SNAP_FRACTION`` of a marker, show that
+        marker's label near the cursor; otherwise hide any tooltip. Everything else falls through
+        to the base dispatch so all default slider behavior is untouched.
+        """
+        if event.type() == QEvent.Type.ToolTip and self._markers:
+            width = max(1, self.width() - 1)
+            fraction = _clamp01(event.pos().x() / width)
+            nearest = self._nearest_marker(fraction)
+            if nearest is not None and abs(nearest.fraction - fraction) <= _MARKER_SNAP_FRACTION:
+                QToolTip.showText(event.globalPos(), nearest.label, self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(event)
 
     # ------------------------------------------------------------------ rendering
 

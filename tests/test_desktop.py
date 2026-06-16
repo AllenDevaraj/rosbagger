@@ -1759,6 +1759,45 @@ def test_scrubber_paint_with_region_does_not_crash(qtbot) -> None:
     assert scrubber.loop_region == (pytest.approx(0.25), pytest.approx(0.75))
 
 
+def test_scrubber_left_click_is_absolute_seek(qtbot) -> None:
+    """The scrubber installs a proxy style so a LEFT groove-click is an absolute seek.
+
+    Regression for the audit bug: Qt defaults SH_Slider_AbsoluteSetButtons to the MIDDLE
+    button, so a left click did a page-step (~1% off) and never snapped to a clicked marker.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QStyle
+
+    from rosbagger_desktop.widgets import Scrubber
+
+    scrubber = Scrubber()
+    qtbot.addWidget(scrubber)
+    hint = scrubber.style().styleHint(
+        QStyle.StyleHint.SH_Slider_AbsoluteSetButtons, None, scrubber
+    )
+    assert hint == Qt.MouseButton.LeftButton.value
+
+
+def test_scrubber_marker_tooltip_shows_nearest_label(qtbot) -> None:
+    """Hovering near a marker surfaces its label as a tooltip (ticks are otherwise identical)."""
+    from PySide6.QtCore import QEvent, QPoint
+    from PySide6.QtGui import QHelpEvent
+    from PySide6.QtWidgets import QToolTip
+
+    from rosbagger_desktop.widgets import Scrubber
+
+    scrubber = Scrubber()
+    qtbot.addWidget(scrubber)
+    scrubber.resize(200, 20)
+    scrubber.set_markers([(0.5, "turn"), (0.9, "dropout")])
+
+    width = max(1, scrubber.width() - 1)
+    pos = QPoint(round(0.5 * width), 5)  # near the "turn" marker
+    handled = scrubber.event(QHelpEvent(QEvent.Type.ToolTip, pos, scrubber.mapToGlobal(pos)))
+    assert handled is True
+    assert QToolTip.text() == "turn"
+
+
 # --------------------------------------------------------------------------- #
 # Replay advanced sub-panel + snippet loop region (Phase 19, REP-03 / SC3+SC4):
 # a collapsible "Advanced" sub-panel with a Loop-region toggle + Set-In/Out
