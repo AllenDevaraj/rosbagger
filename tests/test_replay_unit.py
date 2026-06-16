@@ -990,6 +990,52 @@ def test_cli_replay_no_messages_exits_one_cleanly(monkeypatch):
     assert "No messages to replay" in result.output
 
 
+def test_cli_replay_rejects_non_positive_rate(monkeypatch):
+    """--rate 0 is a clean BadParameter (exit 2) BEFORE any ROS spin-up — not a traceback.
+
+    Replayer.__init__ raises ValueError on rate<=0, but that is not a @_capability_errors type
+    and fires only after rclpy + the node + the sink are built (ugly traceback). The up-front
+    guard rejects it cleanly; the API is never reached.
+    """
+    called = []
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", lambda *a, **k: called.append(1))
+    result = _runner.invoke(app, ["/tmp/bag", "--rate", "0"])
+    assert result.exit_code == 2  # typer/click BadParameter usage error
+    assert called == []  # validated before the API call
+    assert "--rate" in result.output
+
+
+def test_cli_replay_region_end_without_start_is_usage_error(monkeypatch):
+    """--region-end without --region-start is a clean BadParameter, not a silently-dropped flag.
+
+    The library acts on the region only when BOTH bounds are present, so before the guard a
+    "play to N seconds" request silently played the whole bag with no indication.
+    """
+    called = []
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", lambda *a, **k: called.append(1))
+    result = _runner.invoke(app, ["/tmp/bag", "--region-end", "5"])
+    assert result.exit_code == 2
+    assert called == []
+    assert "--region-start" in result.output
+
+
+def test_cli_replay_unbounded_region_warns_but_forwards(monkeypatch):
+    """A region with no --duration/--max-messages warns it repeats until interrupted, still runs."""
+    calls = {}
+
+    def fake_replay_bag(bag, **kwargs):
+        calls.update(kwargs)
+        return 4
+
+    monkeypatch.setattr(rosbagger_replay, "replay_bag", fake_replay_bag)
+    result = _runner.invoke(app, ["/tmp/bag", "--region-start", "1", "--region-end", "5"])
+    assert result.exit_code == 0, result.output
+    assert "REPEATS until interrupted" in result.output  # the informational stderr warning
+    # The warning is informational, not blocking — the region bounds still forward to the API.
+    assert calls["region_start"] == 1.0
+    assert calls["region_end"] == 5.0
+
+
 def test_cli_replay_help_exposes_parity_flags():
     """SC1: --help exposes the Phase-21 parity flags alongside the existing ones."""
     result = _runner.invoke(app, ["--help"])

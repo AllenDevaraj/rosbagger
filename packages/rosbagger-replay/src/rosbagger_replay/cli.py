@@ -177,8 +177,10 @@ def replay(
         float | None,
         typer.Option(
             "--region-end",
-            help="Play to this many SECONDS in (region out-point); pair with --loop to REPEAT "
-            "the [in,out] snippet. A single-pass [in,out] stop is deferred (see --end/--duration).",
+            help="Play to this many SECONDS in (region out-point). Requires --region-start. The "
+            "[in,out] snippet REPEATS (independent of --loop) until you bound it with "
+            "--duration/--max-messages or interrupt (Ctrl-C); a single-pass [in,out] stop is "
+            "deferred (see --end/--duration).",
         ),
     ] = None,
 ) -> None:
@@ -194,7 +196,8 @@ def replay(
     Phase-21 parity flags (REP-05): ``--clock`` publishes /clock per message; ``--delay``
     sleeps before publishing; ``--remap old:=new`` (repeatable) publishes a topic under a new
     name; ``--start-paused``/``-p`` begins paused; ``--region-start``/``--region-end`` (seconds)
-    bound a snippet region (pair with ``--loop`` to repeat it).
+    bound a snippet region that REPEATS until bounded by ``--duration``/``--max-messages`` (or
+    Ctrl-C) — independent of ``--loop`` (which is a no-op while a region is set).
 
     OUT OF SCOPE (deferred, NOT silently missing — SC3): the runtime ROS playback services
     ``~/seek`` / ``~/set_rate`` / ``~/play_next`` / ``~/burst`` / ``~/toggle_paused`` are not
@@ -207,6 +210,23 @@ def replay(
     parsed flags and prints the published count. ``replay_bag()`` is the single
     orchestrator of load→schedule→publish; the CLI re-implements none of it.
     """
+    # Validate flags UP FRONT — clean usage errors (no traceback) before any ROS spin-up.
+    # rate<=0 would otherwise reach Replayer.__init__'s ValueError only after rclpy + the
+    # node + the publish sink are built (it is not a @_capability_errors type), surfacing as
+    # an ugly traceback; --region-end alone was silently dropped (the library acts on the
+    # region only when BOTH bounds are present).
+    if rate <= 0:
+        raise typer.BadParameter("--rate must be > 0", param_hint="--rate")
+    if region_end is not None and region_start is None:
+        raise typer.BadParameter("--region-end requires --region-start", param_hint="--region-end")
+    if region_start is not None and duration is None and max_messages is None:
+        typer.secho(
+            "Note: a --region-* snippet REPEATS until interrupted (Ctrl-C); bound it with "
+            "--duration or --max-messages to stop automatically.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
     # Lazy package-API import (offline invariant): the front-door function goes through
     # _require_ros() first (clean RosNotAvailableError if ROS is absent, caught by
     # @_capability_errors) then does the heavy rclpy publish in replay.py. We import the
