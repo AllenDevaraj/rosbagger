@@ -97,6 +97,10 @@ def _pointcloud2_xyz(msg) -> list[tuple[float, float, float]]:
     )
     pts = np.frombuffer(buf, dtype=point_dt, count=count)
     xyz = np.column_stack((pts["x"], pts["y"], pts["z"])).astype(float)
+    # Drop NaN/inf points (organized RGBD/stereo clouds encode invalid returns as NaN): passed
+    # into Points3D they pollute the viewer's auto-bounds + camera framing. Mirrors the
+    # finite-filter _laserscan_xyz already applies.
+    xyz = xyz[np.isfinite(xyz).all(axis=1)]
     return [tuple(row) for row in xyz.tolist()]
 
 
@@ -178,7 +182,15 @@ def _convert_pointcloud2(msg, topic):
 def _convert_image(msg, topic):
     import rerun as rr
 
-    arr, kind = _image_array(msg)
+    try:
+        arr, kind = _image_array(msg)
+    except ValueError:
+        # An unsupported encoding (32FC1 float depth, rgba8/bgra8, yuv422, bayer_*) or a
+        # buffer/size mismatch raises ValueError in _image_array. Don't let that make the
+        # topic VANISH from the viewer (the sink swallows the raise) — fall back to the
+        # generic view, mirroring _convert_compressed_image's unknown-codec path. ("No topic
+        # is ever invisible.")
+        return _convert_generic(msg, topic)
     arch = rr.DepthImage(arr) if kind == "depth" else rr.Image(arr)
     return [(_entity_path(msg, topic), arch)]
 

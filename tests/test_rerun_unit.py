@@ -124,6 +124,26 @@ def test_pointcloud2_xyz_honors_point_step_padding():
     assert pts[1] == pytest.approx((-1.0, 0.0, 9.0))
 
 
+def test_pointcloud2_xyz_drops_non_finite_points():
+    """NaN/inf points (organized RGBD/stereo clouds) are dropped, not fed into Points3D (audit qol).
+
+    Invalid returns encoded as NaN otherwise pollute the viewer's auto-bounds/camera framing;
+    _laserscan_xyz already filters, so the cloud path is brought to parity.
+    """
+    # point 0 finite; point 1 has a NaN x; point 2 finite -> only 0 and 2 survive.
+    data = struct.pack("<fffffffff", 1.0, 2.0, 3.0, float("nan"), 5.0, 6.0, 7.0, 8.0, 9.0)
+    fields = [
+        SimpleNamespace(name="x", offset=0),
+        SimpleNamespace(name="y", offset=4),
+        SimpleNamespace(name="z", offset=8),
+    ]
+    pc = SimpleNamespace(
+        fields=fields, is_bigendian=False, point_step=12, width=3, height=1, data=data
+    )
+    pts = _pointcloud2_xyz(pc)
+    assert pts == [pytest.approx((1.0, 2.0, 3.0)), pytest.approx((7.0, 8.0, 9.0))]
+
+
 def test_image_array_bgr_reversed_and_depth_kind():
     """rgb8 as-is, bgr8 reversed to rgb, 16UC1 → depth kind."""
     rgb = SimpleNamespace(height=1, width=1, encoding="rgb8", data=bytes([10, 20, 30]))
@@ -137,6 +157,28 @@ def test_image_array_bgr_reversed_and_depth_kind():
     depth = SimpleNamespace(height=1, width=1, encoding="16UC1", data=struct.pack("<H", 500))
     arr3, kind3 = _image_array(depth)
     assert kind3 == "depth" and int(arr3[0, 0]) == 500
+
+
+def test_convert_image_unsupported_encoding_falls_back_to_generic():
+    """An unsupported image encoding falls back to the generic view — the topic never vanishes.
+
+    Regression for the audit bug: _image_array raises ValueError for encodings it does not
+    handle (32FC1 float depth, rgba8, yuv422, bayer_*); _convert_image let it escape, the sink
+    swallowed it, and the topic disappeared from the viewer. It now mirrors
+    _convert_compressed_image's unknown-codec fallback.
+    """
+    msg = SimpleNamespace(
+        height=1,
+        width=1,
+        encoding="32FC1",  # float depth — a common encoding _image_array does not handle
+        data=struct.pack("<f", 1.5),
+        header=SimpleNamespace(frame_id="cam"),
+    )
+    out = convert(msg, "sensor_msgs/msg/Image", "/depth")
+    paths = [p for p, _ in out]
+    assert out, "an unsupported encoding must still yield a viewable archetype"
+    assert "cam" in paths  # the generic TextLog entity (fallback ran, no exception escaped)
+    assert any(p.startswith("cam/") for p in paths)  # numeric-leaf Scalars (height/width)
 
 
 def test_numeric_leaves_flattens_and_skips_non_numeric():
