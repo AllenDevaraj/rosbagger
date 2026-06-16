@@ -39,6 +39,7 @@ rclpy 3.3.21 / rosbag2_py 0.15.16): see the per-function docstrings.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 
@@ -119,6 +120,42 @@ def _make_writer(out: str, storage_id: str):  # noqa: ANN201 (lazy rosbag2_py ty
     return writer
 
 
+def _adapt_subscription_qos(qos, publisher_infos, *, best_effort, transient_local):  # noqa: ANN001, ANN201
+    """Relax ``qos`` to stay COMPATIBLE with every current publisher of the topic.
+
+    A subscription must REQUEST no more than each publisher OFFERS, so a fixed RELIABLE /
+    depth-10 subscription silently captures ZERO messages from a BEST_EFFORT publisher (the
+    standard profile for high-rate camera / lidar / IMU data): the endpoints never match and
+    the bag finalizes with the topic declared but empty, with no error. Mirror
+    ``ros2 bag record``: if ANY publisher offers BEST_EFFORT reliability, downgrade to it (a
+    BEST_EFFORT subscription is compatible with BOTH publisher kinds); if ANY offers
+    TRANSIENT_LOCAL durability, adopt it so a latched topic delivers its last sample.
+    ``best_effort`` / ``transient_local`` are the rclpy policy sentinels — passed IN so this
+    decision stays pure and unit-testable offline. Mutates and returns ``qos``.
+    """
+    reliabilities = [getattr(info.qos_profile, "reliability", None) for info in publisher_infos]
+    durabilities = [getattr(info.qos_profile, "durability", None) for info in publisher_infos]
+    if best_effort in reliabilities:
+        qos.reliability = best_effort
+    if transient_local in durabilities:
+        qos.durability = transient_local
+    return qos
+
+
+def _missing_positional_topics(
+    topics: list[str], discovered: dict[str, str], *, all_topics: bool
+) -> list[str]:
+    """Positional topic names requested but not currently published (drives the record warning).
+
+    Empty for the ``all_topics`` mode (no explicit per-name request) and when no positional
+    names are given — the positional case is the only one where a mistyped/absent name is
+    silently dropped (``record /real /typo``), so this is exactly that set difference.
+    """
+    if all_topics or not topics:
+        return []
+    return [t for t in topics if t not in discovered]
+
+
 def _subscribe_and_record(
     node,  # noqa: ANN001 (rclpy node — must not be named at module top)
     writer,  # noqa: ANN001 (rosbag2_py SequentialWriter)
@@ -135,8 +172,10 @@ def _subscribe_and_record(
        ``from rosidl_runtime_py.utilities import get_message`` (e.g.
        ``"std_msgs/msg/String"`` → ``String``) — needed because
        ``create_subscription`` wants the class, not the string.
-    3. ``node.create_subscription(msg_cls, topic, on_raw, 10, raw=True)`` — the
-       ``raw=True`` callback receives plain CDR ``bytes`` (VERIFIED in Humble), which
+    3. ``node.create_subscription(msg_cls, topic, on_raw, qos, raw=True)`` — ``qos`` is
+       adapted to the topic's publishers (:func:`_adapt_subscription_qos`) so a BEST_EFFORT
+       publisher is not silently dropped; the ``raw=True`` callback receives plain CDR
+       ``bytes`` (VERIFIED in Humble), which
        :func:`on_raw` writes verbatim via ``writer.write(topic, bytes(data),
        node.get_clock().now().nanoseconds)`` (three positional args; recorder-clock
        timestamp per the verified probe) and bumps the shared ``counter["n"]`` so the
@@ -159,7 +198,20 @@ def _subscribe_and_record(
         writer.write(topic, bytes(data), node.get_clock().now().nanoseconds)
         counter["n"] += 1
 
-    node.create_subscription(msg_cls, topic, on_raw, 10, raw=True)
+    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+
+    # Subscribe with a QoS compatible with the topic's CURRENT publishers (the topic was just
+    # discovered, so they are visible) rather than a fixed RELIABLE depth-10 — otherwise a
+    # BEST_EFFORT publisher (camera/lidar/IMU) is silently never captured. See
+    # _adapt_subscription_qos.
+    qos = QoSProfile(depth=10)
+    _adapt_subscription_qos(
+        qos,
+        node.get_publishers_info_by_topic(topic),
+        best_effort=ReliabilityPolicy.BEST_EFFORT,
+        transient_local=DurabilityPolicy.TRANSIENT_LOCAL,
+    )
+    node.create_subscription(msg_cls, topic, on_raw, qos, raw=True)
 
 
 def _run(
@@ -302,6 +354,17 @@ def record(
                 regex=regex,
                 exclude=exclude,
                 discovered=sorted(discovered),
+            )
+        # Warn (don't fail) about positional topics requested but not currently published:
+        # `record /real /typo` records only /real and otherwise reports success, so the
+        # dropped topic is noticed only later. (The all-missing case is the NoTopicsMatchedError
+        # above; this catches the PARTIAL case.)
+        missing = _missing_positional_topics(topics, discovered, all_topics=all_topics)
+        if missing:
+            print(
+                "warning: requested topic(s) not currently published, not recorded: "
+                f"{', '.join(missing)}",
+                file=sys.stderr,
             )
         writer = _make_writer(out, storage)
         try:

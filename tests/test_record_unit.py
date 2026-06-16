@@ -116,6 +116,76 @@ def test_select_is_deterministic_and_preserves_discovered_order():
 
 
 # --------------------------------------------------------------------------- #
+# _missing_positional_topics — the record warning's pure set difference (no ROS)
+# --------------------------------------------------------------------------- #
+
+
+def test_missing_positional_topics_reports_partial_typo():
+    """`record /real /typo` -> the unpublished /typo is reported (the partial-drop warning)."""
+    from rosbagger_record.record import _missing_positional_topics
+
+    discovered = {"/real": "T"}
+    assert _missing_positional_topics(["/real", "/typo"], discovered, all_topics=False) == ["/typo"]
+
+
+def test_missing_positional_topics_empty_for_all_topics_and_no_names():
+    """all_topics (or no positional names) makes no per-name request -> nothing 'missing'."""
+    from rosbagger_record.record import _missing_positional_topics
+
+    discovered = {"/a": "T"}
+    assert _missing_positional_topics(["/x"], discovered, all_topics=True) == []
+    assert _missing_positional_topics([], discovered, all_topics=False) == []
+
+
+# --------------------------------------------------------------------------- #
+# _adapt_subscription_qos — match publishers' offered QoS (no ROS; pure decision)
+# --------------------------------------------------------------------------- #
+
+
+def test_adapt_qos_downgrades_to_best_effort_for_best_effort_publisher():
+    """A BEST_EFFORT publisher downgrades the subscription so it is not silently dropped."""
+    from types import SimpleNamespace
+
+    from rosbagger_record.record import _adapt_subscription_qos
+
+    qos = SimpleNamespace(reliability="RELIABLE", durability="VOLATILE")
+    infos = [
+        SimpleNamespace(qos_profile=SimpleNamespace(reliability="BEST", durability="VOLATILE")),
+    ]
+    _adapt_subscription_qos(qos, infos, best_effort="BEST", transient_local="TL")
+    assert qos.reliability == "BEST"
+    assert qos.durability == "VOLATILE"  # unchanged (no TRANSIENT_LOCAL publisher)
+
+
+def test_adapt_qos_adopts_transient_local_and_keeps_reliable_default():
+    """A TRANSIENT_LOCAL publisher is adopted; all-RELIABLE publishers keep RELIABLE."""
+    from types import SimpleNamespace
+
+    from rosbagger_record.record import _adapt_subscription_qos
+
+    qos = SimpleNamespace(reliability="RELIABLE", durability="VOLATILE")
+    infos = [
+        SimpleNamespace(qos_profile=SimpleNamespace(reliability="RELIABLE", durability="TL")),
+        SimpleNamespace(qos_profile=SimpleNamespace(reliability="RELIABLE", durability="VOLATILE")),
+    ]
+    _adapt_subscription_qos(qos, infos, best_effort="BEST", transient_local="TL")
+    assert qos.reliability == "RELIABLE"  # no BEST_EFFORT publisher -> stays reliable
+    assert qos.durability == "TL"  # any TRANSIENT_LOCAL publisher -> adopt it
+
+
+def test_adapt_qos_no_publishers_leaves_default():
+    """With no visible publishers the QoS is left at the reliable depth-10 default."""
+    from types import SimpleNamespace
+
+    from rosbagger_record.record import _adapt_subscription_qos
+
+    qos = SimpleNamespace(reliability="RELIABLE", durability="VOLATILE")
+    _adapt_subscription_qos(qos, [], best_effort="BEST", transient_local="TL")
+    assert qos.reliability == "RELIABLE"
+    assert qos.durability == "VOLATILE"
+
+
+# --------------------------------------------------------------------------- #
 # discover_topics — ROS-bound, with rclpy MOCKED via sys.modules (Pitfall 6)
 # --------------------------------------------------------------------------- #
 
@@ -479,7 +549,14 @@ def mocked_ros(monkeypatch):
     writer = MagicMock()
     fake_rosbag2_py.SequentialWriter.return_value = writer
 
+    # _subscribe_and_record now adapts the subscription QoS to the topic's publishers, so the
+    # node's get_publishers_info_by_topic must be iterable (no publishers -> keep the default).
+    fake_rclpy.create_node.return_value.get_publishers_info_by_topic.return_value = []
+
     monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+    # `from rclpy.qos import ...` is a SUBMODULE import — a bare MagicMock for `rclpy` does not
+    # satisfy it, so inject the qos submodule explicitly (its QoSProfile/policy attrs auto-mock).
+    monkeypatch.setitem(sys.modules, "rclpy.qos", fake_rclpy.qos)
     monkeypatch.setitem(sys.modules, "rosbag2_py", fake_rosbag2_py)
     # rosidl_runtime_py.utilities.get_message(type_str) -> a message class
     fake_rosidl = MagicMock()
