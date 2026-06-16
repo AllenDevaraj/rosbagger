@@ -84,6 +84,19 @@ def test_events_add_point_event_round_trips(bag: Path) -> None:
     assert "mark" in lst.stdout
 
 
+def test_events_add_rejects_backwards_window(bag: Path) -> None:
+    """`events add --start 5 --end 1` is a clean BadParameter (a backwards window matches no rows).
+
+    Without the guard the event was accepted, but its BETWEEN interval join matched zero rows —
+    a silent-failure trap. A point event (start == end) is still allowed.
+    """
+    result = runner.invoke(
+        app, ["events", "add", str(bag), "--start", "5", "--end", "1", "--label", "oops"]
+    )
+    assert result.exit_code == 2  # typer BadParameter usage error
+    assert "must be <=" in result.output
+
+
 def test_events_list_no_sidecar_prints_no_events(bag: Path) -> None:
     """``bagq events list`` on a bag with NO sidecar exits 0 and prints "no events"."""
     lst = runner.invoke(app, ["events", "list", str(bag)])  # no add first

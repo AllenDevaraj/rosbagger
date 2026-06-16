@@ -404,6 +404,16 @@ def query(
                 param_hint="'-o' / '--output'",
             )
 
+    # Preflight --format too, BEFORE the (possibly long) query, mirroring the -o preflight above
+    # (newA6): an unknown/binary --format was only rejected AFTER run_query returned, so a typo
+    # wasted the whole scan. fmt is consulted ONLY when neither --plot nor -o is set (both take
+    # precedence and ignore fmt), so guard on that to avoid rejecting a fmt that would be ignored.
+    if plot is None and out is None:
+        if fmt not in ("table", "csv", "parquet", "json"):
+            raise typer.BadParameter(f"Unknown format {fmt!r}; use table|csv|parquet|json")
+        if fmt == "parquet":
+            raise typer.BadParameter("Parquet is binary; specify -o out.parquet")
+
     # UnknownTableError (unknown table) and FileNotFoundError (missing bag) are caught by
     # the @teaching_errors wrapper -> a clean one-line message + Exit(1), no traceback.
     # The result Arrow table is fully materialized inside query() (the backend closes
@@ -414,14 +424,18 @@ def query(
     with RosbagsReader(bags) as reader:
         result = run_query(sql, reader, alias=not no_alias)
 
-    # --plot is its own output sink (OUT-04) and takes precedence: when set, plot and
-    # return, ignoring table/-o/--format. The bare-flag sentinel resolves to plot.png
-    # (decision A1); --plot FILE writes that file. The RuntimeError (matplotlib missing
-    # -> teaching "install bagq[plot]") and any ValueError (nothing to plot) PROPAGATE —
-    # Phase 7 owns formatting errors; do NOT swallow them here.
+    # --plot is its own output sink (OUT-04) and takes precedence: when set, plot and return,
+    # ignoring table/-o/--format. The bare-flag sentinel resolves to plot.png (decision A1);
+    # --plot FILE writes that file. plot_table raises RuntimeError (matplotlib missing ->
+    # teaching "install bagq[plot]") or ValueError (nothing to plot); @teaching_errors does NOT
+    # catch these (it deliberately avoids a broad except ValueError), so present them cleanly
+    # HERE rather than dumping a traceback (missing-matplotlib is a common base-install path).
     if plot is not None:
         target = _PLOT_DEFAULT_FILE if plot == _PLOT_DEFAULT else plot
-        plot_table(result, target)
+        try:
+            plot_table(result, target)
+        except (RuntimeError, ValueError) as e:
+            raise typer.BadParameter(str(e)) from e
         typer.echo(f"Wrote {target}")
         return
 
@@ -565,6 +579,10 @@ def tf(
     # caught by @teaching_errors -> a clean one-line message + Exit(1), no traceback.
     # The frozen TfReport is fully built inside collect_tf_report, so it outlives the
     # reader `with` block.
+    # Preflight --format BEFORE the (possibly long) TF scan, mirroring `bagq query` (newA6).
+    if fmt not in ("table", "json"):
+        raise typer.BadParameter(f"Unknown format {fmt!r}; use table|json")
+
     with RosbagsReader(bags) as reader:
         report = collect_tf_report(reader, gap_multiplier=gap_multiplier, gap_ms=gap_ms)
 
@@ -772,6 +790,15 @@ def events_add(
     # The CLI only converts the SECONDS flags to ns and calls add_event; the sidecar
     # write (the DuckDB-COPY reuse, T-06-01) lives entirely in core (D-02 / D-13).
     from rosbagger_core.events import add_event
+
+    # A backwards window (--start > --end) creates an event whose BETWEEN interval join matches
+    # ZERO rows — a silent-failure trap. Reject it up front (the analogous trim window is guarded
+    # in EditOps.__post_init__). Equal start/end is a valid point/instant event.
+    if end < start:
+        raise typer.BadParameter(
+            f"--start ({start}) must be <= --end ({end}); a backwards window matches no rows.",
+            param_hint="'--start' / '--end'",
+        )
 
     path = add_event(
         bag,

@@ -127,6 +127,37 @@ def test_query_unknown_format_errors(ros1_bag: Path) -> None:
     assert result.exit_code != 0
 
 
+def test_query_format_preflight_fails_before_running_query(ros1_bag: Path) -> None:
+    """``--format parquet`` (no -o) is rejected BEFORE the query runs (fast-fail preflight).
+
+    Proven by referencing a bogus table: if the query ran first it would raise
+    UnknownTableError (exit 1); the up-front --format preflight wins with a clean BadParameter
+    (exit 2) naming the binary-to-stdout guard — no minutes-long scan wasted on a typo.
+    """
+    result = runner.invoke(
+        app, ["query", "SELECT * FROM no_such_table", str(ros1_bag), "--format", "parquet"]
+    )
+    assert result.exit_code == 2  # BadParameter, before the query's UnknownTableError (exit 1)
+    assert "Parquet is binary" in result.output
+
+
+def test_query_plot_error_presents_cleanly(ros1_bag: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A plot-sink error (e.g. matplotlib missing) presents as a clean error, not a traceback.
+
+    @teaching_errors does NOT catch plot_table's RuntimeError/ValueError, so they previously
+    escaped as a raw traceback. The query handler now maps them to a clean BadParameter.
+    """
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("matplotlib is not installed; install bagq[plot]")
+
+    monkeypatch.setattr("rosbagger_core.output.plot_table", boom)
+    result = runner.invoke(app, ["query", "SELECT t_ns FROM imu", str(ros1_bag), "--plot"])
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "matplotlib" in result.output  # the teaching text, not a traceback
+
+
 def test_help_lists_query_subcommand() -> None:
     """``bagq --help`` lists the ``query`` subcommand alongside info/tables."""
     result = runner.invoke(app, ["--help"])
