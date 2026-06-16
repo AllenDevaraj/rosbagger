@@ -20,10 +20,31 @@ function bodies (and a ``TYPE_CHECKING`` import is for annotations only), mirror
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import pyarrow
+
+
+def _json_safe(value):
+    """Replace non-finite floats (NaN / +/-inf — invalid JSON) with ``None``, recursively.
+
+    ``json.dumps`` defaults to ``allow_nan=True``, emitting bare ``NaN`` / ``Infinity``
+    / ``-Infinity`` tokens that strict parsers (JavaScript ``JSON.parse``, Go) reject —
+    breaking the "machine-parseable output" contract. Non-finite floats are common in
+    real ROS data (LaserScan ``ranges`` carry ``inf``; Imu/Odometry covariance carries
+    ``NaN``), and they reach ``to_json`` via scalar, ``LIST``, and ``LIST``-of-``STRUCT``
+    columns — so walk dicts and lists too. ``allow_nan=False`` would RAISE rather than
+    degrade, so it is deliberately NOT used; sanitizing to ``null`` keeps the row.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    return value
 
 
 def rows_for_display(
@@ -99,4 +120,6 @@ def to_json(table: pyarrow.Table) -> str:
         dict(zip(names, vals, strict=True))
         for vals in zip(*[cols[name] for name in names], strict=True)
     ]
-    return json.dumps(records)
+    # Sanitize non-finite floats (NaN/inf) to null so the output is valid, strictly
+    # parseable JSON (json.dumps would otherwise emit bare NaN/Infinity tokens).
+    return json.dumps(_json_safe(records))

@@ -98,3 +98,45 @@ def test_to_json_zero_rows_is_empty_list(ros1_bag: Path) -> None:
     """A 0-row result serializes to an empty JSON list."""
     table = _query(ros1_bag, "SELECT t, t_ns, topic FROM cmd_vel WHERE 1=0")
     assert json.loads(to_json(table)) == []
+
+
+def test_to_json_sanitizes_non_finite_floats_to_null() -> None:
+    """NaN / +/-inf serialize to JSON null so the output is STRICTLY parseable.
+
+    Regression for the audit bug: json.dumps defaults to allow_nan=True, emitting bare
+    NaN / Infinity / -Infinity tokens that strict parsers (JS JSON.parse, Go) reject —
+    breaking the machine-parseable contract. LaserScan ranges (inf) and Imu/Odometry
+    covariance (NaN) are common. Covers scalar, LIST, and LIST-of-STRUCT leaves.
+    (Built directly in pyarrow — no query needed to inject non-finite floats.)
+    """
+    import pyarrow as pa
+
+    table = pa.table(
+        {
+            "scalar": pa.array([1.5, float("nan"), float("inf"), float("-inf")], pa.float64()),
+            "ranges": pa.array(
+                [[1.0, float("inf")], [float("nan"), 2.0], [], None], pa.list_(pa.float64())
+            ),
+            "poses": pa.array(
+                [[{"x": float("nan")}], [{"x": 3.0}], None, []],
+                pa.list_(pa.struct([("x", pa.float64())])),
+            ),
+        }
+    )
+    raw = to_json(table)
+    # json.loads ACCEPTS NaN/Infinity, so it cannot prove validity — assert on the raw
+    # text: a strict parser would reject these tokens, so they must be absent.
+    assert "NaN" not in raw and "Infinity" not in raw, raw
+    payload = json.loads(raw)
+    assert payload[0]["scalar"] == 1.5
+    assert payload[1]["scalar"] is None  # NaN  -> null
+    assert payload[2]["scalar"] is None  # inf  -> null
+    assert payload[3]["scalar"] is None  # -inf -> null
+    # LIST: inner non-finite floats sanitized; finite kept; empty list / null row preserved.
+    assert payload[0]["ranges"] == [1.0, None]
+    assert payload[1]["ranges"] == [None, 2.0]
+    assert payload[2]["ranges"] == []
+    assert payload[3]["ranges"] is None
+    # LIST-of-STRUCT: the nested struct float is sanitized too (dict recursion).
+    assert payload[0]["poses"] == [{"x": None}]
+    assert payload[1]["poses"] == [{"x": 3.0}]
