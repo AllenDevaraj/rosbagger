@@ -396,6 +396,52 @@ def test_format_ros1_with_mcap_suffix_rejected(fixture_bags, tmp_path):
     assert not out.exists()
 
 
+def test_format_ros1_with_no_suffix_rejected(fixture_bags, tmp_path):
+    """fmt='ros1' with a non-'.bag' (here suffix-less) dst is rejected (broadened WR-03).
+
+    Regression for the audit bug: ``_validate_fmt_suffix`` only rejected the ``.mcap``
+    sub-case, so ``--format ros1 -o trimmed`` wrote a ROS 1 bag named ``trimmed`` that
+    AnyReader (which keys ROS 1 solely off the ``.bag`` suffix) routes to the ROS 2
+    reader and fails to open — a silent dead bag, exactly what WR-03 exists to prevent.
+    """
+    src = fixture_bags["ros1"]
+    out = tmp_path / "trimmed"  # no suffix; fmt says ROS 1 -> unreadable as ROS 2
+    with pytest.raises(ValueError, match="ros1"):
+        edit_bag([src], out, EditOps(), fmt="ros1")
+    assert not out.exists()  # nothing written on the rejected invocation
+
+
+def test_edit_preserves_ros1_latching_on_raw_copy(tmp_path):
+    """A same-format ROS 1 edit forwards the source connection's latching (ext metadata).
+
+    Regression for the audit bug: the kept connection was re-registered with only
+    (topic, msgtype, typestore), silently dropping ``conn.ext`` — so a latched ROS 1
+    topic (``/tf_static``, ``/map``) came out NON-latched, breaking late-joining
+    subscribers on replay despite the documented "lossless raw byte copy" contract.
+    Fixtures default latching=None, so a purpose-built latched source is needed.
+    """
+    from rosbags.rosbag1 import Reader as Ros1Reader
+    from rosbags.rosbag1 import Writer as Ros1Writer
+    from rosbags.typesys import Stores, get_typestore
+
+    ts = get_typestore(Stores.ROS1_NOETIC)
+    src = tmp_path / "latched_src.bag"
+    with Ros1Writer(src) as w:
+        stype = "std_msgs/msg/String"
+        conn = w.add_connection("/tf_static", stype, typestore=ts, latching=1)
+        payload = ts.serialize_ros1(ts.types[stype](data="x"), stype)
+        w.write(conn, 1_000_000_000, payload)
+
+    out = tmp_path / "latched_out.bag"
+    edit_bag([src], out, EditOps())  # same-format raw copy, keep all
+
+    with Ros1Reader(out) as r:
+        latching = {c.topic: c.ext.latching for c in r.connections}
+    assert latching.get("/tf_static") == 1, (
+        f"latching was not forwarded to the edited bag: {latching}"
+    )
+
+
 def test_format_override_output_reopens_via_anyreader(fixture_bags, tmp_path):
     """A NON-contradictory explicit fmt still re-opens cleanly (WR-03 guard not over-broad).
 

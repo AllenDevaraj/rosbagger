@@ -99,9 +99,10 @@ def _validate_fmt_suffix(dst: Path, fmt: str | None) -> None:
       writes a ROS 2 bag DIRECTORY literally named ``out.bag/``; re-opening sees the
       ``.bag`` suffix, treats the directory as a ROS 1 file, and raises
       ``AnyReaderError: ... Is a directory.``.
-    * ``fmt == "ros1"`` but ``dst`` ends in ``.mcap`` — writes a ROS 1 FILE named
-      ``out.mcap``; re-opening dispatches on the ``.mcap`` suffix to the MCAP reader,
-      which cannot parse the ROS 1 bag bytes.
+    * ``fmt == "ros1"`` but ``dst`` does NOT end in ``.bag`` (``.mcap``, ``.db3``, or
+      no suffix at all) — writes a ROS 1 FILE that AnyReader cannot re-open: it keys
+      ROS 1 SOLELY off the ``.bag`` suffix (``is2 = suffix != '.bag'``), so any other
+      name dispatches to the ROS 2 reader, which cannot parse the ROS 1 bag bytes.
 
     Raising ``ValueError`` routes through the CLI's clean ``BadParameter`` mapping, so the
     contradiction is reported (with the fix) rather than silently producing a dead bag.
@@ -120,11 +121,12 @@ def _validate_fmt_suffix(dst: Path, fmt: str | None) -> None:
             f"'{dst.name}' that cannot be re-opened. Use a directory or '.mcap' output "
             f"name, or pass --format ros1."
         )
-    if not fmt_is2 and suffix == ".mcap":
+    if not fmt_is2 and suffix != ".bag":
         raise ValueError(
-            f"output format 'ros1' contradicts the output path {dst} ('.mcap' is a ROS 2 "
-            f"extension). The result would be a ROS 1 bag named '{dst.name}' that cannot "
-            f"be re-opened as MCAP. Use a '.bag' output name, or pass --format mcap/sqlite3."
+            f"output format 'ros1' needs a '.bag' output path, but {dst} has suffix "
+            f"{suffix or '(none)'!r}. AnyReader recognizes a ROS 1 bag ONLY by the '.bag' "
+            f"extension, so the result would be a ROS 1 bag named '{dst.name}' that cannot "
+            f"be re-opened. Use a '.bag' output name, or pass --format mcap/sqlite3."
         )
 
 
@@ -319,7 +321,35 @@ def edit_bag(
                 key = (conn.topic, conn.msgtype)
                 wconn = registered.get(key)
                 if wconn is None:
-                    wconn = writer.add_connection(conn.topic, conn.msgtype, typestore=write_ts)
+                    # On the same-wireformat (non-converting) path the output is a
+                    # "lossless raw byte copy", so forward the source connection's ext
+                    # metadata too — otherwise a latched ROS 1 topic (/tf_static, /map)
+                    # comes out non-latched and a ROS 2 topic loses its offered QoS (e.g.
+                    # durability=TRANSIENT_LOCAL), so a late-joining subscriber on replay
+                    # of the edited bag no longer receives the latched/transient-local
+                    # message. When CONVERTING, the ROS1<->ROS2 ext mapping is non-trivial,
+                    # so leave the writer's defaults. (Invisible on fixtures, whose
+                    # connections default to latching=None / offered_qos_profiles=().)
+                    ext_kwargs: dict[str, object] = {}
+                    if not converting:
+                        ext = getattr(conn, "ext", None)
+                        if dst_is2:
+                            ext_kwargs = {
+                                "serialization_format": getattr(
+                                    ext, "serialization_format", "cdr"
+                                ),
+                                "offered_qos_profiles": getattr(
+                                    ext, "offered_qos_profiles", ()
+                                ),
+                            }
+                        else:
+                            ext_kwargs = {
+                                "callerid": getattr(ext, "callerid", None),
+                                "latching": getattr(ext, "latching", None),
+                            }
+                    wconn = writer.add_connection(
+                        conn.topic, conn.msgtype, typestore=write_ts, **ext_kwargs
+                    )
                     registered[key] = wconn
                 wconns[id(conn)] = wconn
 
