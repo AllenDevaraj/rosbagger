@@ -185,6 +185,14 @@ class RecordPanel(Widget):
         """
         if not getattr(self.app, "ros_available", False):
             return
+        # WR-06 (mirrors the query/replay panels): record() spins its own loop until its bounded
+        # duration and exposes no interrupt hook, so a worker cancelled by Dismiss keeps WRITING.
+        # Dismiss re-enables Start, so a second Start would launch a second record_topics against
+        # the SAME out path while the first still writes (a clobbered bag / confusing failure).
+        # Refuse a Start while a record worker is still in flight.
+        if any(w.group == "record-run" and w.is_running for w in self.workers):
+            self._show_status("A record is still in flight — wait for it to finalize.")
+            return
         checklist = self.query_one("#topic-checklist", SelectionList)
         selected: list[str] = list(checklist.selected)
         if not selected:
