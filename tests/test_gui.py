@@ -265,6 +265,35 @@ async def test_query_panel_select_star_renders_timestamp_columns(bag: Path) -> N
         )
 
 
+async def test_inspect_panel_unresolvable_type_teaches_not_crashes(
+    bag: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A core failure inspecting a bag (e.g. get_msgdef KeyError on a custom-type def-less bag)
+    teaches in the header instead of crashing the TUI.
+
+    Regression for the audit bug: InspectPanel.refresh_view called collect_bag_info /
+    collect_table_schemas unguarded, so a bare KeyError out of the schema walk bubbled out of
+    the event handler and (exit_on_error=True) tore down the cockpit. We simulate the failure by
+    forcing collect_table_schemas to raise — TfPanel already guards its analogous failure.
+    """
+    import rosbagger_core.inspect as insp
+
+    def boom(_reader: object) -> None:
+        raise KeyError("pkg/msg/CustomType")
+
+    monkeypatch.setattr(insp, "collect_table_schemas", boom)
+
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#nav-inspect")
+        await pilot.pause()  # flush the panel switch + refresh_view
+
+        # Reaching here proves the app did not panic; the failure became a teaching line.
+        header = str(app.query_one("#inspect-header", Static).render())
+        assert "Cannot inspect" in header, f"expected a teaching header, got {header!r}"
+
+
 async def test_query_panel_malformed_sql_teaches_instead_of_crashing(bag: Path) -> None:
     """A SQL typo (sqlglot ParseError / DuckDB catalog error) teaches, never crashes the TUI.
 

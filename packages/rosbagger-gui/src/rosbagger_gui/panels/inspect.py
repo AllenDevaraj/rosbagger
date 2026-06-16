@@ -76,8 +76,19 @@ class InspectPanel(Widget):
         # Lazy import (D-03): keep this module's top level textual-only.
         from rosbagger_core.inspect import collect_bag_info, collect_table_schemas
 
-        info = collect_bag_info(reader)
-        schemas = collect_table_schemas(reader)
+        try:
+            info = collect_bag_info(reader)
+            schemas = collect_table_schemas(reader)
+        except (KeyError, ValueError) as exc:
+            # A def-less bag carrying a CUSTOM message type opens (the app reads with an
+            # explicit ROS2_HUMBLE typestore, which skips the coverage-verify), but get_msgdef
+            # then raises a bare KeyError (or a core ValueError) deep inside the schema walk —
+            # which would tear down the whole cockpit out of this event handler. Present it as a
+            # teaching line + cleared tables instead, mirroring TfPanel's NoTransformsError guard.
+            header.update(f"Cannot inspect this bag: {exc}")
+            bag_info_table.clear(columns=True)
+            schemas_table.clear(columns=True)
+            return
 
         # Whole-bag header line (presentation formatting only — no new analysis).
         duration = f"{info.duration_ns / 1e9:.2f}s" if info.duration_ns is not None else _EM_DASH
