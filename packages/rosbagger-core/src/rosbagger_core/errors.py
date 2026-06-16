@@ -69,7 +69,10 @@ class UnknownColumnError(ValueError):
     def __init__(self, column: str, columns_by_table: dict[str, list[str]]) -> None:
         self.column = column
         self.columns_by_table = columns_by_table
-        all_cols = [c for cols in columns_by_table.values() for c in cols]
+        # Order-preserving dedup: a column shared across JOINed tables (e.g.
+        # header.stamp.sec) would otherwise yield DUPLICATE "Did you mean" suggestions,
+        # crowding out distinct near-misses within the n=3 budget.
+        all_cols = list(dict.fromkeys(c for cols in columns_by_table.values() for c in cols))
         self.suggestions = difflib.get_close_matches(column, all_cols, n=3, cutoff=0.6)
         lines = [f"Unknown column {column!r}."]
         if self.suggestions:

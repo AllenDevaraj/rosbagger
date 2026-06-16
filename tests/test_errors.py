@@ -88,6 +88,24 @@ class TestUnknownColumnError:
         assert "Columns in cmd_vel:" in str(err)
         assert "Columns in imu:" in str(err)
 
+    def test_suggestions_deduped_across_joined_tables(self) -> None:
+        """A column shared across JOINed tables is suggested ONCE (no duplicate did-you-means).
+
+        Regression: ``all_cols`` concatenated every table's columns, so a shared name
+        (``header.stamp.sec``) appeared twice and difflib returned it twice — crowding out
+        distinct near-misses within the n=3 budget. The order-preserving dedup fixes it.
+        """
+        err = UnknownColumnError(
+            "header.stamp.sek",  # a near-miss of the shared header.stamp.sec
+            {
+                "imu": ["header.stamp.sec", "header.stamp.nanosec", "angular_velocity.z"],
+                "image": ["header.stamp.sec", "header.stamp.nanosec", "height"],
+            },
+        )
+        assert err.suggestions.count("header.stamp.sec") == 1
+        # The whole suggestion list is distinct (no duplicate anywhere).
+        assert len(err.suggestions) == len(set(err.suggestions))
+
     def test_is_value_error(self) -> None:
         assert isinstance(UnknownColumnError("c", {"t": ["a"]}), ValueError)
 
