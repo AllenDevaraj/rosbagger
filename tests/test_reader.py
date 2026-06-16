@@ -140,14 +140,16 @@ def test_reader_topics_metadata_without_iteration(fixture_bags: dict[str, Path],
 
 
 def test_read_before_open_raises(fixture_bags: dict[str, Path]) -> None:
-    """Advancing ``read()`` without entering the context raises the not-opened guard.
+    """``read()`` without entering the context raises the not-opened guard EAGERLY.
 
-    ``read()`` is a generator, so the guard fires when it is first advanced
-    (``next``), not at construction. Matches the ``RuntimeError`` raised in 02-02.
+    ``read()`` validates + selects the stream at call time and only the yield loop is
+    deferred to ``_iter_messages``, so the guard fires when ``read()`` is CALLED — not
+    when the returned iterator is first advanced — surfacing the error at the misuse
+    site and matching the fail-fast behavior of the sibling property guards.
     """
     reader = RosbagsReader(fixture_bags["ros1"])
-    with pytest.raises(RuntimeError):
-        next(reader.read())
+    with pytest.raises(RuntimeError, match="before open"):
+        reader.read()  # raises at call time now, NOT only on next(...)
 
 
 # ---------------------------------------------------------------------------

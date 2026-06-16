@@ -252,6 +252,12 @@ class RosbagsReader(BagReader):
         unknown topic name simply matches no connection (an empty stream), not an
         error. ``topics=None`` (the default) reads every topic, unchanged.
         """
+        # Validate + select the stream EAGERLY here (the yield loop lives in
+        # _iter_messages): read() returns a generator, so were the body one generator the
+        # not-open guard and the empty-topics short-circuit would only run when the caller
+        # first advances the iterator — surfacing the error at the consumer rather than the
+        # misuse site. Every sibling state guard (topics/connections/...) fails fast as a
+        # plain property; this keeps read() consistent while preserving lazy streaming.
         if self._reader is None:
             raise RuntimeError("RosbagsReader.read() called before open()")
         if topics is None:
@@ -267,8 +273,12 @@ class RosbagsReader(BagReader):
             # topics means zero messages — short-circuit to an empty stream so
             # ``read(topics=set())`` / an unknown topic yields nothing, not all.
             if not conns:
-                return
+                return iter(())
             stream = self._reader.messages(connections=conns)
+        return self._iter_messages(stream)
+
+    def _iter_messages(self, stream) -> Iterator[Message]:
+        """The lazy yield loop for :meth:`read` — deserialize + wrap one message at a time."""
         for connection, t_ns, rawdata in stream:
             msg = self._reader.deserialize(rawdata, connection.msgtype)
             yield Message(
