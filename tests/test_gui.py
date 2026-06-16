@@ -326,6 +326,39 @@ async def test_query_panel_malformed_sql_teaches_instead_of_crashing(bag: Path) 
         assert app.query_one("#export-csv", Button).disabled is True
 
 
+async def test_query_panel_clears_stale_result_on_bag_close(bag: Path) -> None:
+    """A bag close/switch clears the last result + disables Export (no cross-bag export).
+
+    Regression for the audit qol bug: refresh_view rebuilt the schema tree but left
+    _last_result and the enabled Export buttons from the previous bag, so Export would write
+    data from a bag no longer open once a bag picker lands.
+    """
+    app = RosbaggerApp(bag_path=bag)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#nav-query")
+        await pilot.pause()
+        sql_input = app.query_one("#sql-input", Input)
+        sql_input.focus()
+        await pilot.pause()
+        sql_input.value = "SELECT topic, t_ns FROM imu LIMIT 1"
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        panel = app.query_one("#query")
+        assert panel._last_result is not None  # noqa: SLF001 - a result now exists
+        assert app.query_one("#export-csv", Button).disabled is False
+
+        # Simulate the bag being closed/swapped, then refresh: the stale result must be dropped.
+        app.reader = None
+        panel.refresh_view()
+        await pilot.pause()
+        assert panel._last_result is None  # noqa: SLF001
+        assert app.query_one("#export-csv", Button).disabled is True
+        assert app.query_one("#export-parquet", Button).disabled is True
+
+
 async def test_replay_panel_rejects_bad_rate_on_play(
     bag: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -115,6 +115,7 @@ class QueryPanel(Vertical):
         if reader is None:
             tree.clear()
             self._schema_reader = None
+            self._clear_stale_result()  # no bag -> no exportable result
             self.query_one("#query-status", Static).update("Open a bag to query")
             return
         # F7: rebuild ONLY when the reader object changed (a new bag); a same-bag re-show is a
@@ -122,6 +123,10 @@ class QueryPanel(Vertical):
         if reader is self._schema_reader:
             return
 
+        # The bag changed: the previous result belongs to a bag no longer open, so Export must
+        # not write it. Clear it (+ disable Export) before rebuilding the schema tree. Latent
+        # until a bag picker lands, but other bag-dependent panels honor this seam.
+        self._clear_stale_result()
         tree.clear()
         # Lazy import (D-03): keep this module's top level textual-only.
         from rosbagger_core.inspect import collect_table_schemas
@@ -133,6 +138,18 @@ class QueryPanel(Vertical):
                 branch.add_leaf(col.name, data=col.name)
         tree.root.expand()
         self._schema_reader = reader  # F7: remember the bag this Tree was built from
+
+    def _clear_stale_result(self) -> None:
+        """Drop the last result + disable Export so it can't write data from a closed/changed bag.
+
+        ``_last_result`` is cleared, the results DataTable emptied, both Export buttons disabled,
+        and the status reset — otherwise Export would silently write the PREVIOUS bag's rows after
+        a bag switch. Latent today (the bag is opened once) but forward-safe.
+        """
+        self._last_result = None
+        self.query_one("#results", DataTable).clear(columns=True)
+        self.query_one("#export-csv", Button).disabled = True
+        self.query_one("#export-parquet", Button).disabled = True
 
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         """Click a schema column leaf → insert its name into ``sql-input`` (D-06).
