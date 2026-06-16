@@ -197,6 +197,11 @@ class RecordPanel(QWidget):
             return
         if self._discover_thread is not None and self._discover_thread.isRunning():
             return  # a scan is already running; let it finish
+        if self._record_thread is not None and self._record_thread.isRunning():
+            # A record is IN FLIGHT (showEvent fires on every Record-tab visit). A re-scan would
+            # clobber the recording status, clear the checklist (losing the user's selection),
+            # and spin a second rclpy discovery node — so skip it until the record finishes.
+            return
         set_status(self._status, "Discovering live topics…")
 
         def work() -> dict:
@@ -361,7 +366,10 @@ class RecordPanel(QWidget):
         its bounded window elapses, then finalizes on its own). The status says so rather
         than claiming an immediate stop the panel cannot deliver.
         """
-        self._reset_buttons()
+        # Disable ONLY Dismiss — leave Start disabled until the bounded record actually finishes
+        # (_on_record_finished re-enables it). Re-enabling Start here was misleading: the record
+        # is still writing, so a Start click only hits the in-flight guard ("already in flight").
+        self._dismiss_button.setEnabled(False)
         set_status(
             self._status,
             f"Dismissed — the bounded record finalizes on its own "
